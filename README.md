@@ -20,6 +20,7 @@ Dieses Projekt ist eine sehr frühe Alpha-Version. Es ist noch nicht für den pr
 
 ## Nutzung
 Da sich das Programm in der Alpha-Phase befindet, richtet sich die Nutzung aktuell primär an Tester und Entwickler, die den aktuellen Fortschritt begutachten möchten. Eine Dokumentation der einzelnen Bedienfelder wird zu einem späteren Zeitpunkt erstellt.
+Dieses Projekt läuft mit Unterstützung durch Codex.
 
 ## Rückmeldungen und Fehlerberichte
 Fehler oder Verbesserungsvorschläge können über die "Issues"-Funktion im Repository gemeldet werden. Da es sich um eine frühe Version handelt, ist jedes Feedback zur Stabilität und Logik hilfreich.
