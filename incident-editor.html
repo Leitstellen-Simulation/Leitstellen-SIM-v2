@@ -1,0 +1,87 @@
+﻿<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Einsatzeditor</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body class="standalone-editor">
+    <main class="editor-shell incident-editor-shell">
+      <aside class="editor-sidebar panel">
+        <div class="panel-title">
+          <h2>Einsatzeditor</h2>
+          <a href="index.html">Leitstelle</a>
+        </div>
+        <div class="editor-standalone-form">
+          <label>Kategorie
+            <select id="ie-category">
+              <option>Herz/Kreislauf</option>
+              <option>Atmung</option>
+              <option>Trauma</option>
+              <option>Neuro/Psych</option>
+              <option>Sonstiges</option>
+              <option>Krankentransport</option>
+            </select>
+          </label>
+          <label>Einsatzname <input id="ie-title" placeholder="z.B. ACS"></label>
+          <label>Typ
+            <select id="ie-type">
+              <option value="emergency">Notfall</option>
+              <option value="transport">Transport</option>
+              <option value="scheduled">Planbar</option>
+            </select>
+          </label>
+          <label>Notruftext <textarea id="ie-caller-text" rows="4" placeholder="Mehrere Texte mit | trennen"></textarea></label>
+          <label>Rückmeldung / Lagemeldung <textarea id="ie-report" rows="3"></textarea></label>
+          <label>Einsatzort-Modus
+            <select id="ie-location-mode">
+              <option value="random">zufällig im Einsatzgebiet</option>
+              <option value="hospital">Krankenhaus</option>
+              <option value="poi">POI</option>
+            </select>
+          </label>
+          <div class="multi-select-box">
+            <strong>POI-Kategorien</strong>
+            <input id="ie-poi-category-search" placeholder="Kategorie suchen">
+            <select id="ie-poi-categories" multiple size="7"></select>
+          </div>
+          <label>Konkrete POI-IDs <input id="ie-poi-ids" placeholder="z.B. hospital-kh-st-hedwig"></label>
+          <label class="check-row"><input id="ie-fw" type="checkbox"> FW vor Transport erforderlich</label>
+          <label class="check-row"><input id="ie-pol" type="checkbox"> POL vor Transport erforderlich</label>
+          <section class="unit-editor">
+            <h3>Patient</h3>
+            <label>Fahrzeugoptionen <input id="ie-patient-options" placeholder="0.75:RTW+NEF;0.25:RTW"></label>
+            <div>
+              <strong>Fachrichtungen</strong>
+              <div id="ie-departments" class="check-grid"></div>
+            </div>
+            <label>SoSi-Transport-Wahrscheinlichkeit <input id="ie-patient-signal" type="number" min="0" max="100" value="0"></label>
+            <label>Ambulant-Wahrscheinlichkeit <input id="ie-patient-no-transport" type="number" min="0" max="100" value="0"></label>
+            <label>Freimeldungstext ambulant <input id="ie-patient-no-transport-text" placeholder="Ambulante Versorgung ausreichend, kein Transport."></label>
+            <label class="check-row"><input id="ie-patient-doctor-required" type="checkbox"> Zwingende Notarztbegleitung</label>
+            <label class="check-row"><input id="ie-patient-fw" type="checkbox"> Patient braucht FW</label>
+            <label class="check-row"><input id="ie-patient-pol" type="checkbox"> Patient braucht POL</label>
+            <button id="ie-add-patient" type="button">Patient hinzufügen</button>
+            <div id="ie-patient-list" class="unit-list"></div>
+          </section>
+          <div class="editor-actions">
+            <button id="ie-new" type="button">Neu</button>
+            <button id="ie-save" class="primary-action" type="button">Speichern</button>
+          </div>
+        </div>
+      </aside>
+      <section class="editor-map-panel panel">
+        <div class="panel-title">
+          <h2>Einsätze</h2>
+          <span id="ie-count">0</span>
+        </div>
+        <div id="ie-list" class="incident-list"></div>
+      </section>
+    </main>
+    <script src="departments.js"></script>
+    <script src="poi.js"></script>
+    <script src="incident-editor.js"></script>
+  </body>
+</html>
+

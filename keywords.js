@@ -1,0 +1,142 @@
+(() => {
+  function rd(label, type, required, signal, requiredServices = null) {
+    const services = requiredServices || servicesForKeyword(label);
+    return {
+      label,
+      type,
+      required,
+      signal,
+      requiredServices: services,
+      disposition: dispositionFor(required, services)
+    };
+  }
+
+  function servicesForKeyword(label) {
+    const text = String(label || "").toLowerCase();
+    const services = [];
+    if (text.includes("polizei") || text.includes("geiselnahme") || text.includes("amok") || text.includes("schuss") || text.includes("hieb") || text.includes("stich")) services.push("POL");
+    if (text.includes("wasser") || text.includes("berg") || text.includes("eisunfall") || text.includes("tauchen") || text.includes("seilbahn") || text.includes("brand")) services.push("FW");
+    return [...new Set(services)];
+  }
+
+  function dispositionFor(required, services = []) {
+    const counts = new Map();
+    (required || []).forEach((type) => counts.set(type, (counts.get(type) || 0) + 1));
+    const vehicles = [...counts.entries()].map(([type, count]) => count > 1 ? `${count} ${type}` : `1 ${type}`);
+    return [...vehicles, ...(services || [])].join(", ") || "Lage erkunden";
+  }
+
+  window.rdKeywords = [
+  rd("RD 1 Bewusstsein - Bewusstsein", "emergency", ["RTW"], true),
+  rd("RD 2 Bewusstsein - vitale Bedrohung", "emergency", ["RTW", "NEF"], true),
+  rd("RD 2 Bewusstsein - Nachforderung NA", "emergency", ["RTW", "NEF"], true),
+  rd("RD 1 Atmung - Atmung", "emergency", ["RTW"], true),
+  rd("RD 2 Atmung - vitale Bedrohung", "emergency", ["RTW", "NEF"], true),
+  rd("RD 2 Atmung - Nachforderung NA", "emergency", ["RTW", "NEF"], true),
+  rd("RD 1 Herz/Kreislauf - Herz/Kreislauf", "emergency", ["RTW"], true),
+  rd("RD 2 Herz/Kreislauf - vitale Bedrohung", "emergency", ["RTW", "NEF"], true),
+  rd("RD 2 Herz/Kreislauf - Kreislaufstillstand/Reanimation", "emergency", ["RTW", "NEF"], true),
+  rd("RD 2 Herz/Kreislauf - Nachforderung NA", "emergency", ["RTW", "NEF"], true),
+  rd("RD 1 Schmerzen", "emergency", ["RTW"], true),
+  rd("RD 2 Schmerzen - stark", "emergency", ["RTW", "NEF"], true),
+  rd("RD 2 Schmerzen - Nachforderung NA", "emergency", ["RTW", "NEF"], true),
+  rd("RD 1 Neuro/Psych - Neuro", "emergency", ["RTW"], true),
+  rd("RD 2 Neuro/Psych - Neuro vitale Bedrohung", "emergency", ["RTW", "NEF"], true),
+  rd("RD 2 Neuro/Psych - Neuro Nachforderung NA", "emergency", ["RTW", "NEF"], true),
+  rd("RD 1 Neuro/Psych - Psych", "emergency", ["RTW"], true),
+  rd("RD 2 Neuro/Psych - Psych vitale Bedrohung", "emergency", ["RTW", "NEF"], true),
+  rd("RD 2 Neuro/Psych - Psych vitale Bedrohung mit Polizei", "emergency", ["RTW", "NEF"], true),
+  rd("RD 2 Neuro/Psych - Psych Nachforderung NA", "emergency", ["RTW", "NEF"], true),
+  rd("RD 1 Trauma - Trauma", "emergency", ["RTW"], true),
+  rd("RD 1 Trauma - Verkehrsunfall nur RD", "emergency", ["RTW"], true),
+  rd("RD 2 Trauma - vitale Bedrohung Person schwer verletzt", "emergency", ["RTW", "NEF"], true),
+  rd("RD 2 Trauma - vitale Bedrohung Verkehrsunfall nur RD", "emergency", ["RTW", "NEF"], true),
+  rd("RD 2 Trauma - vitale Bedrohung Arbeitsunfall", "emergency", ["RTW", "NEF"], true),
+  rd("RD 2 Trauma - vitale Bedrohung starke Blutung", "emergency", ["RTW", "NEF"], true),
+  rd("RD 2 Trauma - vitale Bedrohung Unfall Schule/Kita", "emergency", ["RTW", "NEF"], true),
+  rd("RD 2 Trauma - Nachforderung NA", "emergency", ["RTW", "NEF"], true),
+  rd("RD 1 Kind - erkrankt", "emergency", ["RTW"], true),
+  rd("RD 1 Kind - Trauma", "emergency", ["RTW"], true),
+  rd("RD 1 Kind - Inkubator Intensivteam", "emergency", ["RTW"], true),
+  rd("RD 1 Kind - Neugeborenen-Holdienst", "emergency", ["RTW"], true),
+  rd("RD 2-KIND Kind erkrankt - vitale Bedrohung", "emergency", ["RTW", "NEF"], true),
+  rd("RD 2-KIND Kind Trauma - vitale Bedrohung", "emergency", ["RTW", "NEF"], true),
+  rd("RD 2-KIND Kind Kreislaufstillstand/Reanimation", "emergency", ["RTW", "NEF"], true),
+  rd("RD 2-KIND Säugling Kreislaufstillstand/Reanimation", "emergency", ["RTW", "NEF"], true),
+  rd("RD 2-KIND Kind - Nachforderung NA", "emergency", ["RTW", "NEF"], true),
+  rd("RD BERGRETTUNG - Erkundung/Vermisstensuche", "emergency", ["RTW"], true),
+  rd("RD BERGRETTUNG - unwegsames Gelände", "emergency", ["RTW"], true),
+  rd("RD BERGRETTUNG - Höhlenunfall", "emergency", ["RTW"], true),
+  rd("RD BERGRETTUNG - Lawinenunfall", "emergency", ["RTW"], true),
+  rd("RD BERGRETTUNG - Canyonunfall", "emergency", ["RTW"], true),
+  rd("RD BERGRETTUNG - Skiunfall", "emergency", ["RTW"], true),
+  rd("RD BERGRETTUNG - Seilbahnevakuierung", "emergency", ["RTW"], true),
+  rd("RD BERGRETTUNG - Gleitschirm/Drachen im Baum", "emergency", ["RTW"], true),
+  rd("RD BERGRETTUNG - fachliche Unterstützung", "emergency", ["RTW"], false),
+  rd("RD WASSERNOT 0 - Hilfeleistung", "emergency", ["RTW"], false),
+  rd("RD WASSERNOT 1 - gekentertes Boot", "emergency", ["RTW"], true),
+  rd("RD WASSERNOT 2 - mehrere gekenterte Boote", "emergency", ["RTW"], true),
+  rd("RD WASSERNOT 2 - Vermisstensuche", "emergency", ["RTW"], true),
+  rd("RD WASSERNOT 3 - eine Person in Wassernot", "emergency", ["RTW"], true),
+  rd("RD WASSERNOT 4 - zwei bis drei Personen in Wassernot", "emergency", ["RTW"], true),
+  rd("RD WASSERNOT 5 - ab vier Personen in Wassernot", "emergency", ["RTW"], true),
+  rd("RD TAUCHUNFALL - Wasserrettung", "emergency", ["RTW"], true),
+  rd("RD EISUNFALL 1 - auf dem Eis verletzt/erkrankt", "emergency", ["RTW"], true),
+  rd("RD EISUNFALL 2 - ein bis zwei Personen eingebrochen", "emergency", ["RTW"], true),
+  rd("RD EISUNFALL 3 - ab drei Personen eingebrochen", "emergency", ["RTW"], true),
+  rd("RD KTP - Transport zum Krankenhaus", "transport", ["KTW"], false),
+  rd("RD KTP - Verlegung", "transport", ["KTW"], false),
+  rd("RD KTP - Heimfahrt", "transport", ["KTW"], false),
+  rd("RD KTP - Ambulanzfahrt", "transport", ["KTW"], false),
+  rd("RD KTP - Unterbringung", "transport", ["KTW"], false),
+  rd("RD KTP - Inkubator", "transport", ["KTW"], false),
+  rd("RD KTP - Dialyse", "transport", ["KTW"], false),
+  rd("RD KTP - nicht disponibel Prio 2", "transport", ["KTW"], false),
+  rd("RD KTP - Wohnungswechsel", "transport", ["KTW"], false),
+  rd("RD KTP - sonstiger Transport", "transport", ["KTW"], false),
+  rd("RD KTP/RTW - Übernahme Landeplatz", "transport", ["RTW"], false),
+  rd("RD KTP/RTW - mit RTW", "transport", ["RTW"], false),
+  rd("RD KTP/RTW - schwergewichtiger Patient", "transport", ["RTW"], false),
+  rd("RD INFEKT GR4/E - KTP Infekt", "transport", ["KTW"], false),
+  rd("RD KTP Verlegung - nicht disponibel mit KTW", "transport", ["KTW"], false),
+  rd("RD 1 Verlegung - Notfalltransport mit RTW", "transport", ["RTW"], true),
+  rd("RD 2 Verlegung - Notfalltransport mit NA", "transport", ["RTW", "NEF"], true),
+  rd("RD VEF Verlegung - VEF", "transport", ["RTW"], false),
+  rd("RD VEF Verlegung - VEF und RTW", "transport", ["RTW"], false),
+  rd("RD ITW Verlegung", "transport", ["RTW"], false),
+  rd("RD ITH Verlegung", "transport", ["RTW"], false),
+  rd("RD 1 Sonstige - Ereignis/Zustand", "emergency", ["RTW"], true),
+  rd("RD 1 Sonstige - Intoxikation", "emergency", ["RTW"], true),
+  rd("RD 1 Sonstige - Geburt/Entbindung", "emergency", ["RTW"], true),
+  rd("RD 2 Sonstige - vitale Bedrohung", "emergency", ["RTW", "NEF"], true),
+  rd("RD 2 Sonstige - Intoxikation vitale Bedrohung", "emergency", ["RTW", "NEF"], true),
+  rd("RD 2 Sonstige - Geburt/Entbindung akut", "emergency", ["RTW", "NEF"], true),
+  rd("RD 2 Sonstige - Nachforderung NA", "emergency", ["RTW", "NEF"], true),
+  rd("RD 1 Ärger - Ärger", "emergency", ["RTW"], true),
+  rd("RD 2 Ärger - vitale Bedrohung", "emergency", ["RTW", "NEF"], true),
+  rd("RD 2 Ärger - Geiselnahme", "emergency", ["RTW", "NEF"], true),
+  rd("RD AMOK RD - Ärger Amok", "emergency", ["RTW"], true),
+  rd("RD 2 Ärger - Schuss/Hieb/Stichverletzung", "emergency", ["RTW", "NEF"], true),
+  rd("RD 2 Ärger - Nachforderung NA", "emergency", ["RTW", "NEF"], true),
+  rd("RD 1 Sonstige - Hausnotruf aktiver Alarm", "emergency", ["RTW"], true),
+  rd("RD 3 - zwei oder drei verletzte/erkrankte Personen", "emergency", ["RTW", "RTW", "NEF"], true),
+  rd("RD 4 - vier oder fünf verletzte/erkrankte Personen", "emergency", ["RTW", "RTW", "RTW", "RTW", "NEF"], true),
+  rd("RD 5 - sechs bis neun verletzte/erkrankte Personen", "emergency", ["RTW", "RTW", "RTW", "RTW", "RTW", "NEF"], true),
+  rd("RD MANV 10-15", "emergency", ["RTW", "RTW", "RTW"], true),
+  rd("RD MANV 16-25", "emergency", ["RTW", "RTW", "RTW"], true),
+  rd("RD MANV 26-50", "emergency", ["RTW", "RTW", "RTW"], true),
+  rd("RD MANV 51-100", "emergency", ["RTW", "RTW", "RTW"], true),
+  rd("RD MANV ab 100", "emergency", ["RTW", "RTW", "RTW"], true),
+  rd("RD ABSICHERUNG - Bereitstellung Rettungsmittel", "scheduled", ["RTW"], false),
+  rd("RD ABSICHERUNG - Dienstfahrt", "scheduled", ["RTW"], false),
+  rd("RD SONSTIGE - Werkstattfahrt", "scheduled", ["RTW"], false),
+  rd("RD SONSTIGE - Gebietsabsicherung", "scheduled", ["RTW"], false),
+  rd("RD BETREUUNG - Betreuung unter 50 Personen", "scheduled", ["RTW"], false),
+  rd("RD BETREUUNG - Betreuung über 50 Personen", "scheduled", ["RTW"], false),
+  rd("RD HILFE/SONSTIGE - Hilfeleistung nicht zeitkritisch", "scheduled", ["RTW"], false),
+  rd("RD HILFE/SONSTIGE - Lotsenfahrt", "scheduled", ["RTW"], false),
+  rd("RD HILFE/SONSTIGE - Transport Organ/Blut/Material", "scheduled", ["RTW"], false),
+  rd("RD ÜBERÖRTLICH - Anforderung Fremd-ILS Bayern", "scheduled", ["RTW"], false),
+  rd("RD ÜBERÖRTLICH - Anforderung Fremd-ILS nicht Bayern", "scheduled", ["RTW"], false)
+];
+})();

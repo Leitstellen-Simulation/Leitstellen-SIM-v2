@@ -1,0 +1,338 @@
+﻿<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Leitstelle Regensburg</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIINfQw0YgH12v09wcyynE3p6bZJpRcm7fc="
+      crossorigin="">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section id="start-screen" class="start-screen">
+        <header class="start-header">
+          <div>
+            <p class="eyebrow">Rettungsdienst-Simulation</p>
+            <h1>Leitstelle Regensburg</h1>
+          </div>
+          <div class="start-tools" aria-label="Editoren">
+            <button id="start-map-editor-button" type="button">Karteneditor</button>
+            <button id="start-incident-editor-button" type="button">Einsatzeditor</button>
+          </div>
+        </header>
+
+        <section class="intro-band">
+          <div class="screen-preview" aria-hidden="true">
+            <div class="preview-map">
+              <span style="--x:45%;--y:45%" class="preview-pin station">RW</span>
+              <span style="--x:58%;--y:38%" class="preview-pin hospital">KH</span>
+              <span style="--x:50%;--y:55%" class="preview-pin incident">!</span>
+              <span style="--x:42%;--y:50%" class="preview-vehicle">RTW</span>
+            </div>
+            <div class="preview-side">
+              <span></span><span></span><span></span><span></span>
+            </div>
+          </div>
+          <div class="intro-copy">
+            <h2>Disponieren, alarmieren, nachhalten.</h2>
+            <p>
+              Anrufe annehmen, Einsatzdaten sauber anlegen, Fahrzeuge auswählen und die Lage auf
+              der Karte im Blick behalten.
+            </p>
+          </div>
+        </section>
+
+        <form id="shift-form" class="shift-form">
+          <h2>Schicht starten</h2>
+          <label>
+            Leitstelle
+            <select id="center-select">
+              <option value="ils-regensburg-testversion-stadt-regensburg">ILS Regensburg (Testversion Stadt Regensburg)</option>
+            </select>
+          </label>
+          <label>
+            Disponent
+            <input id="dispatcher-name" value="Gast" maxlength="22">
+          </label>
+          <label>
+            Startzeit
+            <select id="time-select">
+              <option value="now">Jetzt</option>
+              <option value="06:00">06:00</option>
+              <option value="12:00">12:00</option>
+              <option value="18:00">18:00</option>
+              <option value="23:00">23:00</option>
+            </select>
+          </label>
+          <button class="primary-action" type="submit">Schicht starten</button>
+        </form>
+      </section>
+
+      <section id="dispatch-screen" class="dispatch-screen hidden" aria-live="polite">
+        <header class="topbar">
+          <div>
+            <strong id="active-center">ILS Regensburg</strong>
+            <span id="operator-label">Gast</span>
+          </div>
+          <div class="topbar-controls">
+            <select id="speed-select" aria-label="Simulationsgeschwindigkeit">
+              <option value="1">1x</option>
+              <option value="2">2x</option>
+              <option value="4">4x</option>
+              <option value="8">8x</option>
+              <option value="16">16x</option>
+            </select>
+            <button id="pause-button" type="button">Pause</button>
+            <button id="admin-mode-button" type="button">Admin</button>
+            <button id="test-mode-button" class="admin-only" type="button" hidden>Testbetrieb aus</button>
+            <button id="new-call-button" class="admin-only" type="button" hidden>Neuer Anruf</button>
+            <button id="editor-button" class="admin-only" type="button" hidden>Karteneditor</button>
+            <button id="incident-editor-button" class="admin-only" type="button" hidden>Einsatzeditor</button>
+            <button id="end-shift-button" type="button">Schicht beenden</button>
+          </div>
+        </header>
+
+        <section class="workspace">
+          <div class="map-panel panel">
+            <div class="panel-title">
+              <h2>Karte</h2>
+              <span id="weather-label">Leichter Regen, 12 C</span>
+            </div>
+            <div id="map" class="map" aria-label="Einsatzkarte Regensburg"></div>
+          </div>
+
+          <aside class="incident-panel panel">
+            <div class="panel-title">
+              <h2>Einsätze</h2>
+              <span id="incident-count">0 offen</span>
+            </div>
+            <div class="tabs" role="tablist" aria-label="Einsatzfilter">
+              <button class="tab active" data-filter="emergency" type="button">Notfall</button>
+              <button class="tab" data-filter="transport" type="button">Transport</button>
+              <button class="tab" data-filter="scheduled" type="button">Planbar</button>
+            </div>
+            <div id="incident-list" class="incident-list empty-state">Keine offenen Einsätze.</div>
+          </aside>
+
+          <section class="vehicle-panel panel">
+            <div class="panel-title">
+              <h2>Fahrzeuge</h2>
+              <select id="vehicle-sort" aria-label="Fahrzeuge sortieren">
+                <option value="station">Nach Wache</option>
+                <option value="status">Nach Status</option>
+                <option value="type">Nach Typ</option>
+              </select>
+            </div>
+            <div id="vehicle-list" class="vehicle-list"></div>
+          </section>
+
+          <section class="call-panel panel">
+            <div class="panel-title">
+              <h2>Anrufen</h2>
+              <div>
+                <button id="answer-button" type="button" disabled>Annehmen</button>
+                <button id="forward-button" type="button" disabled>Weiterleiten</button>
+              </div>
+            </div>
+            <div id="call-log" class="log-window"></div>
+            <div id="call-actions" class="call-actions"></div>
+          </section>
+
+          <section class="radio-panel panel">
+            <div class="panel-title">
+              <h2>Funk</h2>
+              <div class="radio-title-tools">
+                <div id="radio-alerts" class="radio-alerts" aria-live="polite"></div>
+                <span id="clock-label">00:00</span>
+              </div>
+            </div>
+            <div id="radio-log" class="log-window"></div>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <dialog id="incident-dialog" class="modal">
+      <form method="dialog" id="incident-form" class="modal-card">
+        <header class="modal-header">
+          <h2>Neuen Einsatz erstellen</h2>
+          <button id="close-incident-dialog" class="icon-button" value="cancel" aria-label="Schließen" type="submit">x</button>
+        </header>
+        <div class="modal-body incident-create-grid">
+          <label class="wide">
+            Einsatzort
+            <input id="incident-location" required>
+          </label>
+          <label class="keyword-field">
+            Stichwort
+            <div class="keyword-combobox">
+              <input id="incident-keyword" required autocomplete="off" placeholder="Stichwort suchen oder wählen">
+              <button id="incident-keyword-toggle" type="button" aria-label="Stichwörter öffnen">▾</button>
+              <div id="incident-keyword-options" class="keyword-options" hidden></div>
+            </div>
+          </label>
+          <fieldset class="signal-toggle">
+            <legend>Sondersignal</legend>
+            <input id="incident-signal" type="hidden" value="no">
+            <button class="signal-option active" data-signal="no" type="button">Nein</button>
+            <button class="signal-option" data-signal="yes" type="button">Ja</button>
+          </fieldset>
+          <fieldset class="support-picker">
+            <legend>Zusatzkräfte</legend>
+            <label><input id="incident-fw" type="checkbox"> FW alarmieren</label>
+            <label><input id="incident-pol" type="checkbox"> POL alarmieren</label>
+          </fieldset>
+          <div id="disposition-suggestion" class="disposition-suggestion wide" hidden></div>
+          <label>
+            Anrufer
+            <input id="incident-caller">
+          </label>
+          <label>
+            Zusatz
+            <input id="incident-note" placeholder="optional">
+          </label>
+          <div class="vehicle-picker wide">
+            <div class="picker-head">
+              <strong>Zugeordnete Fahrzeuge</strong>
+              <span>Wähle nach Lagebild, nicht nach versteckter Pflichtliste.</span>
+            </div>
+            <div id="dialog-vehicle-list" class="dialog-vehicle-list"></div>
+          </div>
+        </div>
+        <footer class="modal-footer">
+          <button id="incident-map-button" type="button">Auf Karte zeigen</button>
+          <button id="create-incident-button" class="primary-action" value="default" type="submit">Einsatz erstellen</button>
+          <button id="create-alarm-button" class="primary-action" value="alarm" type="submit">Erstellen & alarmieren</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="call-disposition-dialog" class="modal">
+      <form method="dialog" class="modal-card call-disposition-card">
+        <header class="modal-header">
+          <h2>Anruf disponieren</h2>
+          <button class="icon-button" value="cancel" aria-label="Schließen" type="submit">x</button>
+        </header>
+        <div class="modal-body">
+          <div id="call-disposition-text" class="call-disposition-text"></div>
+          <div class="call-disposition-actions">
+            <button id="call-fw-button" type="button">an FW verweisen</button>
+            <button id="call-pol-button" type="button">an POL verweisen</button>
+            <button id="call-aend-button" type="button">an ÄND verweisen</button>
+            <button id="call-reject-button" type="button">Anruf ablehnen</button>
+            <button id="call-map-button" type="button">auf Karte zeigen</button>
+            <button id="call-create-button" class="primary-action" type="button">Einsatz erstellen</button>
+          </div>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="editor-dialog" class="modal">
+      <form method="dialog" id="editor-form" class="modal-card editor-card">
+        <header class="modal-header">
+          <h2>Karteneditor</h2>
+          <button class="icon-button" value="cancel" aria-label="Schließen" type="submit">x</button>
+        </header>
+        <div class="modal-body editor-grid">
+          <section class="editor-fields">
+            <label>
+              Kartenname
+              <input id="editor-map-name" placeholder="z.B. ILS Teststadt">
+            </label>
+            <div class="editor-actions">
+              <button id="new-map-button" type="button">Neue Karte</button>
+              <button id="save-map-button" class="primary-action" type="button">Karte speichern</button>
+            </div>
+            <label>
+              Typ
+              <select id="editor-type">
+                <option value="station">Rettungswache</option>
+                <option value="hospital">Klinik</option>
+              </select>
+            </label>
+            <label>
+              Name
+              <input id="editor-name" placeholder="z.B. RW Altstadt">
+            </label>
+            <div class="editor-vehicle-counts">
+              <label>
+                RTW
+                <input id="editor-rtw" type="number" min="0" max="20" value="1">
+              </label>
+              <label>
+                KTW
+                <input id="editor-ktw" type="number" min="0" max="20" value="0">
+              </label>
+              <label>
+                NEF
+                <input id="editor-nef" type="number" min="0" max="20" value="0">
+              </label>
+              <label>
+                REF
+                <input id="editor-ref" type="number" min="0" max="20" value="0">
+              </label>
+              <label>
+                RTH
+                <input id="editor-rth" type="number" min="0" max="20" value="0">
+              </label>
+            </div>
+            <label>
+              Breite
+              <input id="editor-lat" inputmode="decimal">
+            </label>
+            <label>
+              Länge
+              <input id="editor-lng" inputmode="decimal">
+            </label>
+            <button id="use-map-center-button" type="button">Kartenmitte übernehmen</button>
+            <button id="add-map-point-button" class="primary-action" type="button">Punkt hinzufügen</button>
+          </section>
+          <section>
+            <h3>Eigene Kartenpunkte</h3>
+            <div id="editor-point-list" class="editor-point-list"></div>
+          </section>
+          <section>
+            <h3>Gespeicherte Karten</h3>
+            <div id="saved-map-list" class="editor-point-list"></div>
+          </section>
+        </div>
+        <footer class="modal-footer">
+          <button value="cancel" type="submit">Fertig</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="coverage-dialog" class="modal">
+      <form method="dialog" class="modal-card coverage-card">
+        <header class="modal-header">
+          <h2>Gebietsabsicherung</h2>
+          <button class="icon-button" value="cancel" aria-label="Schließen" type="submit">x</button>
+        </header>
+        <div class="modal-body">
+          <div id="coverage-list" class="coverage-list"></div>
+        </div>
+        <footer class="modal-footer">
+          <button value="cancel" type="submit">Schließen</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""></script>
+    <script src="departments.js"></script>
+    <script src="poi.js"></script>
+    <script src="keywords.js"></script>
+    <script src="app-transport.js"></script>
+    <script src="app-render.js"></script>
+    <script src="app-editor-tools.js"></script>
+    <script src="app-utils.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
+

@@ -1,0 +1,245 @@
+[
+  {
+    "id": "acs",
+    "category": "Herz/Kreislauf",
+    "title": "Akutes Koronarsyndrom",
+    "type": "emergency",
+    "keyword": "RD 2 Herz/Kreislauf - vitale Bedrohung",
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Meine Frau hat starke Schmerzen in der Brust, ist blass und kaltschweissig. Es drueckt bis in den linken Arm.",
+        "locationMode": "random",
+        "location": "Maximilianstrasse 18, Regensburg",
+        "requiredServices": [],
+        "report": "Ein Patient mit ACS-Verdacht, kreislaufstabil nach Erstversorgung, Kardiologie erforderlich.",
+        "situationReport": "",
+        "patients": [
+          {
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 1,
+                "vehicles": [
+                  "RTW",
+                  "NEF"
+                ]
+              }
+            ],
+            "requiredDepartmentKey": "cardiology"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "mci-small",
+    "category": "Sonstiges",
+    "title": "Mehrere Verletzte",
+    "type": "emergency",
+    "keyword": "RD 3 - zwei oder drei verletzte/erkrankte Personen",
+    "variants": [
+      {
+        "callerName": "Feuerwehr Regensburg",
+        "callerText": "Kellerbrand, mehrere Personen mit Rauchgasexposition, Feuerwehr ist auf Anfahrt.",
+        "location": "Adolf-Schmetzer-Strasse 9, Regensburg",
+        "lat": 49.0181,
+        "lng": 12.1167,
+        "signal": true,
+        "requiredServices": [
+          "FW"
+        ],
+        "situationReport": "Drei Patienten mit Rauchgasexposition. Pat 1 kritisch, Pat 2 und Pat 3 stabil. Klinikverteilung erforderlich.",
+        "patients": [
+          {
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 1,
+                "vehicles": [
+                  "RTW",
+                  "NEF"
+                ]
+              }
+            ],
+            "requiredDepartmentKey": "internal",
+            "needsFW": true
+          },
+          {
+            "label": "Pat 2",
+            "options": [
+              {
+                "probability": 1,
+                "vehicles": [
+                  "RTW"
+                ]
+              }
+            ],
+            "requiredDepartmentKey": "internal"
+          },
+          {
+            "label": "Pat 3",
+            "options": [
+              {
+                "probability": 0.75,
+                "vehicles": [
+                  "RTW"
+                ]
+              },
+              {
+                "probability": 0.25,
+                "vehicles": [
+                  "KTW"
+                ]
+              }
+            ],
+            "requiredDepartmentKey": "internal"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ktp-praxis",
+    "category": "Krankentransport",
+    "title": "KTP zur Arztpraxis",
+    "type": "transport",
+    "keyword": "RD KTP - Ambulanzfahrt",
+    "variants": [
+      {
+        "callerName": "Pflegeheim",
+        "callerText": "Sitzender Krankentransport zur Hausarztpraxis, Patient stabil.",
+        "locationMode": "poi",
+        "location": "Pflegeheim Regensburg",
+        "lat": 49.025,
+        "lng": 12.105,
+        "fixedDestination": {
+          "label": "Hausarztpraxis Altstadt",
+          "lat": 49.0199,
+          "lng": 12.0965,
+          "type": "practice"
+        },
+        "signal": false,
+        "patients": [
+          {
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 1,
+                "vehicles": [
+                  "KTW"
+                ]
+              }
+            ],
+            "requiredDepartmentKey": "none"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "schlaganfall",
+    "category": "Neuro/Psych",
+    "title": "Schlaganfall",
+    "type": "emergency",
+    "keyword": "RD 1 Sonstige - Ereignis/Zustand",
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Hier ist der Herr Maier! Helfen Sie mir schnell, mein Vater kann plötzlich nicht mehr sprechen.",
+        "locationMode": "random",
+        "location": "Regensburg",
+        "requiredServices": [],
+        "report": "Schlaganfall <2h, Hemiparese, Aphasie",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 1,
+                "vehicles": [
+                  "RTW"
+                ]
+              }
+            ],
+            "requiredDepartmentKey": "neurology",
+            "transportSignalProbability": 0.9,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "rth-trauma",
+    "category": "Trauma",
+    "title": "Schweres Trauma mit RTH",
+    "type": "emergency",
+    "keyword": "RD 2 Trauma - vitale Bedrohung Person schwer verletzt",
+    "variants": [
+      {
+        "callerName": "Leitstelle Nachbarbereich",
+        "callerText": "Schwerer Arbeitsunfall ausserhalb der Stadt, RTH-Anforderung wegen langer Fahrzeit.",
+        "locationMode": "random",
+        "location": "Regensburg",
+        "signal": true,
+        "report": "Schweres Trauma, luftgebundener Transport oder notarztbegleiteter RTW-Transport moeglich.",
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 1,
+                "vehicles": [
+                  "RTW",
+                  "NEF"
+                ]
+              }
+            ],
+            "requiredDepartmentKey": "trauma",
+            "transportSignalProbability": 1
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "rth-zwingende-na-begleitung",
+    "category": "Herz/Kreislauf",
+    "title": "RTH mit zwingender Notarztbegleitung",
+    "type": "emergency",
+    "keyword": "RD 2 Herz/Kreislauf - vitale Bedrohung",
+    "variants": [
+      {
+        "callerName": "Hausarzt",
+        "callerText": "Kritischer Patient mit Herzinfarktverdacht, der Notarzt muss den Transport zwingend begleiten.",
+        "locationMode": "random",
+        "location": "Regensburg",
+        "signal": true,
+        "report": "Kritischer ACS-Patient, Notarztbegleitung zwingend erforderlich.",
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 1,
+                "vehicles": [
+                  "RTW",
+                  "NEF"
+                ]
+              }
+            ],
+            "requiredDepartmentKey": "cardiology",
+            "transportSignalProbability": 1,
+            "requiresDoctorAccompaniment": true
+          }
+        ]
+      }
+    ]
+  }
+]

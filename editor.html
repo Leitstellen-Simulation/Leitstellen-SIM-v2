@@ -1,0 +1,165 @@
+﻿<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Karteneditor</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body class="standalone-editor">
+    <main class="editor-shell">
+      <aside class="editor-sidebar panel">
+        <div class="panel-title">
+          <h2>Karteneditor</h2>
+          <a href="index.html">Leitstelle</a>
+        </div>
+        <div class="editor-standalone-form">
+          <details class="editor-section editor-compact-section" open>
+            <summary>Kartendaten</summary>
+            <label>Kartenname <input id="se-map-name" value="ILS Regensburg Test"></label>
+            <details class="editor-rates-panel">
+              <summary>Einsatzintervalle je Stunde</summary>
+              <p class="inline-hint">Durchschnitt pro Stunde. Die Simulation würfelt um diese Werte herum.</p>
+              <div id="se-rates" class="rate-grid"></div>
+            </details>
+            <div class="editor-actions">
+              <button id="se-new" type="button">Neue Karte</button>
+              <button id="se-save" class="primary-action" type="button">Karte als Datei speichern</button>
+            </div>
+          </details>
+
+          <section class="editor-section editor-action-section">
+            <strong>Aktion</strong>
+            <div class="editor-action-grid">
+              <button id="se-new-station" type="button">Neue Rettungswache</button>
+              <button id="se-new-hospital" type="button">Neue Klinik</button>
+              <button id="se-new-poi" type="button">Neuer POI</button>
+              <button id="se-edit-coverage" type="button">Einsatzgebiet</button>
+            </div>
+          </section>
+
+          <section id="se-coverage-form" class="editor-workbench" hidden>
+            <div class="editor-workbench-head">
+              <strong>Einsatzgebiet</strong>
+              <button id="se-cancel-coverage" type="button">Schließen</button>
+            </div>
+            <p class="inline-hint">Aktuellen Kartenausschnitt übernehmen oder GeoJSON einfügen.</p>
+            <textarea id="se-coverage" rows="8" placeholder='{"type":"Feature","geometry":{"type":"Polygon","coordinates":[...]}}'></textarea>
+            <div class="editor-actions">
+              <button id="se-use-bounds" type="button">Kartenausschnitt übernehmen</button>
+              <button id="se-edit-coverage-pins" type="button">Grenzpunkte bearbeiten</button>
+              <button id="se-add-coverage-pin" type="button">Grenzpunkt hinzufügen</button>
+              <button id="se-apply-coverage" class="primary-action" type="button">GeoJSON anwenden</button>
+            </div>
+          </section>
+        </div>
+      </aside>
+      <dialog id="se-point-dialog" class="modal">
+        <form method="dialog" id="se-point-form" class="modal-card editor-point-dialog">
+          <header class="modal-header">
+            <h2 id="se-form-title">Punkt bearbeiten</h2>
+            <button id="se-cancel-edit" class="icon-button" value="cancel" type="submit" aria-label="Schließen">x</button>
+          </header>
+          <div class="modal-body editor-dialog-body">
+            <input id="se-type" type="hidden" value="station">
+            <section class="editor-subform">
+              <h3>Basisdaten</h3>
+              <label>Name <input id="se-name" placeholder="Name"></label>
+              <label>Adresse <input id="se-address" placeholder="Adresse"></label>
+              <div class="editor-actions">
+                <button id="se-geocode" type="button">Adresse suchen</button>
+                <button id="se-use-center" type="button">Kartenmitte übernehmen</button>
+                <button id="se-set-pin" type="button">Pin auf Karte setzen</button>
+              </div>
+              <details>
+                <summary>Koordinaten anzeigen</summary>
+                <label>Breite <input id="se-lat"></label>
+                <label>Länge <input id="se-lng"></label>
+              </details>
+            </section>
+            <section id="se-hospital-section" class="editor-subform" hidden>
+              <h3>Fachrichtungen</h3>
+              <p class="inline-hint">Alle Fachrichtungen auswählen, die diese Klinik aufnehmen kann.</p>
+              <label class="check-row"><input id="se-pediatric-only" type="checkbox"> Reine Kinderklinik: nur Patienten mit Pädiatrie-Bedarf zuweisen</label>
+              <div id="se-departments" class="check-grid"></div>
+            </section>
+            <section id="se-poi-section" class="editor-subform" hidden>
+              <h3>POI-Kategorien</h3>
+              <input id="se-poi-category-search" placeholder="Kategorie suchen">
+              <select id="se-poi-categories" multiple size="7"></select>
+            </section>
+            <section id="se-vehicle-count-section" class="editor-subform">
+              <h3>Fahrzeuge</h3>
+              <div class="editor-vehicle-counts">
+                <label>RTW <input id="se-rtw" type="number" min="0" value="1"></label>
+                <label>KTW <input id="se-ktw" type="number" min="0" value="0"></label>
+                <label>NEF <input id="se-nef" type="number" min="0" value="0"></label>
+                <label>REF <input id="se-ref" type="number" min="0" value="0"></label>
+                <label>RTH <input id="se-rth" type="number" min="0" value="0"></label>
+              </div>
+            </section>
+            <section id="se-unit-section" class="editor-subform">
+              <h3>Einzelfahrzeuge</h3>
+              <div class="unit-editor">
+                <label>Typ
+                  <select id="se-unit-type">
+                    <option value="RTW">RTW</option>
+                    <option value="KTW">KTW</option>
+                    <option value="NEF">NEF</option>
+                    <option value="RTH">RTH</option>
+                    <option value="REF">REF</option>
+                    <option value="SONST">Sonstige</option>
+                  </select>
+                </label>
+                <label>Funkrufname lang <input id="se-unit-name" placeholder="Rettung Regensburg 71/1"></label>
+                <label>Funkrufname kurz <input id="se-unit-short" placeholder="RT R 71/1"></label>
+                <label>Schichtzeit <input id="se-unit-shift" placeholder="7-19, 19-7"></label>
+                <button id="se-add-unit" type="button">Fahrzeug hinzufügen</button>
+                <div id="se-units-list" class="unit-list"></div>
+              </div>
+            </section>
+          </div>
+          <footer class="modal-footer">
+            <button value="cancel" type="submit">Abbrechen</button>
+            <button id="se-add" class="primary-action" type="button">Punkt speichern</button>
+          </footer>
+        </form>
+      </dialog>
+      <section class="editor-map-panel panel">
+        <div class="panel-title">
+          <h2>Karte</h2>
+          <span>Grenzen: aktuell manuell/GeoJSON-vorbereitet</span>
+        </div>
+        <div id="se-map" class="map"></div>
+      </section>
+      <aside class="editor-list-sidebar panel">
+        <div class="panel-title">
+          <h2>Verwaltung</h2>
+          <span>Karten & Punkte</span>
+        </div>
+        <div class="editor-list-panels">
+          <section class="editor-list-section">
+            <div class="editor-list-header">
+              <h3>Punkte</h3>
+              <span>Wachen, Kliniken, POI</span>
+            </div>
+            <div id="se-points" class="editor-point-list"></div>
+          </section>
+          <section class="editor-list-section">
+            <div class="editor-list-header">
+              <h3>Gespeicherte Karten</h3>
+              <span>Laden und bearbeiten</span>
+            </div>
+            <div id="se-saved" class="editor-point-list"></div>
+          </section>
+        </div>
+      </aside>
+    </main>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="departments.js"></script>
+    <script src="poi.js"></script>
+    <script src="editor.js"></script>
+  </body>
+</html>
+
