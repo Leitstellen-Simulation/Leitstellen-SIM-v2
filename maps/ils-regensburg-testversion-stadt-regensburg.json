@@ -1,0 +1,479 @@
+{
+  "id": "ils-regensburg-testversion-stadt-regensburg",
+  "name": "ILS Regensburg (Testversion Stadt Regensburg)",
+  "weather": "Leichter Regen, 12 C",
+  "mapCenter": [
+    49.00761514468197,
+    12.09749221801758
+  ],
+  "zoom": 14,
+  "stations": [
+    {
+      "id": "rkt-rettungswache-west",
+      "label": "RKT Rettungswache West",
+      "address": "ziegetsdorfer straße 50",
+      "lat": 49.002707,
+      "lng": 12.061146,
+      "vehicles": {
+        "RTW": 1
+      },
+      "units": [
+        {
+          "id": "rtw-rettung-regensburg-71-3-1778665128941",
+          "type": "RTW",
+          "name": "Rettung Regensburg 71/3",
+          "fullName": "Rettung Regensburg 71/3",
+          "shortName": "RT R 71/3",
+          "shift": "7-19, 19-7"
+        }
+      ]
+    },
+    {
+      "id": "brk-rettungswache-regensburg",
+      "label": "BRK Rettungswache Regensburg",
+      "address": "hoher-kreuz-weg 7",
+      "lat": 49.013354,
+      "lng": 12.13484,
+      "vehicles": {
+        "RTW": 1,
+        "KTW": 1
+      },
+      "units": [
+        {
+          "id": "rtw-rotkreuz-71-1-1778665199129",
+          "type": "RTW",
+          "name": "Rotkreuz 71/1",
+          "fullName": "Rotkreuz 71/1",
+          "shortName": "RK R 71/1",
+          "shift": "6-14, 14-22, 22-6"
+        },
+        {
+          "id": "ktw-rotkreuz-72-1-1778665216163",
+          "type": "KTW",
+          "name": "Rotkreuz 72/1",
+          "fullName": "Rotkreuz 72/1",
+          "shortName": "RK R 72/1",
+          "shift": "8-18"
+        }
+      ]
+    },
+    {
+      "id": "johanniter-rettungswache-regensburg",
+      "label": "Johanniter Stellplatz Regensburg",
+      "address": "johanniter rettungswache regensburg",
+      "lat": 49.055739,
+      "lng": 12.129603,
+      "vehicles": {
+        "KTW": 1,
+        "RTW": 1
+      },
+      "units": [
+        {
+          "id": "ktw-akkon-72-1-1778665279297",
+          "type": "KTW",
+          "name": "Akkon 72/1",
+          "fullName": "Akkon 72/1",
+          "shortName": "AK R 72/1",
+          "shift": "7-15, 15-23, 23-7"
+        },
+        {
+          "id": "rtw-akkon-regensburg-71-1-1778665301591",
+          "type": "RTW",
+          "name": "Akkon Regensburg 71/1",
+          "fullName": "Akkon Regensburg 71/1",
+          "shortName": "AK R 71/1",
+          "shift": "7-15, 15-23, 23-7"
+        }
+      ]
+    },
+    {
+      "id": "malteser-stellplatz-regensburg",
+      "label": "Malteser Stellplatz Regensburg",
+      "address": "Malteser Rettungswache Regensburg",
+      "lat": 49.01816,
+      "lng": 12.11485,
+      "vehicles": {
+        "RTW": 1,
+        "KTW": 1,
+        "REF": 1
+      },
+      "units": [
+        {
+          "id": "rtw-johannes-regensburg-71-1-1778665415086",
+          "type": "RTW",
+          "name": "Johannes Regensburg 71/1",
+          "fullName": "Johannes Regensburg 71/1",
+          "shortName": "JH R 71/1",
+          "shift": "6-15, 15-24"
+        },
+        {
+          "id": "ktw-johannes-regensburg-72-1-1778665443690",
+          "type": "KTW",
+          "name": "Johannes Regensburg 72/1",
+          "fullName": "Johannes Regensburg 72/1",
+          "shortName": "JH R 72/1",
+          "shift": "7-15, 15-23, 23-7"
+        },
+        {
+          "id": "ref-johannes-regensburg-74-1-1778665880276",
+          "type": "REF",
+          "name": "Johannes Regensburg 74/1",
+          "fullName": "Johannes Regensburg 74/1",
+          "shortName": "JH R 74/1",
+          "shift": "8-14, 14-22"
+        }
+      ]
+    },
+    {
+      "id": "stellplatz-nef-ukr",
+      "label": "Stellplatz NEF UKR",
+      "address": "Wache Universitätsklinikum regensburg",
+      "lat": 48.989032,
+      "lng": 12.089515,
+      "vehicles": {
+        "NEF": 1
+      },
+      "units": [
+        {
+          "id": "nef-johannes-regensburg-76-1-1778665719437",
+          "type": "NEF",
+          "name": "Johannes Regensburg 76/1",
+          "fullName": "Johannes Regensburg 76/1",
+          "shortName": "JH R 76/1",
+          "shift": "7-19, 19-7"
+        }
+      ]
+    },
+    {
+      "id": "rettungswache-nef-barmherzige-br-der",
+      "label": "Rettungswache NEF Barmherzige Brüder",
+      "address": "eigener Kartenpunkt",
+      "lat": 49.016902,
+      "lng": 12.065094,
+      "vehicles": {
+        "NEF": 1
+      },
+      "units": [
+        {
+          "id": "nef-rotkreuz-regensburg-76-3-1778665780857",
+          "type": "NEF",
+          "name": "Rotkreuz Regensburg 76/3",
+          "fullName": "Rotkreuz Regensburg 76/3",
+          "shortName": "RK R 76/3",
+          "shift": "7-19, 19-7"
+        }
+      ]
+    },
+    {
+      "id": "drf-intensivhubschrauberstation-regensburg-universit-t",
+      "label": "DRF Intensivhubschrauberstation Regensburg Universität",
+      "address": "eigener Kartenpunkt",
+      "lat": 48.988979,
+      "lng": 12.090379,
+      "vehicles": {
+        "RTH": 1
+      },
+      "units": [
+        {
+          "id": "rth-christoph-regensburg-1778665853156",
+          "type": "RTH",
+          "name": "Christoph Regensburg",
+          "fullName": "Christoph Regensburg",
+          "shortName": "CH Regensburg",
+          "shift": "7-19, 19-7"
+        }
+      ]
+    }
+  ],
+  "hospitals": [
+    {
+      "id": "krankenhaus-barmherzige-br-der",
+      "label": "Krankenhaus Barmherzige Brüder",
+      "address": "Barmherzige Brüder Regensburg",
+      "lat": 49.015601,
+      "lng": 12.063094,
+      "departments": [
+        "internal",
+        "cardiology",
+        "neurology",
+        "trauma",
+        "pediatrics",
+        "stroke",
+        "icu"
+      ]
+    },
+    {
+      "id": "krankenhaus-barmherzige-br-der-st-hedwig",
+      "label": "Krankenhaus Barmherzige Brüder St. Hedwig",
+      "address": "hedwig krankenhaus regensburg",
+      "lat": 49.016879,
+      "lng": 12.078812,
+      "departments": [
+        "internal",
+        "cardiology",
+        "neurology",
+        "trauma",
+        "pediatrics",
+        "icu"
+      ],
+      "pediatricOnly": true
+    },
+    {
+      "id": "universit-tsklinikum-regensburg",
+      "label": "Universitätsklinikum Regensburg",
+      "address": "universitätsklinikum regensburg",
+      "lat": 48.987896,
+      "lng": 12.087126,
+      "departments": [
+        "internal",
+        "cardiology",
+        "neurology",
+        "trauma",
+        "pediatrics",
+        "stroke",
+        "icu"
+      ]
+    },
+    {
+      "id": "krankenhaus-st-josef",
+      "label": "Krankenhaus St. Josef",
+      "address": "Josef krankenhaus",
+      "lat": 49.006822,
+      "lng": 12.119173,
+      "departments": [
+        "internal",
+        "cardiology",
+        "trauma",
+        "obstetrics",
+        "icu"
+      ]
+    },
+    {
+      "id": "krankenhaus-bezirk-regensburg",
+      "label": "Krankenhaus Bezirk Regensburg",
+      "address": "Bezirksklinikum Regensburg",
+      "lat": 48.997967,
+      "lng": 12.08753,
+      "departments": [
+        "neurology",
+        "psychiatry",
+        "stroke",
+        "icu"
+      ]
+    },
+    {
+      "id": "krankenhaus-barmherzige-br-der-st-hedwig-frauenklinik",
+      "label": "Krankenhaus Barmherzige Brüder St. Hedwig (Frauenklinik)",
+      "address": "St hedwig klinik",
+      "lat": 49.016879,
+      "lng": 12.078812,
+      "departments": [
+        "obstetrics"
+      ],
+      "pediatricOnly": false
+    }
+  ],
+  "coverageGeoJson": {
+    "type": "Feature",
+    "properties": {
+      "name": "ILS Regensburg Test Einsatzgebiet"
+    },
+    "geometry": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [
+            12.186756134033205,
+            49.00510966987775
+          ],
+          [
+            12.17714309692383,
+            48.972555195463336
+          ],
+          [
+            12.136802673339846,
+            48.96917461964719
+          ],
+          [
+            12.072086334228516,
+            48.976498910878114
+          ],
+          [
+            12.027969360351564,
+            49.01209090386598
+          ],
+          [
+            12.058696746826172,
+            49.026613237636106
+          ],
+          [
+            12.093544006347656,
+            49.039893522317726
+          ],
+          [
+            12.132854461669922,
+            49.07364099501495
+          ],
+          [
+            12.14590072631836,
+            49.050695206448815
+          ],
+          [
+            12.159805297851562,
+            49.02436199056141
+          ],
+          [
+            12.186756134033205,
+            49.00510966987775
+          ]
+        ]
+      ]
+    }
+  },
+  "callRates": [
+    {
+      "hour": 0,
+      "emergency": 0.35,
+      "transport": 0.1,
+      "scheduled": 0.02
+    },
+    {
+      "hour": 1,
+      "emergency": 0.35,
+      "transport": 0.1,
+      "scheduled": 0.02
+    },
+    {
+      "hour": 2,
+      "emergency": 0.35,
+      "transport": 0.1,
+      "scheduled": 0.02
+    },
+    {
+      "hour": 3,
+      "emergency": 0.35,
+      "transport": 0.1,
+      "scheduled": 0.02
+    },
+    {
+      "hour": 4,
+      "emergency": 0.35,
+      "transport": 0.1,
+      "scheduled": 0.02
+    },
+    {
+      "hour": 5,
+      "emergency": 0.35,
+      "transport": 0.1,
+      "scheduled": 0.02
+    },
+    {
+      "hour": 6,
+      "emergency": 0.35,
+      "transport": 0.1,
+      "scheduled": 0.02
+    },
+    {
+      "hour": 7,
+      "emergency": 0.9,
+      "transport": 0.55,
+      "scheduled": 0.25
+    },
+    {
+      "hour": 8,
+      "emergency": 0.9,
+      "transport": 0.55,
+      "scheduled": 0.25
+    },
+    {
+      "hour": 9,
+      "emergency": 0.9,
+      "transport": 0.55,
+      "scheduled": 0.25
+    },
+    {
+      "hour": 10,
+      "emergency": 0.9,
+      "transport": 0.55,
+      "scheduled": 0.25
+    },
+    {
+      "hour": 11,
+      "emergency": 0.9,
+      "transport": 0.55,
+      "scheduled": 0.25
+    },
+    {
+      "hour": 12,
+      "emergency": 0.9,
+      "transport": 0.55,
+      "scheduled": 0.25
+    },
+    {
+      "hour": 13,
+      "emergency": 0.9,
+      "transport": 0.55,
+      "scheduled": 0.25
+    },
+    {
+      "hour": 14,
+      "emergency": 0.9,
+      "transport": 0.55,
+      "scheduled": 0.25
+    },
+    {
+      "hour": 15,
+      "emergency": 0.9,
+      "transport": 0.55,
+      "scheduled": 0.25
+    },
+    {
+      "hour": 16,
+      "emergency": 0.9,
+      "transport": 0.55,
+      "scheduled": 0.25
+    },
+    {
+      "hour": 17,
+      "emergency": 0.9,
+      "transport": 0.55,
+      "scheduled": 0.02
+    },
+    {
+      "hour": 18,
+      "emergency": 0.9,
+      "transport": 0.55,
+      "scheduled": 0.02
+    },
+    {
+      "hour": 19,
+      "emergency": 0.9,
+      "transport": 0.1,
+      "scheduled": 0.02
+    },
+    {
+      "hour": 20,
+      "emergency": 0.9,
+      "transport": 0.1,
+      "scheduled": 0.02
+    },
+    {
+      "hour": 21,
+      "emergency": 0.9,
+      "transport": 0.1,
+      "scheduled": 0.02
+    },
+    {
+      "hour": 22,
+      "emergency": 0.9,
+      "transport": 0.1,
+      "scheduled": 0.02
+    },
+    {
+      "hour": 23,
+      "emergency": 0.35,
+      "transport": 0.1,
+      "scheduled": 0.02
+    }
+  ]
+}
