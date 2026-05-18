@@ -21,7 +21,7 @@
 };
 
 const el = Object.fromEntries([
-  "map-name", "type", "name", "address", "geocode", "rtw", "ktw", "nef", "ref", "rth", "lat", "lng",
+  "map-name", "type", "name", "address", "foreign-point", "foreign-availability-row", "foreign-availability", "geocode", "rtw", "ktw", "nef", "ref", "rth", "lat", "lng",
   "rates",
   "new-station", "new-hospital", "new-poi", "edit-coverage", "point-dialog", "point-form", "coverage-form", "form-title",
   "cancel-edit", "cancel-coverage", "vehicle-count-section", "unit-section", "hospital-section", "departments",
@@ -297,11 +297,13 @@ function savePoint() {
     label: el.name.value.trim(),
     address: el.address.value.trim() || "eigener Kartenpunkt",
     lat,
-    lng
+    lng,
+    foreign: Boolean(el.foreign_point.checked)
   };
   if (type === "station") {
     point.vehicles = vehicleCounts();
     point.units = namedUnits(point.vehicles);
+    point.foreignAvailabilityProbability = availabilityPercentToProbability(el.foreign_availability.value);
     upsert(state.mapData.stations, point);
     state.mapData.hospitals = state.mapData.hospitals.filter((item) => item.id !== point.id);
     state.mapData.poi = (state.mapData.poi || []).filter((item) => item.id !== point.id);
@@ -339,6 +341,19 @@ function vehicleCounts() {
   };
 }
 
+function availabilityPercentToProbability(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0.5;
+  return Math.max(0, Math.min(100, number)) / 100;
+}
+
+function probabilityToPercent(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 50;
+  const normalized = number > 1 ? number / 100 : number;
+  return Math.round(Math.max(0, Math.min(1, normalized)) * 100);
+}
+
 function namedUnits(vehicles) {
   if (state.editingUnits.length) return state.editingUnits.map((unit) => ({ ...unit }));
   return Object.entries(vehicles).flatMap(([type, count]) =>
@@ -352,6 +367,9 @@ function updateVehicleInputs() {
   el.unit_section.hidden = disabled;
   el.hospital_section.hidden = el.type.value !== "hospital";
   el.poi_section.hidden = el.type.value !== "poi";
+  el.foreign_point.disabled = el.type.value === "poi";
+  el.foreign_availability_row.hidden = el.type.value !== "station";
+  el.foreign_availability.disabled = el.type.value !== "station";
   [el.rtw, el.ktw, el.nef, el.ref, el.rth, el.unit_type, el.unit_name, el.unit_short, el.unit_shift, el.add_unit].forEach((input) => {
     input.disabled = disabled;
   });
@@ -382,9 +400,12 @@ function render() {
     ...(state.mapData.poi || []).map((point) => ({ ...point, type: "poi" }))
   ];
   points.forEach((point) => {
+    const foreignClass = point.foreign ? " foreign-map-point" : "";
+    const markerClass = point.type === "hospital" ? "hospital" : point.type === "poi" ? "poi" : "station station-available";
+    const markerLabel = point.type === "hospital" ? (point.foreign ? "FKH" : "KH") : point.type === "poi" ? "POI" : (point.foreign ? "FRW" : "RW");
     const icon = L.divIcon({
       className: "",
-      html: `<span class="map-marker ${point.type === "hospital" ? "hospital" : point.type === "poi" ? "poi" : "station station-available"}">${point.type === "hospital" ? "KH" : point.type === "poi" ? "POI" : "RW"}</span>`,
+      html: `<span class="map-marker ${markerClass}${foreignClass}">${markerLabel}</span>`,
       iconSize: [34, 34],
       iconAnchor: [17, 17]
     });
@@ -399,11 +420,11 @@ function renderList(points) {
   el.points.innerHTML = "";
   points.forEach((point) => {
     const row = document.createElement("article");
-    row.className = "editor-point";
+    row.className = `editor-point${point.foreign ? " foreign-point" : ""}`;
     const extra = point.type === "station"
-      ? (point.units?.length ? ` | ${point.units.map((unit) => unit.name).join(", ")}` : "")
+      ? `${point.foreign ? " | Fremdwache" : ""}${point.foreign ? ` | ${probabilityToPercent(point.foreignAvailabilityProbability)}% verfügbar` : ""}${point.units?.length ? ` | ${point.units.map((unit) => unit.name).join(", ")}` : ""}`
       : point.type === "hospital"
-        ? ` | ${(point.departments || []).map(departmentLabel).join(", ") || "keine Fachrichtungen"}${point.pediatricOnly ? " | reine Kinderklinik" : ""}`
+        ? `${point.foreign ? " | Fremdkrankenhaus" : ""} | ${(point.departments || []).map(departmentLabel).join(", ") || "keine Fachrichtungen"}${point.pediatricOnly ? " | reine Kinderklinik" : ""}`
         : ` | ${(point.categories || []).join(", ") || "keine Kategorien"}`;
     row.innerHTML = `<div><h3>${escapeHtml(point.label)}</h3><p>${point.type}${escapeHtml(extra)}</p></div>`;
     const actions = document.createElement("div");
@@ -429,6 +450,8 @@ function fillPointForm(point) {
   el.address.value = point.address || "";
   el.lat.value = point.lat.toFixed(6);
   el.lng.value = point.lng.toFixed(6);
+  el.foreign_point.checked = Boolean(point.foreign);
+  el.foreign_availability.value = probabilityToPercent(point.foreignAvailabilityProbability);
   el.rtw.value = point.vehicles?.RTW || 0;
   el.ktw.value = point.vehicles?.KTW || 0;
   el.nef.value = point.vehicles?.NEF || 0;
@@ -597,6 +620,8 @@ function clearCoverageMarkers() {
 function clearPointFields() {
   el.name.value = "";
   el.address.value = "";
+  el.foreign_point.checked = false;
+  el.foreign_availability.value = 50;
   state.editingUnits = [];
   syncCountsFromUnits();
   renderDepartmentChecks();

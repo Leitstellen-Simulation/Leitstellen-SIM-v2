@@ -1,29 +1,76 @@
 # Leitstellen-Simulation
 
-Eine Simulation für den Betrieb einer integrierten Leitstelle für Feuerwehr und Rettungsdienst. Dieses Projekt befindet sich in einem sehr frühen Stadium und dient der technischen Abbildung von Dispositionsabläufen.
+Browserbasierte Simulation einer integrierten Leitstelle mit Rettungsdienst, Feuerwehr, Polizei, Krankentransport, Funkstatus, Einsatzbearbeitung und Kartenlogik.
 
-## Status des Projekts: Frühe Alpha-Version
-Dieses Projekt ist eine sehr frühe Alpha-Version. Es ist noch nicht für den produktiven Einsatz geeignet. Viele Funktionen fehlen noch oder befinden sich im Aufbau. Es ist mit Fehlern und Instabilitäten zu rechnen.
+Das Projekt befindet sich in einer Alpha-Version und ist fuer Tests, Entwicklung und Balancing gedacht. Es ist nicht fuer produktive Leitstellenarbeit geeignet.
 
-## Funktionsumfang
+Dieses Projekt laeuft mit Unterstuetzung durch Codex.
 
-### Aktueller Stand
-* Grundlegende Benutzeroberfläche zur Ansicht von Einsatzmitteln.
-* Einfache Erfassung von Einsatzdaten.
-* Erste Logik zur Zuweisung von Fahrzeugen zu Einsätzen.
+## Installation
 
-### Geplante Funktionen
-* Realitätsgetreue Alarm- und Ausreibeordnung (AAO).
-* Simulation von Funkverkehr (Statusmeldungen).
-* Detaillierte Karte mit Positionsdaten der Einsatzfahrzeuge.
-* Einbindung verschiedener Fachbereiche (Rettungsdienst, Brandschutz, Krankentransport).
+Voraussetzungen:
 
-## Nutzung
-Da sich das Programm in der Alpha-Phase befindet, richtet sich die Nutzung aktuell primär an Tester und Entwickler, die den aktuellen Fortschritt begutachten möchten. Eine Dokumentation der einzelnen Bedienfelder wird zu einem späteren Zeitpunkt erstellt.
-Dieses Projekt läuft mit Unterstützung durch Codex.
+- Node.js 18 oder neuer
+- Ein moderner Browser, z.B. Chrome, Edge oder Firefox
+- Internetverbindung fuer Kartenkacheln und OSRM-Routing
+- Python ist aktuell nicht erforderlich
 
-## Rückmeldungen und Fehlerberichte
-Fehler oder Verbesserungsvorschläge können über die "Issues"-Funktion im Repository gemeldet werden. Da es sich um eine frühe Version handelt, ist jedes Feedback zur Stabilität und Logik hilfreich.
+Start unter Windows:
+
+1. Repository klonen oder entpacken.
+2. `start-dispatchsim.cmd` ausfuehren.
+3. Browser oeffnet automatisch `http://127.0.0.1:4173/index.html`.
+
+Start per Konsole:
+
+```powershell
+node server.mjs
+```
+
+Danach im Browser oeffnen:
+
+```text
+http://127.0.0.1:4173/index.html
+```
+
+Admin/Testbetrieb:
+
+```text
+start-dispatchsim-admin-test.cmd
+```
+
+Der lokale Server speichert Karten und Einsatzdaten ueber die eingebauten API-Endpunkte. Ohne den Node-Server kann die reine Oberflaeche zwar teilweise geladen werden, Speichern und einige Testfunktionen sind dann aber eingeschraenkt.
+
+## Aktuelle Features
+
+- Startbildschirm mit Kartenauswahl, Uhrzeit und Simulationsgeschwindigkeit.
+- Einsatzannahme, Einsatzbearbeitung und Nachalarmierung.
+- Fahrzeugliste mit Status, Schichtlogik, Funkstatus und Sortierung nach Wache, Status, Typ oder Status + Typ.
+- Karte mit Rettungswachen, Fremdwachen, Krankenhaeusern, Fremd-KH, POI, Einsatzstellen und Fahrzeugpositionen.
+- OpenStreetMap/Esri-Kartenanzeige und OSRM-basierte Fahrzeiten mit Fahrzeugprofilen.
+- Unterscheidung von SoSi/ohne SoSi bei Ausrueckzeit und Fahrt.
+- Rettungsdienstlogik mit KTW, RTW, NEF, REF und RTH.
+- Patientenversorgung mit variierender Behandlungsdauer, Fortschrittsanzeige, Mehrpatientenlagen und Krankenhauszuweisung.
+- Transportzielauswahl nach Fachrichtung, optional mit Fremd-KH.
+- Funkleiste mit Status 0/5, Sprechaufforderung und Rueckmeldungen.
+- Status-8-Logik mit Rueckfrage "Einsatzklar?" und verzogener Freimeldung.
+- Fremdwachen und Fremdfahrzeuge mit Verfuegbarkeitswahrscheinlichkeit und 15-Minuten-Neuwuerfelung.
+- Fremdfahrzeuge koennen im Einsatzdialog bei Bedarf eingeblendet werden.
+- Fremdwachen und Fremd-KH sind optisch abgesetzt.
+- Feuerwehr/Polizei/AeND als externe Unterstuetzung.
+- Karteneditor fuer Wachen, Fahrzeuge, Kliniken, Fremdwachen, Fremd-KH, POI und Einsatzgebiet.
+- Einsatzeditor mit POI-Kategorien, Mehrfachauswahl und individuellen Patientenzustandsmeldungen.
+
+## Hinweise
+
+- Die Simulation ist noch im Aufbau. Balancing, Einsatzlogik und Rueckmeldungen koennen sich stark aendern.
+- Karten- und Routingfunktionen haengen von erreichbaren externen Diensten ab.
+- Die Standard-Admin-Zugangsdaten sind nur fuer lokale Entwicklung/Testbetrieb gedacht. Fuer andere Umgebungen `DISPATCH_ADMIN_PASSWORD` setzen.
+
+## Rueckmeldungen und Fehlerberichte
+
+Fehler oder Verbesserungsvorschlaege bitte ueber GitHub Issues melden. Besonders hilfreich sind Funkprotokolle, Uhrzeit, beteiligte Fahrzeuge, Einsatzart und beobachteter Fortschritt.
 
 ## Lizenz
-Die Lizenzierung dieses Projekts ist noch nicht final festgelegt. Die Nutzung und Verbreitung erfolgt derzeit nach Rücksprache mit den Entwicklern.
+
+Die Lizenzierung ist noch nicht final festgelegt. Nutzung und Weitergabe erfolgen derzeit nach Ruecksprache mit den Entwicklern.

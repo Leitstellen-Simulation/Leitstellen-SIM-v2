@@ -564,12 +564,54 @@ label {
   padding: 8px;
 }
 
+.foreign-vehicle-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 8px;
+  border: 1px solid #d5dee9;
+  border-radius: 8px;
+  background: #f8fafc;
+  font-size: 13px;
+  font-weight: 700;
+  color: #334252;
+}
+
+.foreign-vehicle-toggle input {
+  width: auto;
+  min-height: auto;
+}
+
+.foreign-hospital-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 8px;
+  border: 1px dashed #b9c5d1;
+  border-radius: 8px;
+  background: #f2f5f8;
+  color: #596778;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.foreign-hospital-toggle input {
+  width: auto;
+  min-height: auto;
+}
+
 .incident-card + .incident-card,
 .vehicle-row + .vehicle-row,
 .log-entry + .log-entry,
 .dialog-vehicle-row + .dialog-vehicle-row,
 .editor-point + .editor-point {
   margin-top: 7px;
+}
+
+.editor-point.foreign-point {
+  border-style: dashed;
+  background: #f5f7f9;
+  opacity: .76;
 }
 
 .incident-card.active {
@@ -831,6 +873,12 @@ label {
   background: #fff1f1;
 }
 
+.hospital-choice.foreign-hospital {
+  border-style: dashed;
+  opacity: .68;
+  filter: grayscale(.25);
+}
+
 .handoff-actions {
   display: flex;
   flex-wrap: wrap;
@@ -990,8 +1038,37 @@ label {
   gap: 7px;
 }
 
-.multi-select-box select {
-  min-height: 145px;
+.multi-select-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.selected-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-height: 28px;
+  align-items: center;
+  color: #617182;
+  font-size: 12px;
+}
+
+.selected-chip {
+  min-height: 26px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border-color: #bfd0e2;
+  background: #eef4fb;
+  color: #24517f;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.poi-category-grid {
+  max-height: 240px;
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .incident-card.slow-alert {
@@ -1087,6 +1164,27 @@ label {
   text-align: center;
 }
 
+.vehicle-type-label.vehicle-type-KTW {
+  background: #f5c84c;
+  color: #2e2b19 !important;
+}
+
+.vehicle-type-label.vehicle-type-RTW {
+  background: #f28d52;
+  color: #2e2b19 !important;
+}
+
+.vehicle-type-label.vehicle-type-NEF,
+.vehicle-type-label.vehicle-type-RTH {
+  background: #d94b4b;
+  color: #ffffff !important;
+}
+
+.vehicle-type-label.vehicle-type-REF {
+  background: #9aa4ae;
+  color: #ffffff !important;
+}
+
 .start-tools {
   display: flex;
   gap: 8px;
@@ -1174,6 +1272,18 @@ label {
 .dialog-vehicle-row.selected {
   border-color: #2d75b8;
   background: #edf6ff;
+}
+
+.dialog-vehicle-row.foreign-vehicle-row {
+  border-style: dashed;
+  background: #f5f7f9;
+  opacity: .78;
+}
+
+.dialog-vehicle-row.foreign-vehicle-row.selected {
+  border-color: #2d75b8;
+  background: #edf6ff;
+  opacity: .9;
 }
 
 .dialog-vehicle-row {
@@ -1411,6 +1521,13 @@ label {
   outline-offset: 2px;
 }
 
+.map-marker.foreign-map-point {
+  opacity: .55;
+  filter: grayscale(.35);
+  border-style: dashed;
+  box-shadow: 0 2px 8px rgba(18, 32, 45, .16);
+}
+
 .map-marker.poi {
   background: #6b7280;
   border-radius: 6px;
@@ -1633,6 +1750,36 @@ label {
 .support-picker input {
   width: auto;
   min-height: auto;
+}
+
+.patient-condition-editor {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid #d5dee9;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.patient-condition-editor > strong {
+  font-size: 12px;
+  color: #334252;
+}
+
+.patient-condition-editor label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #415162;
+}
+
+.patient-condition-editor textarea {
+  width: 100%;
+  min-height: 56px;
+  resize: vertical;
+  font: inherit;
+  font-weight: 400;
 }
 
 .signal-toggle {

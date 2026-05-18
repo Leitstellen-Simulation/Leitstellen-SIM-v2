@@ -38,6 +38,9 @@ const state = {
   editorPoints: [],
   editingMapPointId: null,
   selectedDialogVehicleIds: new Set(),
+  showForeignVehiclesInDialog: false,
+  showForeignHospitalsInTransport: false,
+  lastForeignAvailabilityRoll: null,
   lastCallTemplateIndex: -1,
   availableMaps: [],
   coveragePoints: [],
@@ -100,6 +103,7 @@ const el = {
   incidentPol: document.querySelector("#incident-pol"),
   incidentCaller: document.querySelector("#incident-caller"),
   incidentNote: document.querySelector("#incident-note"),
+  incidentPatientConditions: document.querySelector("#incident-patient-conditions"),
   incidentMapButton: document.querySelector("#incident-map-button"),
   dialogVehicleList: document.querySelector("#dialog-vehicle-list"),
   editorDialog: document.querySelector("#editor-dialog"),
@@ -188,7 +192,7 @@ el.saveMapButton.addEventListener("click", saveCurrentMap);
 makeDialogDraggable(el.incidentDialog);
 
 populateKeywordSelectGrouped();
-loadCenterOptions();
+loadCenterOptions().then(startFromStartupOptions);
 
 document.querySelectorAll(".tab").forEach((button) => {
   button.addEventListener("click", () => {
@@ -200,6 +204,7 @@ document.querySelectorAll(".tab").forEach((button) => {
 });
 
 async function startShift() {
+  const options = startupOptions();
   state.center = await loadSelectedMap(el.centerSelect.value) || await loadDefaultMap() || createEmptyCenter();
   state.center.callRates = normalizedCallRates(state.center.callRates);
   state.incidentCatalog = await loadIncidentCatalog();
@@ -216,12 +221,16 @@ async function startShift() {
   state.pendingCoverageVehicleId = null;
   state.selectedIncidentId = null;
   state.selectedDialogVehicleIds = new Set();
+  state.showForeignVehiclesInDialog = false;
+  state.showForeignHospitalsInTransport = false;
+  state.lastForeignAvailabilityRoll = null;
   state.timeouts.forEach((timer) => clearTimeout(timer));
   state.timeouts = [];
   state.speed = Number(el.speedSelect.value) || 1;
   state.lastClockTick = Date.now();
   state.lastCallRateMinute = Math.floor(state.minute);
   state.vehicles = seedVehicles(state.center);
+  rollForeignVehicleAvailability(true);
 
   el.activeCenter.textContent = state.center.name;
   el.operatorLabel.textContent = state.dispatcher;
@@ -231,6 +240,8 @@ async function startShift() {
   el.dispatchScreen.classList.remove("hidden");
   document.body.classList.add("dispatch-active");
   clearLogs();
+  state.adminMode = options.admin;
+  state.testMode = options.test;
   updateAdminControls();
   logCall("Schicht gestartet. Telefon ist frei.", "call");
   logRadio("Alle Fahrzeuge melden einsatzbereit.", "radio");
@@ -238,6 +249,33 @@ async function startShift() {
   renderAll();
   receiveCall();
   startClock();
+}
+
+function startupOptions() {
+  const params = new URLSearchParams(window.location.search);
+  const preset = String(params.get("preset") || "").toLowerCase();
+  if (preset === "admin-test") {
+    return {
+      admin: true,
+      test: true,
+      autostart: true
+    };
+  }
+  return {
+    admin: startupFlag(params.get("admin")),
+    test: startupFlag(params.get("test")),
+    autostart: startupFlag(params.get("autostart"))
+  };
+}
+
+function startupFlag(value) {
+  return ["1", "true", "yes", "ja", "on"].includes(String(value || "").toLowerCase());
+}
+
+function startFromStartupOptions() {
+  if (!startupOptions().autostart || !el.startScreen || el.startScreen.classList.contains("hidden")) return;
+  if (!el.dispatcherName.value.trim()) el.dispatcherName.value = "Admin";
+  startShift();
 }
 
 async function loadCenterOptions() {
@@ -456,6 +494,7 @@ function populateKeywordSelectGrouped(filter = "") {
       el.incidentKeyword.value = keyword.label;
       hideKeywordOptions();
       renderDispositionSuggestion();
+      renderPatientConditionEditor(currentIncidentDialogSource());
       const source = currentIncidentDialogSource();
       if (source) renderDialogVehicles(source, state.editingIncidentId ? source : null);
     });
@@ -515,63 +554,95 @@ function seedVehicles(center) {
     const vehicles = [];
     if (Array.isArray(station.units) && station.units.length) {
       station.units.forEach((unit, unitIndex) => {
-        const type = unit.type || unit.name?.split(" ")[0]?.toUpperCase() || "RTW";
-        const name = unit.fullName || unit.name || `${type} ${stationIndex + 1}/${unitIndex + 1}`;
-        vehicles.push({
-          id: `${type}-${stationIndex + 1}-${unitIndex + 1}`,
-          name,
-          shortName: unit.shortName || unit.short || name,
-          shift: unit.shift || "",
-          type,
-          label: vehicleTypeLabel(type),
-          station: station.label,
-          stationId: station.id,
-          status: 2,
-          statusText: "auf Wache",
-          lat: station.lat + unitIndex * 0.00045,
-          lng: station.lng + unitIndex * 0.00045,
-          target: null,
-          incidentId: null,
-          radioStatus: null,
-          radioMessage: "",
-          awaitingSpeechPrompt: false,
-          waitingForSpeechPrompt: false,
-          pendingTransportRequest: null,
-          shiftWarning: false,
-          coveragePointId: null
-        });
+        vehicles.push(createVehicleFromStationUnit(station, stationIndex, unit, unitIndex));
       });
       return vehicles;
     }
     Object.entries(station.vehicles || { RTW: 1 }).forEach(([type, count]) => {
       for (let unitIndex = 0; unitIndex < count; unitIndex += 1) {
-        vehicles.push({
-          id: `${type}-${stationIndex + 1}-${unitIndex + 1}`,
-          name: `${type} ${stationIndex + 1}/${unitIndex + 1}`,
-          shortName: `${type} ${stationIndex + 1}/${unitIndex + 1}`,
-          shift: "",
-          type,
-          label: vehicleTypeLabel(type),
-          station: station.label,
-          stationId: station.id,
-          status: 2,
-          statusText: "auf Wache",
-          lat: station.lat + unitIndex * 0.00045,
-          lng: station.lng + unitIndex * 0.00045,
-          target: null,
-          incidentId: null,
-          radioStatus: null,
-          radioMessage: "",
-          awaitingSpeechPrompt: false,
-          waitingForSpeechPrompt: false,
-          pendingTransportRequest: null,
-          shiftWarning: false,
-          coveragePointId: null
-        });
+        vehicles.push(createVehicleFromStationUnit(station, stationIndex, { type }, unitIndex));
       }
     });
     return vehicles;
   });
+}
+
+function createVehicleFromStationUnit(station, stationIndex, unit, unitIndex) {
+  const type = unit.type || unit.name?.split(" ")[0]?.toUpperCase() || "RTW";
+  const fallbackName = `${type} ${stationIndex + 1}/${unitIndex + 1}`;
+  const name = unit.fullName || unit.name || fallbackName;
+  const foreign = stationIsForeign(station) || Boolean(unit.foreign);
+  return {
+    id: unit.id || `${type}-${stationIndex + 1}-${unitIndex + 1}`,
+    name,
+    shortName: unit.shortName || unit.short || name,
+    shift: unit.shift || "",
+    type,
+    label: vehicleTypeLabel(type),
+    station: station.label,
+    stationId: station.id,
+    foreign,
+    availabilityProbability: foreignAvailabilityProbability(unit, station),
+    status: 2,
+    statusText: foreign ? "auf Fremdwache verfügbar" : "auf Wache",
+    lat: station.lat + unitIndex * 0.00045,
+    lng: station.lng + unitIndex * 0.00045,
+    target: null,
+    incidentId: null,
+    radioStatus: null,
+    radioMessage: "",
+    awaitingSpeechPrompt: false,
+    waitingForSpeechPrompt: false,
+    pendingTransportRequest: null,
+    shiftWarning: false,
+    coveragePointId: null
+  };
+}
+
+function stationIsForeign(station) {
+  return Boolean(station?.foreign || station?.foreignStation || station?.outsideCoverage || station?.external);
+}
+
+function foreignAvailabilityProbability(unit = {}, station = {}) {
+  const value = unit.availabilityProbability
+    ?? unit.foreignAvailabilityProbability
+    ?? station.availabilityProbability
+    ?? station.foreignAvailabilityProbability
+    ?? 0.5;
+  return normalizeProbability(value, 0.5);
+}
+
+function normalizeProbability(value, fallback = 0) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  const normalized = number > 1 ? number / 100 : number;
+  return Math.max(0, Math.min(1, normalized));
+}
+
+function rollForeignVehicleAvailability(force = false) {
+  const rollSlot = Math.floor(Math.floor(state.minute) / 15);
+  if (!force && state.lastForeignAvailabilityRoll === rollSlot) return;
+  state.lastForeignAvailabilityRoll = rollSlot;
+  let changed = false;
+  state.vehicles.forEach((vehicle) => {
+    if (!vehicle.foreign || ![2, 6].includes(vehicle.status) || vehicle.nextIncidentId || vehicle.incidentId) return;
+    const station = state.center.stations.find((item) => item.id === vehicle.stationId);
+    if (!vehicleInShift(vehicle)) {
+      vehicle.status = 6;
+      vehicle.statusText = "außer Dienst";
+      changed = true;
+      return;
+    }
+    const available = Math.random() < (vehicle.availabilityProbability ?? 0.5);
+    vehicle.status = available ? 2 : 6;
+    vehicle.statusText = available ? "auf Fremdwache verfügbar" : "Fremdwache nicht verfügbar";
+    if (station) {
+      vehicle.lat = station.lat;
+      vehicle.lng = station.lng;
+    }
+    changed = true;
+  });
+  if (changed && !force) renderAll();
 }
 
 function initMap() {
@@ -646,6 +717,7 @@ function startClock() {
     state.lastClockTick = now;
     state.minute = (state.minute + (elapsedMs / 60000) * state.speed) % 1440;
     processCallRates();
+    rollForeignVehicleAvailability();
     renderClock();
     if (state.incidents.some((incident) => incident.status !== "geschlossen")) {
       renderIncidents();
@@ -722,6 +794,7 @@ function receiveCall(forcedType = null) {
     lat: Number.isFinite(template.lat) ? template.lat : state.center.mapCenter[0],
     lng: Number.isFinite(template.lng) ? template.lng : state.center.mapCenter[1]
   };
+  keepCallInsideCoverage(state.pendingCall);
   updateCallAddressFromNearestSource(state.pendingCall);
   reverseGeocodeCall(state.pendingCall);
   playPhoneRing();
@@ -733,12 +806,15 @@ function receiveCall(forcedType = null) {
 
 function resolveTemplateLocation(template) {
   if (template.locationMode === "hospital" && state.center.hospitals?.length) {
-    const hospital = state.center.hospitals[randomInt(0, state.center.hospitals.length - 1)];
+    const hospitals = locationsInsideCoverage(state.center.hospitals);
+    const hospital = hospitals[randomInt(0, hospitals.length - 1)] || state.center.hospitals[randomInt(0, state.center.hospitals.length - 1)];
     return { ...template, location: hospital.label, lat: hospital.lat, lng: hospital.lng, fixedDestinationId: template.fixedDestinationId };
   }
   if (template.locationMode === "poi" && state.center.poi?.length) {
     const candidates = matchingPoiCandidates(template);
-    const poi = candidates[randomInt(0, candidates.length - 1)] || state.center.poi[randomInt(0, state.center.poi.length - 1)];
+    const fallbackPoi = locationsInsideCoverage(state.center.poi);
+    const poi = candidates[randomInt(0, candidates.length - 1)] || fallbackPoi[randomInt(0, fallbackPoi.length - 1)];
+    if (!poi) return resolveTemplateLocation({ ...template, locationMode: "random" });
     return { ...template, location: poi.label, lat: poi.lat, lng: poi.lng };
   }
   if (template.locationMode === "random") {
@@ -751,7 +827,7 @@ function resolveTemplateLocation(template) {
 function matchingPoiCandidates(template) {
   const poiIds = listValue(template.poiIds).map((item) => item.toLowerCase());
   const categories = listValue(template.poiCategories).map((item) => item.toLowerCase());
-  return (state.center.poi || []).filter((poi) => {
+  return locationsInsideCoverage(state.center.poi || []).filter((poi) => {
     const id = String(poi.id || poi.label || "").toLowerCase();
     const poiCategories = (poi.categories || []).map((category) => String(category).toLowerCase());
     const idMatches = !poiIds.length || poiIds.includes(id);
@@ -766,33 +842,109 @@ function listValue(value) {
 }
 
 function randomPointInCoverage() {
-  if (state.center.poi?.length && Math.random() < .45) {
-    const poi = state.center.poi[randomInt(0, state.center.poi.length - 1)];
+  const poiPool = locationsInsideCoverage(state.center.poi || []);
+  if (poiPool.length && Math.random() < .45) {
+    const poi = poiPool[randomInt(0, poiPool.length - 1)];
     return { lat: poi.lat, lng: poi.lng, label: poi.label };
   }
-  const ring = state.center.coverageGeoJson?.geometry?.coordinates?.[0];
+  const ring = primaryCoverageRing();
   if (!Array.isArray(ring) || !ring.length) {
     return { lat: state.center.mapCenter[0], lng: state.center.mapCenter[1], label: nearestAddressLabel(state.center.mapCenter[0], state.center.mapCenter[1], defaultLocationLabel()) };
   }
   const lngs = ring.map((point) => point[0]);
   const lats = ring.map((point) => point[1]);
-  return {
-    lat: randomFloat(Math.min(...lats), Math.max(...lats)),
-    lng: randomFloat(Math.min(...lngs), Math.max(...lngs))
-  };
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    const point = {
+      lat: randomFloat(Math.min(...lats), Math.max(...lats)),
+      lng: randomFloat(Math.min(...lngs), Math.max(...lngs))
+    };
+    if (callPointInsideCoverage(point.lat, point.lng)) return point;
+  }
+  return { lat: state.center.mapCenter[0], lng: state.center.mapCenter[1], label: nearestAddressLabel(state.center.mapCenter[0], state.center.mapCenter[1], defaultLocationLabel()) };
+}
+
+function keepCallInsideCoverage(call) {
+  if (!call || !Number.isFinite(call.lat) || !Number.isFinite(call.lng)) return;
+  if (callPointInsideCoverage(call.lat, call.lng)) return;
+  const replacement = randomPointInCoverage();
+  call.lat = replacement.lat;
+  call.lng = replacement.lng;
+  call.location = replacement.label || nearestAddressLabel(replacement.lat, replacement.lng, call.location);
+  call.locationMode = "random";
+}
+
+function locationsInsideCoverage(locations = []) {
+  return (locations || []).filter((location) => Number.isFinite(location.lat)
+    && Number.isFinite(location.lng)
+    && callPointInsideCoverage(location.lat, location.lng));
+}
+
+function callPointInsideCoverage(lat, lng) {
+  const geometry = callCoverageGeometry(state.center?.coverageGeoJson);
+  if (!geometry) return true;
+  return callGeometryContainsPoint(geometry, lat, lng);
+}
+
+function callCoverageGeometry(geoJson) {
+  if (!geoJson) return null;
+  if (geoJson.type === "Feature") return geoJson.geometry || null;
+  if (geoJson.type === "FeatureCollection") {
+    return {
+      type: "GeometryCollection",
+      geometries: (geoJson.features || []).map((feature) => feature.geometry).filter(Boolean)
+    };
+  }
+  return geoJson;
+}
+
+function primaryCoverageRing() {
+  const geometry = callCoverageGeometry(state.center?.coverageGeoJson);
+  if (geometry?.type === "Polygon") return geometry.coordinates?.[0];
+  if (geometry?.type === "MultiPolygon") return geometry.coordinates?.[0]?.[0];
+  if (geometry?.type === "GeometryCollection") {
+    const polygon = (geometry.geometries || []).find((item) => item.type === "Polygon");
+    const multiPolygon = (geometry.geometries || []).find((item) => item.type === "MultiPolygon");
+    return polygon?.coordinates?.[0] || multiPolygon?.coordinates?.[0]?.[0] || null;
+  }
+  return null;
+}
+
+function callGeometryContainsPoint(geometry, lat, lng) {
+  if (!geometry) return false;
+  if (geometry.type === "Polygon") return callPolygonContainsPoint(geometry.coordinates, lat, lng);
+  if (geometry.type === "MultiPolygon") return (geometry.coordinates || []).some((polygon) => callPolygonContainsPoint(polygon, lat, lng));
+  if (geometry.type === "GeometryCollection") return (geometry.geometries || []).some((item) => callGeometryContainsPoint(item, lat, lng));
+  return false;
+}
+
+function callPolygonContainsPoint(rings, lat, lng) {
+  if (!Array.isArray(rings) || !rings.length) return false;
+  if (!callRingContainsPoint(rings[0], lat, lng)) return false;
+  return !rings.slice(1).some((ring) => callRingContainsPoint(ring, lat, lng));
+}
+
+function callRingContainsPoint(ring, lat, lng) {
+  let inside = false;
+  for (let index = 0, previous = ring.length - 1; index < ring.length; previous = index, index += 1) {
+    const [lngA, latA] = ring[index];
+    const [lngB, latB] = ring[previous];
+    const intersects = (latA > lat) !== (latB > lat)
+      && lng < ((lngB - lngA) * (lat - latA)) / ((latB - latA) || 1e-9) + lngA;
+    if (intersects) inside = !inside;
+  }
+  return inside;
 }
 
 function updateCallAddressFromNearestSource(call) {
   if (!call || !Number.isFinite(call.lat) || !Number.isFinite(call.lng)) return;
-  if (call.locationMode !== "random" && call.location) return;
   call.location = nearestAddressLabel(call.lat, call.lng, call.location);
 }
 
 function nearestAddressLabel(lat, lng, fallback = defaultLocationLabel()) {
   const candidates = [
-    ...(state.center.poi || []),
-    ...(state.center.hospitals || []),
-    ...(state.center.stations || [])
+    ...locationsInsideCoverage(state.center.poi || []),
+    ...locationsInsideCoverage(state.center.hospitals || []),
+    ...locationsInsideCoverage(state.center.stations || [])
   ]
     .filter((item) => Number.isFinite(item.lat) && Number.isFinite(item.lng))
     .map((item) => ({
@@ -800,7 +952,7 @@ function nearestAddressLabel(lat, lng, fallback = defaultLocationLabel()) {
       distance: mapDistance(lat, lng, item.lat, item.lng)
     }))
     .sort((a, b) => a.distance - b.distance);
-  if (candidates[0]?.distance <= 0.45) return candidates[0].label;
+  if (candidates[0]) return candidates[0].label;
   return fallback || defaultLocationLabel();
 }
 
@@ -1070,15 +1222,17 @@ function openIncidentDialog(source = null) {
 
   state.editingIncidentId = incident?.id || null;
   state.selectedDialogVehicleIds = new Set();
+  state.showForeignVehiclesInDialog = false;
   el.incidentDialog.querySelector(".modal-header h2").textContent = incident ? "Einsatz bearbeiten" : "Neuen Einsatz erstellen";
   el.incidentLocation.value = call.location || defaultLocationLabel();
   populateKeywordSelectGrouped();
   el.incidentKeyword.value = call.keyword && keywordDefaults[call.keyword] ? call.keyword : "";
   setIncidentSignal(call.signal ? "yes" : "no");
-  el.incidentFw.checked = Boolean(incident?.requiredServices?.includes("FW") || call.requiredServices?.includes?.("FW"));
-  el.incidentPol.checked = Boolean(incident?.requiredServices?.includes("POL") || call.requiredServices?.includes?.("POL"));
+  el.incidentFw.checked = Boolean(incident?.requiredServices?.includes("FW") || call.requiredServices?.includes?.("FW") || (incident?.services?.FW && incident.services.FW.status !== "nicht alarmiert"));
+  el.incidentPol.checked = Boolean(incident?.requiredServices?.includes("POL") || call.requiredServices?.includes?.("POL") || (incident?.services?.POL && incident.services.POL.status !== "nicht alarmiert"));
   el.incidentCaller.value = call.callerName || "";
   el.incidentNote.value = call.note || "";
+  renderPatientConditionEditor(call);
   document.querySelector("#create-incident-button").textContent = incident ? "Änderungen speichern" : "Einsatz erstellen";
   document.querySelector("#create-alarm-button").textContent = incident ? "Speichern & weitere alarmieren" : "Erstellen & alarmieren";
   renderDispositionSuggestion();
@@ -1134,6 +1288,66 @@ function currentIncidentDialogSource() {
     : state.pendingCall;
 }
 
+function renderPatientConditionEditor(source) {
+  if (!el.incidentPatientConditions) return;
+  const currentValues = collectPatientConditionInputs();
+  const patients = dialogPatientsForConditionEditor(source);
+  el.incidentPatientConditions.innerHTML = "";
+  if (patients.length <= 1) {
+    el.incidentPatientConditions.hidden = true;
+    return;
+  }
+  el.incidentPatientConditions.hidden = false;
+  const title = document.createElement("strong");
+  title.textContent = "Patientenzustand";
+  el.incidentPatientConditions.append(title);
+  patients.forEach((patient) => {
+    const label = document.createElement("label");
+    label.dataset.patientId = patient.id;
+    label.textContent = patient.label;
+    const input = document.createElement("textarea");
+    input.rows = 2;
+    input.dataset.patientId = patient.id;
+    input.placeholder = "z.B. kritisch, Rauchgasexposition, Ziel: Innere";
+    input.value = currentValues[patient.id] ?? patient.conditionReport ?? patient.report ?? "";
+    label.append(input);
+    el.incidentPatientConditions.append(label);
+  });
+}
+
+function collectPatientConditionInputs() {
+  if (!el.incidentPatientConditions) return {};
+  return [...el.incidentPatientConditions.querySelectorAll("textarea[data-patient-id]")]
+    .reduce((values, input) => {
+      values[input.dataset.patientId] = input.value.trim();
+      return values;
+    }, {});
+}
+
+function dialogPatientsForConditionEditor(source) {
+  if (!source) return [];
+  if (source.patient?.patients?.length) {
+    return source.patient.patients.map((patient, index) => ({
+      id: patient.id || `pat-${index + 1}`,
+      label: patient.label || `Pat ${index + 1}`,
+      conditionReport: patient.conditionReport || patient.report || ""
+    }));
+  }
+  if (Array.isArray(source.patients) && source.patients.length) {
+    return source.patients.map((patient, index) => ({
+      id: patient.id || `pat-${index + 1}`,
+      label: patient.label || `Pat ${index + 1}`,
+      conditionReport: patient.conditionReport || patient.patientCondition || patient.report || ""
+    }));
+  }
+  const count = Math.max(1, Number(source.patientCount) || 1);
+  return Array.from({ length: count }, (_, index) => ({
+    id: `pat-${index + 1}`,
+    label: `Pat ${index + 1}`,
+    conditionReport: ""
+  }));
+}
+
 function nearestDispositionVehicle(call, type, unavailableIds) {
   const exact = nearestFreeVehicleOfType(call, type, unavailableIds);
   if (exact) return exact;
@@ -1175,29 +1389,33 @@ function submitIncidentDialog(event) {
   const defaultRequired = normalizeRequiredVehicles(defaults.required);
   const fallbackLat = Number.isFinite(source.lat) ? source.lat : state.center.mapCenter[0];
   const fallbackLng = Number.isFinite(source.lng) ? source.lng : state.center.mapCenter[1];
+  const existingServices = editingIncident?.services || source.services || {};
+  const selectedRequiredServices = [el.incidentFw.checked ? "FW" : null, el.incidentPol.checked ? "POL" : null].filter(Boolean);
   const incidentData = {
     ...source,
     keyword,
     type: defaults.type,
     required: defaultRequired,
     signal: el.incidentSignal.value === "yes",
-    requiredServices: [el.incidentFw.checked ? "FW" : null, el.incidentPol.checked ? "POL" : null].filter(Boolean),
+    requiredServices: selectedRequiredServices,
     services: {
-      FW: createServiceState(),
-      POL: createServiceState()
+      FW: existingServices.FW || createServiceState(),
+      POL: existingServices.POL || createServiceState()
     },
     callerName: el.incidentCaller.value.trim() || source.callerName,
     location: el.incidentLocation.value.trim() || source.location || defaultLocationLabel(),
     lat: fallbackLat,
     lng: fallbackLng,
-    note: el.incidentNote.value.trim()
+    note: el.incidentNote.value.trim(),
+    patientConditions: collectPatientConditionInputs()
   };
   const incident = editingIncident || createIncident(incidentData);
   if (editingIncident) {
     const updatedPatient = updatePatientProfile(editingIncident.patient, incidentData);
     Object.assign(editingIncident, incidentData, {
       patient: updatedPatient,
-      required: updatedPatient.requiredVehicles
+      required: updatedPatient.requiredVehicles,
+      requiredServices: requiredExternalServices(incidentData, updatedPatient)
     });
     editingIncident.status = hasRequiredVehicles(editingIncident) ? editingIncident.status : "in Bearbeitung";
     logRadio(`Einsatz bearbeitet: ${editingIncident.keyword} in ${editingIncident.location}.`, "radio");
@@ -1299,7 +1517,7 @@ function createPatientProfile(call) {
   const child = keyword.includes("Kind") || keyword.includes("Säugling");
   const transport = call.type === "transport" || keyword.includes("KTP") || keyword.includes("Verlegung");
   const departmentKey = call.requiredDepartmentKey || call.requiredDepartmentKeys?.[0] || departmentKeyForKeyword(keyword, trauma, child);
-  const patients = normalizePatients(call, departmentKey);
+  const patients = applyPatientConditionReports(normalizePatients(call, departmentKey), call.patientConditions);
   const requiredVehicles = aggregateRequiredVehicles(patients, call.required || ["RTW"]);
   return {
     condition: transport ? "transportstabil" : critical ? "kritisch" : "stabil",
@@ -1325,6 +1543,7 @@ function createPatientProfile(call) {
 
 function updatePatientProfile(existing, call) {
   const next = createPatientProfile(call);
+  const patients = applyPatientConditionReports(existing?.patients?.length ? existing.patients : next.patients, call.patientConditions);
   return {
     ...next,
     status: existing?.status || next.status,
@@ -1334,8 +1553,15 @@ function updatePatientProfile(existing, call) {
     report: existing?.report || "",
     pendingReport: existing?.pendingReport || next.pendingReport,
     situationReport: existing?.situationReport || next.situationReport,
-    patients: existing?.patients?.length ? existing.patients : next.patients
+    patients
   };
+}
+
+function applyPatientConditionReports(patients, patientConditions = {}) {
+  return (patients || []).map((patient) => {
+    if (!Object.prototype.hasOwnProperty.call(patientConditions, patient.id)) return patient;
+    return { ...patient, conditionReport: patientConditions[patient.id]?.trim() || "" };
+  });
 }
 
 function normalizePatients(call, fallbackDepartmentKey) {
@@ -1354,6 +1580,7 @@ function normalizePatients(call, fallbackDepartmentKey) {
         requiresDoctorAccompaniment: Boolean(patient.requiresDoctorAccompaniment),
         needsFW: Boolean(patient.needsFW),
         needsPOL: Boolean(patient.needsPOL),
+        conditionReport: patient.conditionReport || patient.patientCondition || patient.report || "",
         noTransportProbability: refOnly ? 1 : clampProbability(patient.noTransportProbability),
         noTransportText: patient.noTransportText || (refOnly ? "Ambulante Versorgung durch REF ausreichend, kein Transport." : "Ambulante Versorgung ausreichend, kein Transport."),
         transportNeeded: refOnly ? false : patient.transportNeeded !== false,
@@ -1374,6 +1601,7 @@ function normalizePatients(call, fallbackDepartmentKey) {
     needsFW: false,
     needsPOL: false,
     requiresDoctorAccompaniment: false,
+    conditionReport: "",
     noTransportProbability: baseRefOnly ? 1 : 0,
     noTransportText: baseRefOnly ? "Ambulante Versorgung durch REF ausreichend, kein Transport." : "Ambulante Versorgung ausreichend, kein Transport.",
     transportNeeded: baseRefOnly ? false : call.type !== "scheduled",

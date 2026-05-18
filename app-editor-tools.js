@@ -30,7 +30,7 @@ function openCoverageDialog() {
 }
 
 function renderCoverageDialog() {
-  const available = state.vehicles.filter((vehicle) => [1, 2].includes(vehicle.status) && !vehicle.nextIncidentId);
+  const available = state.vehicles.filter((vehicle) => !vehicle.foreign && [1, 2].includes(vehicle.status) && !vehicle.nextIncidentId);
   el.coverageList.innerHTML = "";
   if (!available.length) {
     el.coverageList.className = "coverage-list empty-state";

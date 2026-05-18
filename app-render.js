@@ -15,7 +15,7 @@ function renderRadioAlerts() {
     button.type = "button";
     button.className = `radio-alert radio-alert-${vehicle.radioStatus}`;
     button.textContent = `${vehicle.radioStatus} - ${vehicle.shortName || vehicle.name}`;
-    button.title = `Status ${vehicle.radioStatus} ${vehicle.name} annehmen`;
+    button.title = `Status ${vehicle.radioStatus} ${vehicle.radioStatus === 0 ? "dringenden Sprechwunsch" : "Sprechwunsch"} ${vehicle.name} annehmen`;
     button.addEventListener("click", () => sendSpeechPrompt(vehicle.id));
     el.radioAlerts.append(button);
   });
@@ -42,7 +42,7 @@ function updateShiftStates() {
       vehicle.statusText = "außer Dienst";
       changed = true;
     }
-    if (inShift && vehicle.status === 6) {
+    if (inShift && vehicle.status === 6 && !vehicle.foreign) {
       vehicle.status = 2;
       vehicle.statusText = "auf Wache";
       changed = true;
@@ -53,18 +53,27 @@ function updateShiftStates() {
 
 function vehicleInShift(vehicle) {
   if (!vehicle.shift || vehicle.shift.toLowerCase() === "24h") return true;
-  return vehicle.shift.split(",").some((interval) => vehicleInShiftInterval(interval.trim()));
+  return vehicle.shift.split(/[,;]/).some((interval) => vehicleInShiftInterval(interval.trim()));
 }
 
 function vehicleInShiftInterval(interval) {
-  const match = interval.match(/(\d{1,2})(?::?(\d{2}))?\s*-\s*(\d{1,2})(?::?(\d{2}))?/);
+  const match = interval.match(/^(\d{1,2})(?:[:.](\d{2}))?\s*-\s*(\d{1,2})(?:[:.](\d{2}))?$/);
   if (!match) return true;
-  const start = Number(match[1]) * 60 + Number(match[2] || 0);
-  const end = Number(match[3]) * 60 + Number(match[4] || 0);
+  const start = shiftTimeToMinute(match[1], match[2]);
+  const end = shiftTimeToMinute(match[3], match[4]);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return true;
   const now = Math.floor(state.minute) % 1440;
   if (start === end) return true;
   if (start < end) return now >= start && now < end;
   return now >= start || now < end;
+}
+
+function shiftTimeToMinute(hourText, minuteText = "0") {
+  const hour = Number(hourText);
+  const minute = Number(minuteText || 0);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 24 || minute < 0 || minute > 59) return NaN;
+  if (hour === 24 && minute !== 0) return NaN;
+  return hour === 24 ? 1440 : hour * 60 + minute;
 }
 
 function renderMap() {
@@ -76,17 +85,20 @@ function renderMap() {
       .map(([type, count]) => `${count} ${type}`)
       .join(", ");
     const availableCount = stationAvailableVehicles(station).length;
-    const stationType = availableCount ? "station station-available" : "station station-empty";
-    const stationLabel = station.vehicles?.RTH && !station.vehicles?.RTW && !station.vehicles?.KTW ? "RTH"
+    const foreignStation = isForeignMapPoint(station);
+    const stationType = `${availableCount ? "station station-available" : "station station-empty"}${foreignStation ? " foreign-map-point" : ""}`;
+    const stationLabel = foreignStation ? "FRW" : station.vehicles?.RTH && !station.vehicles?.RTW && !station.vehicles?.KTW ? "RTH"
       : station.vehicles?.NEF && !station.vehicles?.RTW && !station.vehicles?.KTW ? "NEF"
         : "RW";
     const availabilityText = availableCount ? `${availableCount} Fahrzeug(e) an der Wache` : "keine Fahrzeuge an der Wache";
+    const stationKind = foreignStation ? "Fremdwache" : "Rettungswache";
     const position = offsetStationPosition(station);
-    const marker = addMapMarker("stations", position.lat, position.lng, stationLabel, stationType, `<strong>${escapeHtml(station.label)}</strong><br>${escapeHtml(station.address)}<br>${escapeHtml(vehicleSummary)}<br>${escapeHtml(availabilityText)}`);
+    const marker = addMapMarker("stations", position.lat, position.lng, stationLabel, stationType, `<strong>${escapeHtml(station.label)}</strong><br>${escapeHtml(stationKind)}<br>${escapeHtml(station.address)}<br>${escapeHtml(vehicleSummary)}<br>${escapeHtml(availabilityText)}`);
     marker.bindPopup(stationPopupContent(station), { autoClose: true, closeOnClick: true, closeButton: true });
   });
   state.center.hospitals.forEach((hospital) => {
-    addMapMarker("hospitals", hospital.lat, hospital.lng, "KH", "hospital", `<strong>${escapeHtml(hospital.label)}</strong><br>${escapeHtml(hospital.address)}`);
+    const foreignHospital = isForeignMapPoint(hospital);
+    addMapMarker("hospitals", hospital.lat, hospital.lng, foreignHospital ? "FKH" : "KH", `hospital${foreignHospital ? " foreign-map-point" : ""}`, `<strong>${escapeHtml(hospital.label)}</strong><br>${foreignHospital ? "Fremdkrankenhaus<br>" : ""}${escapeHtml(hospital.address)}`);
   });
   state.incidents.filter((incident) => incident.status !== "geschlossen").forEach((incident) => {
     const lat = Number.isFinite(incident.lat) ? incident.lat : state.center.mapCenter[0];
@@ -135,6 +147,10 @@ function offsetStationPosition(station) {
   const overlapsHospital = state.center.hospitals.some((hospital) => mapDistance(station.lat, station.lng, hospital.lat, hospital.lng) < .08);
   if (!overlapsHospital) return { lat: station.lat, lng: station.lng };
   return { lat: station.lat + .0012, lng: station.lng - .0012 };
+}
+
+function isForeignMapPoint(point) {
+  return Boolean(point?.foreign || point?.foreignStation || point?.outsideCoverage || point?.external);
 }
 
 function stationAvailableVehicles(station) {
@@ -212,7 +228,7 @@ function vehiclePopupContent(vehicle) {
   }
   if (vehicle.status === 7) addPopupButton(wrapper, "Zielortwechsel", () => changeTransportDestination(vehicle.id));
   if (canReleaseAccompanyingDoctor(vehicle)) addPopupButton(wrapper, "abkömmlich freimelden", () => releaseAccompanyingDoctor(vehicle.id));
-  if (vehicle.status === 8) addPopupButton(wrapper, "einsatzklar?", () => clearVehicle(vehicle.id));
+  if (vehicle.status === 8) addPopupButton(wrapper, "einsatzklar?", () => askVehicleReadiness(vehicle.id));
   return wrapper;
 }
 
@@ -277,11 +293,11 @@ function toggleVehicleSignal(vehicleId) {
 
 function rescaleVehicleRouteForSignal(vehicle, oldSignal, newSignal) {
   if (!vehicle.routeMeta || oldSignal === newSignal || vehicle.type === "RTH") return;
-  const oldSpeed = routeSpeedKmh(vehicle, oldSignal);
-  const newSpeed = routeSpeedKmh(vehicle, newSignal);
-  if (!oldSpeed || !newSpeed || oldSpeed === newSpeed) return;
+  const oldDuration = routeTravelDurationMs(vehicle, vehicle.routeMeta, oldSignal);
+  const newDuration = routeTravelDurationMs(vehicle, vehicle.routeMeta, newSignal);
+  if (!oldDuration || !newDuration || oldDuration === newDuration) return;
   const now = Date.now();
-  const remaining = Math.max(0, vehicle.routeMeta.endAt - now) * (oldSpeed / newSpeed);
+  const remaining = Math.max(0, vehicle.routeMeta.endAt - now) * (newDuration / oldDuration);
   vehicle.routeMeta.endAt = now + remaining;
   if (vehicle.routeTimer) {
     clearTimeout(vehicle.routeTimer);
@@ -420,21 +436,13 @@ function renderIncidents() {
     });
     card.append(handoffBox);
 
-    if (incident.transportRequest) {
+    const summaryTransportRequests = activeTransportRequests(incident);
+    summaryTransportRequests.forEach((request) => {
       const transportBox = document.createElement("div");
       transportBox.className = "transport-choice";
-      appendTransportRequestHeader(transportBox, incident);
-      nearestHospitals(incident).slice(0, 5).forEach((hospital) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = hospital.suitable ? "hospital-choice suitable" : "hospital-choice unsuitable";
-        button.textContent = `${hospital.label} (${hospital.distance.toFixed(1).replace(".", ",")} km)`;
-        button.addEventListener("click", (event) => {
-          event.stopPropagation();
-          beginTransport(incident.id, hospital.id);
-        });
-        transportBox.append(button);
-      });
+      appendTransportRequestHeader(transportBox, incident, request);
+      appendForeignHospitalToggle(transportBox, incident, request);
+      appendHospitalChoices(transportBox, incident, request);
       ["Tod festgestellt", "Keine Indikation RD", "Transport verweigert"].forEach((reason) => {
         const button = document.createElement("button");
         button.type = "button";
@@ -446,7 +454,7 @@ function renderIncidents() {
         transportBox.append(button);
       });
       card.append(transportBox);
-    }
+    });
 
     card.addEventListener("click", () => {
       selectIncidentFromMapOrList(incident);
@@ -490,7 +498,7 @@ function incidentNeedsSlowAlert(incident) {
 
 function nearestAvailableVehicles(incident) {
   return state.vehicles
-    .filter((vehicle) => isAlarmable(vehicle))
+    .filter((vehicle) => !vehicle.foreign && isAlarmable(vehicle))
     .sort((a, b) => distanceToIncident(a, incident) - distanceToIncident(b, incident))
     .slice(0, 4);
 }
@@ -579,17 +587,8 @@ function renderIncidentsCollapsible(visible) {
       const transportBox = document.createElement("div");
       transportBox.className = "transport-choice";
       appendTransportRequestHeader(transportBox, incident, request);
-      nearestHospitals(incident, request).slice(0, 5).forEach((hospital) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = hospital.suitable ? "hospital-choice suitable" : "hospital-choice unsuitable";
-        button.textContent = `${hospital.label} (${hospital.distance.toFixed(1).replace(".", ",")} km)`;
-        button.addEventListener("click", (event) => {
-          event.stopPropagation();
-          beginTransport(incident.id, hospital.id, request.vehicleId, request.id);
-        });
-        transportBox.append(button);
-      });
+      appendForeignHospitalToggle(transportBox, incident, request);
+      appendHospitalChoices(transportBox, incident, request);
       details.append(transportBox);
     });
 
@@ -768,7 +767,7 @@ function renderIncidentVehicleStatus(incident) {
   vehicles.forEach((vehicle) => {
     const line = document.createElement("span");
     line.className = "incident-vehicle-chip";
-    line.innerHTML = `<b>${escapeHtml(vehicle.shortName || vehicle.name)}</b><em class="status-pill status-${vehicle.status}">${vehicle.status}</em><small>${escapeHtml(vehicle.statusText)}${vehicle.radioStatus ? ` | Sprechwunsch ${vehicle.radioStatus}` : ""}</small>`;
+    line.innerHTML = `<b>${escapeHtml(vehicle.shortName || vehicle.name)}</b><em class="status-pill status-${vehicle.status}">${vehicle.status}</em><small>${escapeHtml(vehicle.statusText)}${vehicle.radioStatus ? ` | ${vehicle.radioStatus === 0 ? "dringender Sprechwunsch" : "Sprechwunsch"} ${vehicle.radioStatus}` : ""}</small>`;
     wrapper.append(line);
   });
   return wrapper;
@@ -782,7 +781,8 @@ function renderPatientAssignments(incident) {
   const progress = treatmentProgress(incident);
   const progressBox = document.createElement("div");
   progressBox.className = "treatment-progress";
-  progressBox.innerHTML = `<span>Behandlung</span><strong>${Math.round(progress * 100)}%</strong><i><b style="width:${Math.round(progress * 100)}%"></b></i>`;
+  const remaining = remainingIncidentTreatmentMinutes(incident);
+  progressBox.innerHTML = `<span>Behandlung${remaining > 0 ? `, ca. ${remaining} min` : ""}</span><strong>${Math.round(progress * 100)}%</strong><i><b style="width:${Math.round(progress * 100)}%"></b></i>`;
   wrapper.append(progressBox);
   const table = document.createElement("table");
   table.className = "patient-table";
@@ -809,20 +809,67 @@ function activeTransportRequests(incident) {
   const requests = incident.transportRequests?.length ? incident.transportRequests : (incident.transportRequest ? [incident.transportRequest] : []);
   return requests.filter((request) => {
     const vehicle = state.vehicles.find((unit) => unit.id === request.vehicleId);
-    return vehicle?.status === 4;
+    const patient = (incident.patient?.patients || []).find((item) => item.id === request.patientId) || patientForVehicle(vehicle, incident);
+    return vehicle?.status === 4
+      && (!patient || patientReadyForTransport(patient, incident))
+      && (!patient || vehicleCanTransportPatient(vehicle, patient));
   });
 }
 
 function appendTransportRequestHeader(parent, incident, request = incident.transportRequest) {
   const patient = (incident.patient?.patients || []).find((item) => item.id === request?.patientId);
+  const department = request?.requiredDepartment || patient?.requiredDepartment || "Fachrichtung nach Rückmeldung";
   const header = document.createElement("div");
   header.className = "transport-choice-head";
   header.innerHTML = `
     <strong>Transportziel${patient ? ` für ${escapeHtml(patient.label)}` : ""}</strong>
-    <span>${escapeHtml(request?.requiredDepartment || patient?.requiredDepartment || "Fachrichtung nach Rückmeldung")}</span>
+    <span>Benötige Krankenhaus-Zuweisung mit Fachrichtung: ${escapeHtml(department)}</span>
   `;
   parent.append(header);
   if (request?.report) parent.append(renderIncidentReport(request.report));
+}
+
+function appendForeignHospitalToggle(parent, incident, request = incident.transportRequest) {
+  const foreignCount = nearestHospitals(incident, request, { includeForeign: true }).filter((hospital) => hospital.foreign).length;
+  if (!foreignCount) return;
+  const toggle = document.createElement("label");
+  toggle.className = "foreign-hospital-toggle";
+  toggle.addEventListener("click", (event) => event.stopPropagation());
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = Boolean(state.showForeignHospitalsInTransport);
+  input.addEventListener("click", (event) => event.stopPropagation());
+  input.addEventListener("change", (event) => {
+    event.stopPropagation();
+    state.showForeignHospitalsInTransport = input.checked;
+    renderAll();
+  });
+  toggle.append(input, document.createTextNode(` Fremd-KH zusaetzlich anzeigen (${foreignCount})`));
+  parent.append(toggle);
+}
+
+function appendHospitalChoices(parent, incident, request = incident.transportRequest) {
+  transportHospitalChoices(incident, request).forEach((hospital) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `${hospital.suitable ? "hospital-choice suitable" : "hospital-choice unsuitable"}${hospital.foreign ? " foreign-hospital" : ""}`;
+    button.textContent = `${hospital.foreign ? "Fremd-KH: " : ""}${hospital.label} (${hospital.distance.toFixed(1).replace(".", ",")} km)`;
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      beginTransport(incident.id, hospital.id, request.vehicleId, request.id);
+    });
+    parent.append(button);
+  });
+}
+
+function transportHospitalChoices(incident, request = incident.transportRequest) {
+  const localHospitals = nearestHospitals(incident, request).slice(0, 5);
+  if (!state.showForeignHospitalsInTransport) return localHospitals;
+  const used = new Set(localHospitals.map((hospital) => hospital.id));
+  const foreignHospitals = nearestHospitals(incident, request, { includeForeign: true })
+    .filter((hospital) => hospital.foreign && !used.has(hospital.id))
+    .slice(0, 5);
+  return [...localHospitals, ...foreignHospitals];
 }
 
 function treatmentProgress(incident) {
@@ -837,20 +884,38 @@ function treatmentProgress(incident) {
 }
 
 function patientTreatmentProgress(patient, incident) {
+  if (patient.completed || patient.transporting) return 1;
   const assigned = (patient.assignedVehicles || [])
     .map((id) => state.vehicles.find((vehicle) => vehicle.id === id))
     .filter((vehicle) => vehicle?.status === 4);
   if (!assigned.length) return 0;
   const { cap, support } = currentTreatmentCap(patient, incident, assigned);
   const supportCapReachedAt = patient.supportCapReachedAt;
-  const startedAt = supportCapReachedAt ?? patient.treatmentStartedAt ?? incident.patient?.treatmentStartedAt ?? state.minute;
+  const supportCapValue = patient.supportCapValue ?? 0.8;
+  let startedAt = patient.treatmentStartedAt ?? incident.patient?.treatmentStartedAt ?? state.minute;
+  let baseProgress = 0;
+  if (supportCapReachedAt) {
+    baseProgress = supportCapValue;
+    if (cap > supportCapValue) {
+      if (patient.treatmentResumedFromCap !== supportCapValue) {
+        patient.treatmentResumedAt = state.minute;
+        patient.treatmentResumedFromCap = supportCapValue;
+      }
+      startedAt = patient.treatmentResumedAt ?? state.minute;
+    } else {
+      startedAt = supportCapReachedAt;
+    }
+  }
   patient.treatmentStartedAt ??= startedAt;
   const elapsed = Math.max(0, state.minute - startedAt);
-  const baseProgress = supportCapReachedAt ? (patient.supportCapValue ?? 0.8) : 0;
-  const progress = Math.min(cap, baseProgress + elapsed / treatmentMinutes(incident));
+  const progress = Math.min(cap, baseProgress + elapsed / patientTreatmentMinutes(patient, incident));
   if (support && progress >= cap) {
-    patient.supportCapReachedAt ??= state.minute;
+    patient.supportCapReachedAt = patient.supportCapValue === cap && patient.supportCapReachedAt
+      ? patient.supportCapReachedAt
+      : state.minute;
     patient.supportCapValue = cap;
+    patient.treatmentResumedAt = null;
+    patient.treatmentResumedFromCap = null;
   }
   return progress;
 }
@@ -875,13 +940,24 @@ function currentTreatmentCap(patient, incident, assignedVehicles = null) {
     if (waitingOnlyForTransport) return { cap: 0.8, support: true };
   }
   const hasKtwFirstResponse = assigned.some((vehicle) => vehicle.type === "KTW" && vehicle.supportOnly);
-  const hasRequiredTransportUnit = assigned.some((vehicle) => (patient.required || []).some((type) => ["RTW", "KTW"].includes(type) && vehicleSatisfiesRequirement(vehicle.type, type)));
+  const hasRequiredTransportUnit = assigned.some((vehicle) => (patient.required || []).some((type) => ["RTW", "KTW"].includes(type) && vehicleSatisfiesPatientRequirement(vehicle.type, type, patient)));
   if (hasKtwFirstResponse && !hasRequiredTransportUnit) {
-    const required = patient.required || [];
-    if (required.includes("RTW") && (required.includes("NEF") || required.includes("RTH"))) return { cap: 0.25, support: true };
-    if (required.length === 1 && required.includes("RTW")) return { cap: 0.4, support: true };
+    if ((patient.required || []).includes("RTW")) return { cap: 0.5, support: true };
   }
   return { cap: 0.5, support: true };
+}
+
+function remainingIncidentTreatmentMinutes(incident) {
+  const patients = incident.patient?.patients || [];
+  const remaining = patients
+    .filter((patient) => !patient.completed && !patient.transporting)
+    .map((patient) => {
+      const progress = patientTreatmentProgress(patient, incident);
+      const cap = currentTreatmentCap(patient, incident).cap;
+      return Math.max(0, Math.ceil(patientTreatmentMinutes(patient, incident) * (Math.min(1, cap) - progress)));
+    })
+    .filter((value) => value > 0);
+  return remaining.length ? Math.max(...remaining) : 0;
 }
 
 function patientHasTransportUnitAtScene(patient) {
@@ -981,7 +1057,7 @@ function removeAssignedVehicle(vehicleId, incidentId) {
 
 function statusTextForIdleVehicle(vehicle) {
   if (vehicle.status === 1) return "frei über Funk";
-  if (vehicle.status === 2) return "auf Wache";
+  if (vehicle.status === 2) return vehicle.foreign ? "auf Fremdwache verfügbar" : "auf Wache";
   return vehicle.statusText || "frei";
 }
 
@@ -990,6 +1066,18 @@ function renderDialogVehicles(call, incident = null) {
   const assignedIds = new Set(incident?.assigned || []);
   const unavailableIds = new Set([...assignedIds, ...state.selectedDialogVehicleIds]);
   renderQuickVehicleButtons(call, unavailableIds, incident);
+  const foreignToggle = document.createElement("label");
+  foreignToggle.className = "foreign-vehicle-toggle";
+  const foreignInput = document.createElement("input");
+  foreignInput.type = "checkbox";
+  foreignInput.checked = Boolean(state.showForeignVehiclesInDialog);
+  foreignInput.addEventListener("change", () => {
+    state.showForeignVehiclesInDialog = foreignInput.checked;
+    renderDialogVehicles(call, incident);
+  });
+  const foreignAvailableCount = state.vehicles.filter((vehicle) => vehicle.foreign && vehicle.status === 2 && !vehicle.nextIncidentId).length;
+  foreignToggle.append(foreignInput, document.createTextNode(` Fremdfahrzeuge anzeigen (${foreignAvailableCount})`));
+  el.dialogVehicleList.append(foreignToggle);
   if (assignedIds.size) {
     const assigned = document.createElement("section");
     assigned.className = "assigned-vehicles-note";
@@ -1014,12 +1102,16 @@ function renderDialogVehicles(call, incident = null) {
     el.dialogVehicleList.append(assigned);
   }
   state.vehicles
-    .filter((vehicle) => isAlarmable(vehicle) && !assignedIds.has(vehicle.id))
+    .filter((vehicle) => {
+      if (assignedIds.has(vehicle.id)) return false;
+      if (vehicle.foreign) return state.showForeignVehiclesInDialog && vehicle.status === 2 && isAlarmable(vehicle);
+      return isAlarmable(vehicle);
+    })
     .sort((a, b) => distanceToCall(a, call) - distanceToCall(b, call))
     .forEach((vehicle) => {
       const row = document.createElement("button");
       row.type = "button";
-      row.className = `dialog-vehicle-row ${state.selectedDialogVehicleIds.has(vehicle.id) ? "selected" : ""}`;
+      row.className = `dialog-vehicle-row ${vehicle.foreign ? "foreign-vehicle-row" : ""} ${state.selectedDialogVehicleIds.has(vehicle.id) ? "selected" : ""}`;
       row.innerHTML = `
         <div>
           <h3><span class="vehicle-type-badge">${escapeHtml(vehicle.type)}</span> ${escapeHtml(vehicle.name)}</h3>
@@ -1064,19 +1156,24 @@ function renderQuickVehicleButtons(call, assignedIds, incident = null) {
 
 function nearestFreeVehicleOfType(call, type, assignedIds) {
   return state.vehicles
-    .filter((vehicle) => !assignedIds.has(vehicle.id) && isAlarmable(vehicle) && vehicle.type === type)
+    .filter((vehicle) => !vehicle.foreign && !assignedIds.has(vehicle.id) && isAlarmable(vehicle) && vehicle.type === type)
     .sort((a, b) => distanceToCall(a, call) - distanceToCall(b, call))[0];
 }
 
 function renderVehicles() {
-  const sorted = [...state.vehicles].sort((a, b) => {
-    if (el.vehicleSort.value === "status") return a.status - b.status || a.name.localeCompare(b.name);
-    if (el.vehicleSort.value === "type") return a.type.localeCompare(b.type) || a.name.localeCompare(b.name);
-    return a.station.localeCompare(b.station) || a.name.localeCompare(b.name);
+  const vehicleSortName = (vehicle) => vehicle.shortName || vehicle.name;
+  const typeOrder = { RTW: 1, NEF: 2, KTW: 3, REF: 4, RTH: 5 };
+  const vehicleTypeRank = (vehicle) => typeOrder[vehicle.type] || 99;
+  const sorted = state.vehicles.filter((vehicle) => !vehicle.foreign).sort((a, b) => {
+    if (el.vehicleSort.value === "status") return a.status - b.status || vehicleSortName(a).localeCompare(vehicleSortName(b));
+    if (el.vehicleSort.value === "type") return a.type.localeCompare(b.type) || vehicleSortName(a).localeCompare(vehicleSortName(b));
+    if (el.vehicleSort.value === "type-status") return a.status - b.status || vehicleTypeRank(a) - vehicleTypeRank(b) || vehicleSortName(a).localeCompare(vehicleSortName(b));
+    return a.station.localeCompare(b.station) || vehicleSortName(a).localeCompare(vehicleSortName(b));
   });
 
   el.vehicleList.innerHTML = "";
   sorted.forEach((vehicle) => {
+    const displayName = vehicle.shortName || vehicle.name;
     const isOpen = vehicle.id === state.selectedVehicleId;
     const row = document.createElement("article");
     row.className = `vehicle-row ${isOpen ? "active" : ""} ${vehicle.shiftWarning ? "shift-warning" : ""}`;
@@ -1084,8 +1181,8 @@ function renderVehicles() {
     summary.type = "button";
     summary.className = "vehicle-summary";
     summary.innerHTML = `
-      <strong>${escapeHtml(vehicle.name)}</strong>
-      <span class="vehicle-type-label">${escapeHtml(vehicle.type)}</span>
+      <strong>${escapeHtml(displayName)}</strong>
+      <span class="vehicle-type-label vehicle-type-${escapeHtml(vehicle.type)}">${escapeHtml(vehicle.type)}</span>
       <span>${escapeHtml(vehicle.station)}</span>
       <em class="status-pill status-${vehicle.status}">${vehicle.status}</em>
     `;
@@ -1098,7 +1195,7 @@ function renderVehicles() {
       const details = document.createElement("div");
       details.className = "vehicle-details";
       appendTextBlock(details, "p", `${vehicle.statusText}${vehicle.radioMessage ? ` | ${vehicle.radioMessage}` : ""}`);
-      if (vehicle.shortName && vehicle.shortName !== vehicle.name) appendTextBlock(details, "p", `Kurz: ${vehicle.shortName}`);
+      if (vehicle.shortName && vehicle.shortName !== vehicle.name) appendTextBlock(details, "p", `FRN: ${vehicle.name}`);
     if (vehicle.shift) appendTextBlock(details, "p", `Schicht: ${vehicle.shift}`);
       if (vehicle.shiftWarning) appendTextBlock(details, "p", "Schichtende überschritten, Wechsel erst an der Wache möglich.");
       const actions = document.createElement("div");
@@ -1108,12 +1205,12 @@ function renderVehicles() {
         addVehicleAction(actions, "Gebietsabsicherung", () => startCoveragePinSelection(vehicle.id));
       }
       if (vehicle.radioStatus === 5) addVehicleAction(actions, "J", () => sendSpeechPrompt(vehicle.id));
-      if (vehicle.radioStatus === 0) addVehicleAction(actions, "Sprechwunsch annehmen", () => sendSpeechPrompt(vehicle.id));
+      if (vehicle.radioStatus === 0) addVehicleAction(actions, "dringenden Sprechwunsch annehmen", () => sendSpeechPrompt(vehicle.id));
       if (vehicle.status === 1) addVehicleAction(actions, "Status H", () => sendVehicleHome(vehicle.id));
       if (vehicle.status === 3) addVehicleAction(actions, "Einsatzabbruch (E)", () => abortVehicleMission(vehicle.id));
       if (vehicle.status === 7) addVehicleAction(actions, "Zielort ändern", () => changeTransportDestination(vehicle.id));
       if (canReleaseAccompanyingDoctor(vehicle)) addVehicleAction(actions, "abkömmlich frei", () => releaseAccompanyingDoctor(vehicle.id));
-      if (vehicle.status === 8) addVehicleAction(actions, "Einsatzklar?", () => clearVehicle(vehicle.id));
+      if (vehicle.status === 8) addVehicleAction(actions, "Einsatzklar?", () => askVehicleReadiness(vehicle.id));
       details.append(actions);
       row.append(details);
     }

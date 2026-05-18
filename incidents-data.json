@@ -4,29 +4,47 @@
     "category": "Herz/Kreislauf",
     "title": "Akutes Koronarsyndrom",
     "type": "emergency",
-    "keyword": "RD 2 Herz/Kreislauf - vitale Bedrohung",
+    "keyword": "Akutes Koronarsyndrom",
     "variants": [
       {
         "callerName": "Anrufer",
-        "callerText": "Meine Frau hat starke Schmerzen in der Brust, ist blass und kaltschweissig. Es drueckt bis in den linken Arm.",
+        "callerText": "Meine Frau hat starke Schmerzen in der Brust, ist blass und kaltschweissig. Es drueckt bis in den linken Arm. | Guten Tag, Schwenner am Apparat, meiner Frau geht es gar nicht gut, ihr ist so übel",
         "locationMode": "random",
-        "location": "Maximilianstrasse 18, Regensburg",
+        "poiCategories": [],
+        "poiIds": [],
         "requiredServices": [],
-        "report": "Ein Patient mit ACS-Verdacht, kreislaufstabil nach Erstversorgung, Kardiologie erforderlich.",
+        "report": "Ein Patient mit ACS-Verdacht",
         "situationReport": "",
         "patients": [
           {
+            "id": "pat-1",
             "label": "Pat 1",
             "options": [
               {
-                "probability": 1,
+                "probability": 0.8,
                 "vehicles": [
                   "RTW",
                   "NEF"
                 ]
+              },
+              {
+                "probability": 0.2,
+                "vehicles": [
+                  "RTW"
+                ]
               }
             ],
-            "requiredDepartmentKey": "cardiology"
+            "requiredDepartmentKeys": [
+              "internal",
+              "cardiology"
+            ],
+            "transportSignalProbability": 0.9,
+            "conditionReport": "",
+            "noTransportProbability": 0.05,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
+            "needsFW": false,
+            "needsPOL": false
           }
         ]
       }
@@ -37,19 +55,19 @@
     "category": "Sonstiges",
     "title": "Mehrere Verletzte",
     "type": "emergency",
-    "keyword": "RD 3 - zwei oder drei verletzte/erkrankte Personen",
+    "keyword": "Mehrere Verletzte",
     "variants": [
       {
-        "callerName": "Feuerwehr Regensburg",
+        "callerName": "Anrufer",
         "callerText": "Kellerbrand, mehrere Personen mit Rauchgasexposition, Feuerwehr ist auf Anfahrt.",
-        "location": "Adolf-Schmetzer-Strasse 9, Regensburg",
-        "lat": 49.0181,
-        "lng": 12.1167,
-        "signal": true,
+        "locationMode": "random",
+        "poiCategories": [],
+        "poiIds": [],
         "requiredServices": [
           "FW"
         ],
-        "situationReport": "Drei Patienten mit Rauchgasexposition. Pat 1 kritisch, Pat 2 und Pat 3 stabil. Klinikverteilung erforderlich.",
+        "report": "",
+        "situationReport": "Drei Patienten mit Rauchgasexposition. Pat 1 kritisch, Pat 2 und Pat 3 stabil.",
         "patients": [
           {
             "label": "Pat 1",
@@ -63,7 +81,8 @@
               }
             ],
             "requiredDepartmentKey": "internal",
-            "needsFW": true
+            "needsFW": true,
+            "id": "pat-1"
           },
           {
             "label": "Pat 2",
@@ -75,7 +94,8 @@
                 ]
               }
             ],
-            "requiredDepartmentKey": "internal"
+            "requiredDepartmentKey": "internal",
+            "id": "pat-2"
           },
           {
             "label": "Pat 3",
@@ -93,7 +113,8 @@
                 ]
               }
             ],
-            "requiredDepartmentKey": "internal"
+            "requiredDepartmentKey": "internal",
+            "id": "pat-3"
           }
         ]
       }
@@ -176,17 +197,19 @@
   {
     "id": "rth-trauma",
     "category": "Trauma",
-    "title": "Schweres Trauma mit RTH",
+    "title": "Schweres Trauma",
     "type": "emergency",
-    "keyword": "RD 2 Trauma - vitale Bedrohung Person schwer verletzt",
+    "keyword": "Schweres Trauma",
     "variants": [
       {
-        "callerName": "Leitstelle Nachbarbereich",
-        "callerText": "Schwerer Arbeitsunfall ausserhalb der Stadt, RTH-Anforderung wegen langer Fahrzeit.",
+        "callerName": "Anrufer",
+        "callerText": "Hallo, Meier hier. Mein Kollege, der Brudzuk ist grad vom Gerüst gefallen, kommen Sie schnell!",
         "locationMode": "random",
-        "location": "Regensburg",
-        "signal": true,
-        "report": "Schweres Trauma, luftgebundener Transport oder notarztbegleiteter RTW-Transport moeglich.",
+        "poiCategories": [],
+        "poiIds": [],
+        "requiredServices": [],
+        "report": "Schweres SHT",
+        "situationReport": "",
         "patients": [
           {
             "id": "pat-1",
@@ -200,8 +223,17 @@
                 ]
               }
             ],
-            "requiredDepartmentKey": "trauma",
-            "transportSignalProbability": 1
+            "requiredDepartmentKeys": [
+              "trauma",
+              "icu"
+            ],
+            "transportSignalProbability": 1,
+            "conditionReport": "",
+            "noTransportProbability": 0,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": true,
+            "needsFW": false,
+            "needsPOL": false
           }
         ]
       }
@@ -210,17 +242,19 @@
   {
     "id": "rth-zwingende-na-begleitung",
     "category": "Herz/Kreislauf",
-    "title": "RTH mit zwingender Notarztbegleitung",
+    "title": "ACS mit NA",
     "type": "emergency",
-    "keyword": "RD 2 Herz/Kreislauf - vitale Bedrohung",
+    "keyword": "ACS mit NA",
     "variants": [
       {
-        "callerName": "Hausarzt",
+        "callerName": "Anrufer",
         "callerText": "Kritischer Patient mit Herzinfarktverdacht, der Notarzt muss den Transport zwingend begleiten.",
         "locationMode": "random",
-        "location": "Regensburg",
-        "signal": true,
+        "poiCategories": [],
+        "poiIds": [],
+        "requiredServices": [],
         "report": "Kritischer ACS-Patient, Notarztbegleitung zwingend erforderlich.",
+        "situationReport": "",
         "patients": [
           {
             "id": "pat-1",
