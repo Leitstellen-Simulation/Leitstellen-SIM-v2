@@ -1,0 +1,21 @@
+{
+  "name": "leitstellen-sim-v2",
+  "version": "1.0.0",
+  "description": "Browserbasierte Simulation einer integrierten Leitstelle mit Rettungsdienst, Feuerwehr, Polizei, Krankentransport, Funkstatus, Einsatzbearbeitung und Kartenlogik.",
+  "main": "app-editor-tools.js",
+  "scripts": {
+	"start": "node server.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Leitstellen-Simulation/Leitstellen-SIM-v2.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Leitstellen-Simulation/Leitstellen-SIM-v2/issues"
+  },
+  "homepage": "https://github.com/Leitstellen-Simulation/Leitstellen-SIM-v2#readme"
+}
