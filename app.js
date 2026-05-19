@@ -44,6 +44,9 @@ const state = {
   editorPoints: [],
   editingMapPointId: null,
   selectedDialogVehicleIds: new Set(),
+  dialogRoutes: new Map(),
+  dialogTravelTimes: new Map(),
+  dialogTravelTimeRequests: new Set(),
   showForeignVehiclesInDialog: false,
   showForeignHospitalsInTransport: false,
   lastForeignAvailabilityRoll: null,
@@ -118,9 +121,10 @@ const el = {
   incidentKeywordToggle: document.querySelector("#incident-keyword-toggle"),
   incidentSignal: document.querySelector("#incident-signal"),
   dispositionSuggestion: document.querySelector("#disposition-suggestion"),
+  incidentCallTextPanel: document.querySelector("#incident-call-text-panel"),
+  incidentCallText: document.querySelector("#incident-call-text"),
   incidentFw: document.querySelector("#incident-fw"),
   incidentPol: document.querySelector("#incident-pol"),
-  incidentCaller: document.querySelector("#incident-caller"),
   incidentNote: document.querySelector("#incident-note"),
   incidentPatientConditions: document.querySelector("#incident-patient-conditions"),
   incidentMapButton: document.querySelector("#incident-map-button"),
@@ -633,8 +637,7 @@ function populateKeywordSelectGrouped(filter = "") {
   const query = normalizeSearch(filter);
   el.incidentKeywordOptions.innerHTML = "";
   const matches = rdKeywords
-    .filter((keyword) => !query || normalizeSearch(keyword.label).includes(query))
-    .slice(0, 24);
+    .filter((keyword) => !query || normalizeSearch(keyword.label).includes(query));
   if (!matches.length) {
     const empty = document.createElement("div");
     empty.className = "keyword-option-empty";
@@ -672,6 +675,11 @@ function setIncidentSignal(value) {
   document.querySelectorAll(".signal-option").forEach((button) => {
     button.classList.toggle("active", button.dataset.signal === el.incidentSignal.value);
   });
+  if (el.incidentDialog?.open) {
+    const source = currentIncidentDialogSource();
+    const incident = state.editingIncidentId ? state.incidents.find((item) => item.id === state.editingIncidentId) : null;
+    if (source) renderDialogVehicles(source, incident);
+  }
 }
 
 function vehicleTypeLabel(type) {
@@ -1328,8 +1336,8 @@ function openIncidentDialog(source = null) {
   setIncidentSignal(call.signal ? "yes" : "no");
   el.incidentFw.checked = Boolean(incident?.requiredServices?.includes("FW") || call.requiredServices?.includes?.("FW") || (incident?.services?.FW && incident.services.FW.status !== "nicht alarmiert"));
   el.incidentPol.checked = Boolean(incident?.requiredServices?.includes("POL") || call.requiredServices?.includes?.("POL") || (incident?.services?.POL && incident.services.POL.status !== "nicht alarmiert"));
-  el.incidentCaller.value = call.callerName || "";
   el.incidentNote.value = call.note || "";
+  renderIncidentCallText(call);
   if (el.incidentPatientConditions) {
     el.incidentPatientConditions.hidden = true;
     el.incidentPatientConditions.innerHTML = "";
@@ -1339,6 +1347,14 @@ function openIncidentDialog(source = null) {
   renderDispositionSuggestion();
   renderDialogVehicles(call, incident);
   showDialog(el.incidentDialog);
+}
+
+function renderIncidentCallText(source) {
+  if (!el.incidentCallTextPanel || !el.incidentCallText) return;
+  const text = String(source?.callerText || source?.callText || "").trim();
+  el.incidentCallTextPanel.hidden = !text;
+  el.incidentCallTextPanel.open = false;
+  el.incidentCallText.textContent = text;
 }
 
 function renderDispositionSuggestion() {
@@ -1355,9 +1371,10 @@ function renderDispositionSuggestion() {
   const copy = document.createElement("div");
   copy.className = "disposition-copy";
   const label = document.createElement("strong");
-  label.textContent = "Dispositionsvorschlag";
+  label.textContent = "Vorschlag";
   const text = document.createElement("span");
-  text.textContent = defaults.disposition || formatDisposition(defaults.required, defaults.requiredServices);
+  const disposition = defaults.disposition || formatDisposition(defaults.required, defaults.requiredServices);
+  text.textContent = `${disposition} · ${defaults.signal ? "SoSi" : "ohne SoSi"}`;
   copy.append(label, text);
   const button = document.createElement("button");
   button.type = "button";
@@ -1374,6 +1391,8 @@ function applyDispositionSuggestion() {
   const incident = state.editingIncidentId ? state.incidents.find((item) => item.id === state.editingIncidentId) : null;
   const unavailableIds = new Set(incident?.assigned || []);
   state.selectedDialogVehicleIds = new Set();
+  setIncidentSignal(defaults.signal ? "yes" : "no");
+  setIncidentSupportServices(defaults.requiredServices || []);
   normalizeRequiredVehicles(defaults.required || []).forEach((type) => {
     const vehicle = nearestDispositionVehicle(source, type, unavailableIds);
     if (!vehicle) return;
@@ -1381,6 +1400,12 @@ function applyDispositionSuggestion() {
     unavailableIds.add(vehicle.id);
   });
   renderDialogVehicles(source, incident);
+}
+
+function setIncidentSupportServices(services = []) {
+  const requiredServices = new Set(services || []);
+  el.incidentFw.checked = requiredServices.has("FW");
+  el.incidentPol.checked = requiredServices.has("POL");
 }
 
 function currentIncidentDialogSource() {
@@ -1504,7 +1529,7 @@ function submitIncidentDialog(event) {
       FW: existingServices.FW || createServiceState(),
       POL: existingServices.POL || createServiceState()
     },
-    callerName: el.incidentCaller.value.trim() || source.callerName,
+    callerName: source.callerName,
     location: el.incidentLocation.value.trim() || source.location || defaultLocationLabel(),
     lat: fallbackLat,
     lng: fallbackLng,

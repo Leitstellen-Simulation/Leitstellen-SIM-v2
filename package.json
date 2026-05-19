@@ -1,0 +1,40 @@
+{
+  "name": "leitstellen-sim-v2",
+  "version": "0.1.0",
+  "description": "Browserbasierte Leitstellen-Simulation als Desktop-App",
+  "type": "module",
+  "main": "electron-main.mjs",
+  "scripts": {
+    "start": "electron .",
+    "server": "node server.mjs",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "dist:dir": "electron-builder --dir",
+	"build:mac": "electron-builder --mac"
+  },
+  "build": {
+    "appId": "de.leitstellen-simulation.sim-v2",
+    "productName": "Leitstellen-SIM",
+    "files": [
+      "**/*",
+      "!server.out.log",
+      "!server.err.log",
+      "!node_modules/.cache/**",
+      "!dist/**"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "electron": "latest",
+    "electron-builder": "latest"
+  }
+}

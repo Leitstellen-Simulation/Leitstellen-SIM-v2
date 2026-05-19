@@ -6,8 +6,12 @@ import { fileURLToPath } from "node:url";
 
 const port = Number(process.env.PORT || 4173);
 const root = dirname(fileURLToPath(import.meta.url));
-const mapsDir = join(root, "maps");
-const incidentsFile = join(root, "incidents-data.json");
+const dataRoot = process.env.DISPATCH_DATA_DIR ? resolve(process.env.DISPATCH_DATA_DIR) : root;
+const usesExternalDataDir = dataRoot !== root;
+const defaultMapsDir = join(root, "maps");
+const defaultIncidentsFile = join(root, "incidents-data.json");
+const mapsDir = join(dataRoot, "maps");
+const incidentsFile = join(dataRoot, "incidents-data.json");
 const maxBodyBytes = 2_000_000;
 const adminPassword = process.env.DISPATCH_ADMIN_PASSWORD || "XXX112XXX";
 const types = {
@@ -55,17 +59,49 @@ server.on("error", (error) => {
   if (error.code === "EADDRINUSE") {
     console.error(`Port ${port} ist bereits belegt. Wahrscheinlich laeuft DispatchSim schon unter http://127.0.0.1:${port}/`);
     console.error("Nutze das vorhandene Browserfenster oder beende den alten Node-Prozess, bevor du den Server neu startest.");
+    if (process.env.DISPATCH_ELECTRON === "1") return;
     process.exit(1);
   }
   throw error;
 });
 
+await ensureWritableDataFiles();
+
 server.listen(port, "127.0.0.1", () => {
   console.log(`DispatchSim running at http://127.0.0.1:${port}/`);
+  if (usesExternalDataDir) {
+    console.log(`Writable app data: ${dataRoot}`);
+  }
   if (!process.env.DISPATCH_ADMIN_PASSWORD) {
     console.log("Admin password uses the development default. Set DISPATCH_ADMIN_PASSWORD to override it.");
   }
 });
+
+async function ensureWritableDataFiles() {
+  await mkdir(mapsDir, { recursive: true });
+  if (!usesExternalDataDir) return;
+
+  await seedDefaultMaps();
+  if (!existsSync(incidentsFile) && existsSync(defaultIncidentsFile)) {
+    await copyDefaultFile(defaultIncidentsFile, incidentsFile);
+  }
+}
+
+async function seedDefaultMaps() {
+  if (!existsSync(defaultMapsDir)) return;
+  await mkdir(mapsDir, { recursive: true });
+
+  const existingFiles = new Set((await readdir(mapsDir)).filter((file) => file.endsWith(".json")));
+  const defaultFiles = (await readdir(defaultMapsDir)).filter((file) => file.endsWith(".json"));
+  for (const file of defaultFiles) {
+    if (existingFiles.has(file)) continue;
+    await copyDefaultFile(join(defaultMapsDir, file), join(mapsDir, file));
+  }
+}
+
+async function copyDefaultFile(sourceFile, targetFile) {
+  await writeFile(targetFile, await readFile(sourceFile, "utf8"), "utf8");
+}
 
 async function serveStaticFile(request, response, url) {
   if (request.method !== "GET" && request.method !== "HEAD") {

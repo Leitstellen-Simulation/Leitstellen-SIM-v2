@@ -1,0 +1,6 @@
+node_modules/
+dist/
+dist-fresh/
+server.out.log
+server.err.log
+*.tmp

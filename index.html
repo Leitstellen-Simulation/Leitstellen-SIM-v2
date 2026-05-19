@@ -186,10 +186,16 @@
           <button id="close-incident-dialog" class="icon-button" value="cancel" aria-label="Schließen" type="submit">x</button>
         </header>
         <div class="modal-body incident-create-grid">
-          <label class="wide">
+          <label>
             Einsatzort
             <input id="incident-location" required>
           </label>
+          <fieldset class="signal-toggle">
+            <legend>Sondersignal</legend>
+            <input id="incident-signal" type="hidden" value="no">
+            <button class="signal-option active" data-signal="no" type="button">Nein</button>
+            <button class="signal-option" data-signal="yes" type="button">Ja</button>
+          </fieldset>
           <label class="keyword-field">
             Stichwort
             <div class="keyword-combobox">
@@ -198,25 +204,19 @@
               <div id="incident-keyword-options" class="keyword-options" hidden></div>
             </div>
           </label>
-          <fieldset class="signal-toggle">
-            <legend>Sondersignal</legend>
-            <input id="incident-signal" type="hidden" value="no">
-            <button class="signal-option active" data-signal="no" type="button">Nein</button>
-            <button class="signal-option" data-signal="yes" type="button">Ja</button>
-          </fieldset>
           <fieldset class="support-picker">
-            <legend>Zusatzkräfte</legend>
-            <label><input id="incident-fw" type="checkbox"> FW alarmieren</label>
-            <label><input id="incident-pol" type="checkbox"> POL alarmieren</label>
+            <legend>FW / POL</legend>
+            <label class="support-option"><input id="incident-fw" type="checkbox"><span>FW</span></label>
+            <label class="support-option"><input id="incident-pol" type="checkbox"><span>POL</span></label>
           </fieldset>
           <div id="disposition-suggestion" class="disposition-suggestion wide" hidden></div>
-          <label>
-            Anrufer
-            <input id="incident-caller">
-          </label>
-          <label>
-            Zusatz
-            <input id="incident-note" placeholder="optional">
+          <details id="incident-call-text-panel" class="incident-call-text-panel wide" hidden>
+            <summary>Anruftext</summary>
+            <p id="incident-call-text"></p>
+          </details>
+          <label class="wide">
+            Bemerkung
+            <textarea id="incident-note" rows="2" placeholder="optional"></textarea>
           </label>
           <div class="vehicle-picker wide">
             <div class="picker-head">

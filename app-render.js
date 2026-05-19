@@ -478,7 +478,7 @@ function renderIncidents() {
       });
       card.append(replacementButton);
     });
-    if (incident.note) appendTextBlock(card, "p", `Zusatz: ${incident.note}`);
+    if (incident.note) appendTextBlock(card, "p", `Bemerkung: ${incident.note}`);
 
     const editButton = document.createElement("button");
     editButton.type = "button";
@@ -651,7 +651,7 @@ function renderIncidentsCollapsible(visible) {
       });
       details.append(replacementButton);
     });
-    if (incident.note) appendTextBlock(details, "p", `Zusatz: ${incident.note}`);
+    if (incident.note) appendTextBlock(details, "p", `Bemerkung: ${incident.note}`);
 
     const editButton = document.createElement("button");
     editButton.type = "button";
@@ -1212,7 +1212,7 @@ function renderDialogVehicles(call, incident = null) {
     });
     el.dialogVehicleList.append(assigned);
   }
-  state.vehicles
+  const vehicles = state.vehicles
     .filter((vehicle) => {
       if (assignedIds.has(vehicle.id)) return false;
       if (vehicle.foreign) return state.showForeignVehiclesInDialog && vehicle.status === 2 && isAlarmable(vehicle);
@@ -1221,22 +1221,36 @@ function renderDialogVehicles(call, incident = null) {
     .sort((a, b) => {
       const selectedDelta = Number(state.selectedDialogVehicleIds.has(b.id)) - Number(state.selectedDialogVehicleIds.has(a.id));
       return selectedDelta || distanceToCall(a, call) - distanceToCall(b, call);
-    })
-    .forEach((vehicle) => {
+    });
+  const autoTravelTimeIds = new Set([...vehicles].sort((a, b) => distanceToCall(a, call) - distanceToCall(b, call)).slice(0, 3).map((vehicle) => vehicle.id));
+  vehicles.forEach((vehicle) => {
       const row = document.createElement("button");
       const shiftNotice = shiftNoticeForVehicle(vehicle);
       const nextShift = nextShiftChangeText(vehicle);
+      const distanceText = `${distanceToCall(vehicle, call).toFixed(1).replace(".", ",")} km Luftlinie`;
+      const travelTime = dialogTravelTimeStatus(vehicle, call);
       row.type = "button";
       row.className = `dialog-vehicle-row ${vehicle.foreign ? "foreign-vehicle-row" : ""} ${shiftNotice ? `shift-${shiftNotice.type}` : ""} ${state.selectedDialogVehicleIds.has(vehicle.id) ? "selected" : ""}`;
       row.innerHTML = `
         <div>
           <h3><span class="vehicle-type-badge">${escapeHtml(vehicle.type)}</span> ${escapeHtml(vehicle.name)}</h3>
-          <p>${escapeHtml(vehicle.station)} | ${distanceToCall(vehicle, call).toFixed(1).replace(".", ",")} km | ${escapeHtml(vehicle.statusText)}</p>
+          <p>${escapeHtml(vehicle.station)} | ${escapeHtml(distanceText)} <span class="dialog-travel-time">${travelTimeMarkup(travelTime)}</span> | ${escapeHtml(vehicle.statusText)}</p>
           ${nextShift ? `<small class="dialog-shift-next">${escapeHtml(nextShift)}</small>` : ""}
           ${shiftNotice ? `<small class="dialog-shift-hint">${escapeHtml(shiftNotice.text)}</small>` : ""}
         </div>
         <span class="status-pill status-${vehicle.status}">${vehicle.status}</span>
       `;
+      const travelButton = row.querySelector(".dialog-travel-time-button");
+      travelButton?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        requestDialogTravelTime(vehicle, call, true);
+      });
+      travelButton?.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        event.stopPropagation();
+        requestDialogTravelTime(vehicle, call, true);
+      });
       row.addEventListener("click", () => {
         if (state.selectedDialogVehicleIds.has(vehicle.id)) {
           state.selectedDialogVehicleIds.delete(vehicle.id);
@@ -1247,7 +1261,93 @@ function renderDialogVehicles(call, incident = null) {
         }
       });
       el.dialogVehicleList.append(row);
+      if (autoTravelTimeIds.has(vehicle.id)) requestDialogTravelTime(vehicle, call);
     });
+}
+
+function dialogTravelTimeStatus(vehicle, call) {
+  const key = dialogTravelTimeKey(vehicle, call);
+  if (state.dialogTravelTimes?.has(key)) return state.dialogTravelTimes.get(key);
+  if (state.dialogTravelTimeRequests?.has(key)) return { state: "loading" };
+  return { state: "idle" };
+}
+
+function travelTimeMarkup(status) {
+  if (status?.state === "ready") {
+    const minutes = Math.max(1, Math.round(status.durationMs / 60000));
+    const source = status.source === "fallback" ? "Fallback" : status.source === "air" ? "direkt" : "Route";
+    return `&middot; ca. ${minutes} min Fahrt <small>${escapeHtml(source)}</small>`;
+  }
+  if (status?.state === "loading") return `&middot; Fahrzeit...`;
+  return `&middot; <span class="dialog-travel-time-button" role="button" tabindex="0">Fahrzeit</span>`;
+}
+
+function dialogTravelTimeKey(vehicle, call) {
+  const destination = dialogTravelTimeDestination(call);
+  const signal = dialogTravelTimeSignal(call) ? "1" : "0";
+  return [
+    vehicle.id,
+    Number(vehicle.lat).toFixed(5),
+    Number(vehicle.lng).toFixed(5),
+    Number(destination.lat).toFixed(5),
+    Number(destination.lng).toFixed(5),
+    signal
+  ].join("|");
+}
+
+function dialogRouteKey(vehicle, call) {
+  const destination = dialogTravelTimeDestination(call);
+  return [
+    vehicle.id,
+    Number(vehicle.lat).toFixed(5),
+    Number(vehicle.lng).toFixed(5),
+    Number(destination.lat).toFixed(5),
+    Number(destination.lng).toFixed(5)
+  ].join("|");
+}
+
+function dialogTravelTimeDestination(call) {
+  return {
+    lat: Number.isFinite(call?.lat) ? call.lat : state.center.mapCenter[0],
+    lng: Number.isFinite(call?.lng) ? call.lng : state.center.mapCenter[1],
+    label: call?.location || "Einsatzort"
+  };
+}
+
+function dialogTravelTimeSignal(call) {
+  if (el.incidentSignal) return el.incidentSignal.value === "yes";
+  return Boolean(call?.signal);
+}
+
+async function requestDialogTravelTime(vehicle, call, force = false) {
+  state.dialogRoutes ||= new Map();
+  state.dialogTravelTimes ||= new Map();
+  state.dialogTravelTimeRequests ||= new Set();
+  const key = dialogTravelTimeKey(vehicle, call);
+  if (!force && (state.dialogTravelTimes.has(key) || state.dialogTravelTimeRequests.has(key))) return;
+  if (state.dialogTravelTimeRequests.has(key)) return;
+  state.dialogTravelTimeRequests.add(key);
+  const destination = dialogTravelTimeDestination(call);
+  const signal = dialogTravelTimeSignal(call);
+  try {
+    const routeKey = dialogRouteKey(vehicle, call);
+    const route = state.dialogRoutes.get(routeKey) || await buildRoute(vehicle, destination);
+    state.dialogRoutes.set(routeKey, route);
+    state.dialogTravelTimes.set(key, {
+      state: "ready",
+      durationMs: routeTravelDurationMs(vehicle, route, signal),
+      source: route.source
+    });
+  } catch {
+    state.dialogTravelTimes.set(key, { state: "error" });
+  } finally {
+    state.dialogTravelTimeRequests.delete(key);
+  }
+  if (el.incidentDialog?.open) {
+    const source = currentIncidentDialogSource();
+    const incident = state.editingIncidentId ? state.incidents.find((item) => item.id === state.editingIncidentId) : null;
+    if (source) renderDialogVehicles(source, incident);
+  }
 }
 
 function renderQuickVehicleButtons(call, assignedIds, incident = null) {
