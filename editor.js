@@ -15,6 +15,9 @@
   editingUnits: [],
   pinMode: false,
   coverageMarkers: [],
+  importedPoiResults: [],
+  pointListFilter: "station",
+  showPoiMarkers: false,
   map: null,
   coverageLayer: null,
   layers: []
@@ -26,6 +29,8 @@ const el = Object.fromEntries([
   "new-station", "new-hospital", "new-poi", "edit-coverage", "point-dialog", "point-form", "coverage-form", "form-title",
   "cancel-edit", "cancel-coverage", "vehicle-count-section", "unit-section", "hospital-section", "departments",
   "pediatric-only", "poi-section", "poi-category-search", "poi-categories", "coverage", "use-bounds", "apply-coverage",
+  "osm-poi-categories", "import-pois", "apply-imported-pois", "osm-poi-status", "osm-poi-preview",
+  "show-poi-markers", "point-filter-stations", "point-filter-hospitals", "point-filter-poi",
   "set-pin", "edit-coverage-pins", "add-coverage-pin",
   "unit-type", "unit-name", "unit-short", "unit-shift", "add-unit", "units-list",
   "use-center", "add", "new", "save", "points", "saved", "map"
@@ -64,12 +69,22 @@ function init() {
   el.new_poi.addEventListener("click", () => startPointEdit("poi"));
   el.edit_coverage.addEventListener("click", showCoverageForm);
   el.poi_category_search.addEventListener("input", () => renderPoiCategorySelect());
+  el.import_pois.addEventListener("click", importOsmPois);
+  el.apply_imported_pois.addEventListener("click", applyImportedPois);
+  el.show_poi_markers.addEventListener("change", () => {
+    state.showPoiMarkers = el.show_poi_markers.checked;
+    render();
+  });
+  el.point_filter_stations.addEventListener("click", () => setPointListFilter("station"));
+  el.point_filter_hospitals.addEventListener("click", () => setPointListFilter("hospital"));
+  el.point_filter_poi.addEventListener("click", () => setPointListFilter("poi"));
   el.cancel_edit.addEventListener("click", closeWorkbench);
   el.cancel_coverage.addEventListener("click", closeWorkbench);
   el.new.addEventListener("click", newMap);
   el.save.addEventListener("click", saveMapFile);
   el.type.addEventListener("change", updateVehicleInputs);
   renderDepartmentChecks();
+  renderOsmImportCategories();
   renderRateEditor();
   useCenter();
   updateVehicleInputs();
@@ -400,6 +415,7 @@ function render() {
     ...(state.mapData.poi || []).map((point) => ({ ...point, type: "poi" }))
   ];
   points.forEach((point) => {
+    if (point.type === "poi" && !state.showPoiMarkers) return;
     const foreignClass = point.foreign ? " foreign-map-point" : "";
     const markerClass = point.type === "hospital" ? "hospital" : point.type === "poi" ? "poi" : "station station-available";
     const markerLabel = point.type === "hospital" ? (point.foreign ? "FKH" : "KH") : point.type === "poi" ? "POI" : (point.foreign ? "FRW" : "RW");
@@ -418,7 +434,15 @@ function render() {
 
 function renderList(points) {
   el.points.innerHTML = "";
-  points.forEach((point) => {
+  updatePointListTabs();
+  const filtered = points.filter((point) => point.type === state.pointListFilter);
+  if (!filtered.length) {
+    el.points.className = "editor-point-list empty-state";
+    el.points.textContent = emptyPointListText(state.pointListFilter);
+    return;
+  }
+  el.points.className = "editor-point-list";
+  filtered.forEach((point) => {
     const row = document.createElement("article");
     row.className = `editor-point${point.foreign ? " foreign-point" : ""}`;
     const extra = point.type === "station"
@@ -441,7 +465,31 @@ function renderList(points) {
   });
 }
 
+function setPointListFilter(filter) {
+  state.pointListFilter = filter;
+  render();
+}
+
+function updatePointListTabs() {
+  [
+    [el.point_filter_stations, "station"],
+    [el.point_filter_hospitals, "hospital"],
+    [el.point_filter_poi, "poi"]
+  ].forEach(([button, filter]) => button?.classList.toggle("active", state.pointListFilter === filter));
+}
+
+function emptyPointListText(filter) {
+  if (filter === "station") return "Noch keine Wachen angelegt.";
+  if (filter === "hospital") return "Noch keine Krankenhäuser angelegt.";
+  return "Noch keine POI angelegt.";
+}
+
 function editPoint(point) {
+  if (point.type === "poi") {
+    state.showPoiMarkers = true;
+    el.show_poi_markers.checked = true;
+    render();
+  }
   startPointEdit(point.type, point);
 }
 
@@ -664,6 +712,138 @@ function renderPoiCategorySelect(selected = selectedPoiCategories()) {
 
 function selectedPoiCategories() {
   return [...el.poi_categories.selectedOptions].map((option) => option.value);
+}
+
+function renderOsmImportCategories() {
+  if (!el.osm_poi_categories) return;
+  el.osm_poi_categories.innerHTML = "";
+  (window.poiCategoryCatalog || [])
+    .filter((category) => category.importable)
+    .forEach((category) => {
+      const label = document.createElement("label");
+      label.className = "check-row";
+      label.innerHTML = `<input type="checkbox" value="${escapeHtml(category.key)}" checked> ${escapeHtml(category.label)}`;
+      el.osm_poi_categories.append(label);
+    });
+}
+
+function selectedOsmImportCategories() {
+  return [...el.osm_poi_categories.querySelectorAll("input:checked")].map((input) => input.value);
+}
+
+async function importOsmPois() {
+  const categories = selectedOsmImportCategories();
+  if (!categories.length) {
+    setOsmImportStatus("Bitte mindestens eine POI-Kategorie auswählen.", true);
+    return;
+  }
+  const payload = {
+    categories,
+    polygon: coveragePolygonForImport(),
+    bounds: boundsForImport()
+  };
+  el.import_pois.disabled = true;
+  el.apply_imported_pois.disabled = true;
+  el.import_pois.textContent = "Suche...";
+  setOsmImportStatus("OSM wird abgefragt...");
+  try {
+    const response = await fetch("/api/osm-pois", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "OSM-Import fehlgeschlagen");
+    state.importedPoiResults = Array.isArray(data.poi) ? data.poi : [];
+    renderOsmImportPreview();
+    el.apply_imported_pois.disabled = !state.importedPoiResults.length;
+    setOsmImportStatus(`${state.importedPoiResults.length} Treffer gefunden.`);
+  } catch (error) {
+    state.importedPoiResults = [];
+    renderOsmImportPreview();
+    setOsmImportStatus(error.message || "OSM-Import fehlgeschlagen.", true);
+  } finally {
+    el.import_pois.disabled = false;
+    el.import_pois.textContent = "POIs suchen";
+  }
+}
+
+function applyImportedPois() {
+  if (!state.importedPoiResults.length) return;
+  state.mapData.poi ||= [];
+  const byId = new Map(state.mapData.poi.map((poi) => [poi.id, poi]));
+  state.importedPoiResults.forEach((poi) => {
+    const existing = byId.get(poi.id);
+    if (existing) {
+      existing.label = existing.label || poi.label;
+      existing.address = existing.address || poi.address;
+      existing.lat = Number.isFinite(existing.lat) ? existing.lat : poi.lat;
+      existing.lng = Number.isFinite(existing.lng) ? existing.lng : poi.lng;
+      existing.categories = [...new Set([...(existing.categories || []), ...(poi.categories || [])])];
+      existing.source = existing.source || poi.source;
+      existing.osmType = existing.osmType || poi.osmType;
+      existing.osmId = existing.osmId || poi.osmId;
+    } else {
+      byId.set(poi.id, { ...poi });
+      state.mapData.poi.push({ ...poi });
+    }
+  });
+  setOsmImportStatus(`${state.importedPoiResults.length} Treffer in die POI-Liste übernommen.`);
+  state.importedPoiResults = [];
+  state.pointListFilter = "poi";
+  el.apply_imported_pois.disabled = true;
+  renderOsmImportPreview();
+  render();
+}
+
+function renderOsmImportPreview() {
+  el.osm_poi_preview.innerHTML = "";
+  if (!state.importedPoiResults.length) {
+    el.osm_poi_preview.className = "editor-point-list osm-poi-preview empty-state";
+    el.osm_poi_preview.textContent = "Keine Treffer in der Vorschau.";
+    return;
+  }
+  el.osm_poi_preview.className = "editor-point-list osm-poi-preview";
+  const visible = state.importedPoiResults.slice(0, 80);
+  visible.forEach((poi) => {
+    const row = document.createElement("article");
+    row.className = "editor-point osm-poi-result";
+    const categories = (poi.categories || []).map(poiCategoryLabel).join(", ") || "POI";
+    row.innerHTML = `<div><h3>${escapeHtml(poi.label)}</h3><p>${escapeHtml(categories)} | ${escapeHtml(poi.address || "OSM")}</p></div>`;
+    el.osm_poi_preview.append(row);
+  });
+  if (state.importedPoiResults.length > visible.length) {
+    const note = document.createElement("p");
+    note.className = "inline-hint";
+    note.textContent = `${state.importedPoiResults.length - visible.length} weitere Treffer werden beim Übernehmen ebenfalls importiert.`;
+    el.osm_poi_preview.append(note);
+  }
+}
+
+function coveragePolygonForImport() {
+  const ring = state.mapData.coverageGeoJson?.geometry?.coordinates?.[0];
+  if (!Array.isArray(ring) || ring.length < 4) return null;
+  return ring.slice(0, -1).map(([lng, lat]) => ({ lat: Number(lat), lng: Number(lng) }))
+    .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+}
+
+function boundsForImport() {
+  const bounds = state.map.getBounds();
+  return {
+    south: bounds.getSouth(),
+    west: bounds.getWest(),
+    north: bounds.getNorth(),
+    east: bounds.getEast()
+  };
+}
+
+function setOsmImportStatus(text, isError = false) {
+  el.osm_poi_status.textContent = text;
+  el.osm_poi_status.classList.toggle("error-text", Boolean(isError));
+}
+
+function poiCategoryLabel(key) {
+  return (window.poiCategoryCatalog || []).find((category) => category.key === key)?.label || key;
 }
 
 function departmentLabel(key) {

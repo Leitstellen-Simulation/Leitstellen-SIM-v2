@@ -1,4 +1,8 @@
 const DEFAULT_MAP_ID = "ils-regensburg-testversion-stadt-regensburg";
+const STATIC_MAPS = [
+  { id: "ils-regensburg-testversion-stadt-regensburg", name: "ILS Regensburg (Testversion Stadt Regensburg)" },
+  { id: "ils-regensburg-tisch-regensburg-alpha-version", name: "ILS Regensburg Tisch Regensburg (Alpha-Version)" }
+];
 
 const rdKeywords = window.rdKeywords || [];
 const keywordDefaults = Object.fromEntries(rdKeywords.map((item) => [item.label, item]));
@@ -21,9 +25,11 @@ const state = {
   center: createEmptyCenter(),
   dispatcher: "Gast",
   minute: 0,
+  absoluteMinute: 0,
   speed: 1,
   paused: false,
   pendingCall: null,
+  pendingCalls: [],
   audioContext: null,
   editingIncidentId: null,
   selectedIncidentId: null,
@@ -47,6 +53,12 @@ const state = {
   pendingCoverageVehicleId: null,
   testMode: false,
   serverAvailable: false,
+  systemStatus: {
+    server: "unbekannt",
+    routing: "unbekannt",
+    weather: "unbekannt",
+    geocoding: "unbekannt"
+  },
   map: null,
   mapReady: false,
   layers: {
@@ -71,6 +83,7 @@ const el = {
   activeCenter: document.querySelector("#active-center"),
   operatorLabel: document.querySelector("#operator-label"),
   weatherLabel: document.querySelector("#weather-label"),
+  adminStatusBar: document.querySelector("#admin-status-bar"),
   map: document.querySelector("#map"),
   incidentList: document.querySelector("#incident-list"),
   incidentCount: document.querySelector("#incident-count"),
@@ -213,8 +226,10 @@ async function startShift() {
   state.coveragePoints = buildCoveragePoints(state.center);
   state.dispatcher = el.dispatcherName.value.trim() || "Gast";
   state.minute = startingMinute(el.timeSelect.value);
+  state.absoluteMinute = state.minute;
   state.incidents = [];
   state.pendingCall = null;
+  state.pendingCalls = [];
   state.editingIncidentId = null;
   state.adminMode = false;
   state.testMode = false;
@@ -224,6 +239,9 @@ async function startShift() {
   state.showForeignVehiclesInDialog = false;
   state.showForeignHospitalsInTransport = false;
   state.lastForeignAvailabilityRoll = null;
+  state.systemStatus.routing = "unbekannt";
+  state.systemStatus.weather = "unbekannt";
+  state.systemStatus.geocoding = "unbekannt";
   state.timeouts.forEach((timer) => clearTimeout(timer));
   state.timeouts = [];
   state.speed = Number(el.speedSelect.value) || 1;
@@ -231,11 +249,13 @@ async function startShift() {
   state.lastCallRateMinute = Math.floor(state.minute);
   state.vehicles = seedVehicles(state.center);
   rollForeignVehicleAvailability(true);
+  initializeShiftStatesForStart();
 
   el.activeCenter.textContent = state.center.name;
   el.operatorLabel.textContent = state.dispatcher;
   el.weatherLabel.textContent = state.center.weather;
   updateCurrentWeather();
+  checkCriticalServices();
   el.startScreen.classList.add("hidden");
   el.dispatchScreen.classList.remove("hidden");
   document.body.classList.add("dispatch-active");
@@ -243,11 +263,11 @@ async function startShift() {
   state.adminMode = options.admin;
   state.testMode = options.test;
   updateAdminControls();
+  updateCallControls();
   logCall("Schicht gestartet. Telefon ist frei.", "call");
-  logRadio("Alle Fahrzeuge melden einsatzbereit.", "radio");
+  logRadio("Dienstplan geladen, einsatzbereite Fahrzeuge sind verfuegbar.", "radio");
   initMap();
   renderAll();
-  receiveCall();
   startClock();
 }
 
@@ -279,18 +299,21 @@ function startFromStartupOptions() {
 }
 
 async function loadCenterOptions() {
-  const fallback = [{ id: DEFAULT_MAP_ID, name: "ILS Regensburg (Testversion Stadt Regensburg)" }];
+  const fallback = STATIC_MAPS;
   try {
     const response = await fetch("/api/maps");
     if (!response.ok) throw new Error("map list unavailable");
     const maps = await response.json();
-    state.availableMaps = Array.isArray(maps) && maps.length ? maps : fallback;
+    state.availableMaps = Array.isArray(maps) && maps.length ? mergeStaticMaps(maps) : fallback;
     state.serverAvailable = true;
+    state.systemStatus.server = "online";
   } catch {
     state.availableMaps = fallback;
     state.serverAvailable = false;
+    state.systemStatus.server = "fallback";
   }
   updateServerDependentControls();
+  renderAdminStatusBar();
 
   const previousValue = el.centerSelect.value;
   el.centerSelect.innerHTML = "";
@@ -304,6 +327,38 @@ async function loadCenterOptions() {
     || state.availableMaps[0]?.id
     || DEFAULT_MAP_ID;
   el.centerSelect.value = state.availableMaps.some((map) => map.id === previousValue) ? previousValue : defaultId;
+}
+
+function mergeStaticMaps(maps) {
+  const merged = new Map(STATIC_MAPS.map((map) => [map.id, map]));
+  maps.forEach((map) => {
+    const id = map?.id || map?.name;
+    if (!id) return;
+    merged.set(id, map);
+  });
+  return Array.from(merged.values());
+}
+
+function initializeShiftStatesForStart() {
+  state.vehicles.forEach((vehicle) => {
+    const inShift = vehicleInShift(vehicle);
+    const canShiftChange = vehicleCanShiftChangeAtStation(vehicle);
+    vehicle.shiftWarning = !inShift && vehicle.status !== 6 && !canShiftChange;
+    if (!inShift && canShiftChange) {
+      vehicle.status = 6;
+      vehicle.statusText = "ausser Dienst";
+      vehicle.radioStatus = null;
+      vehicle.radioMessage = "";
+      vehicle.awaitingSpeechPrompt = false;
+    }
+    if (inShift && vehicle.status === 6 && !vehicle.status6Reason && !vehicle.foreign) {
+      vehicle.status = 2;
+      vehicle.statusText = "auf Wache";
+      vehicle.radioStatus = null;
+      vehicle.radioMessage = "";
+      vehicle.awaitingSpeechPrompt = false;
+    }
+  });
 }
 
 function updateServerDependentControls() {
@@ -352,11 +407,33 @@ function updateAdminControls() {
   });
   el.adminModeButton.textContent = state.adminMode ? "Admin aktiv" : "Admin";
   updateTestModeButton();
+  renderAdminStatusBar();
+}
+
+function renderAdminStatusBar() {
+  if (!el.adminStatusBar) return;
+  el.adminStatusBar.hidden = !state.adminMode;
+  if (!state.adminMode) return;
+  const mapStatus = state.mapReady ? "online" : "fallback";
+  const vehiclesStatus = state.vehicles?.length ? `${state.vehicles.length} Fzg` : "keine Fzg";
+  const items = [
+    ["Server", state.systemStatus.server],
+    ["Routing", state.systemStatus.routing],
+    ["Wetter", state.systemStatus.weather],
+    ["Geocoding", state.systemStatus.geocoding],
+    ["Karte", mapStatus],
+    ["Fahrzeuge", vehiclesStatus]
+  ];
+  el.adminStatusBar.innerHTML = items.map(([label, value]) => {
+    const tone = value === "online" || /Fzg$/.test(value) ? "ok" : value === "unbekannt" ? "neutral" : "warn";
+    return `<span class="admin-status-chip ${tone}"><b>${escapeHtml(label)}:</b> ${escapeHtml(value)}</span>`;
+  }).join("");
 }
 
 function toggleTestMode() {
   state.testMode = !state.testMode;
   updateTestModeButton();
+  updateCallControls();
   logRadio(`Testbetrieb ${state.testMode ? "aktiviert: automatische Anrufe pausiert" : "deaktiviert: automatische Anrufe aktiv"}.`, "admin");
 }
 
@@ -442,10 +519,55 @@ async function updateCurrentWeather() {
     if (Number.isFinite(temperature)) {
       state.center.weather = `${weather}, ${temperature}°C`;
       el.weatherLabel.textContent = state.center.weather;
+      state.systemStatus.weather = "online";
+      renderAdminStatusBar();
     }
   } catch {
     el.weatherLabel.textContent = state.center.weather || "Wetter nicht verfügbar";
+    state.systemStatus.weather = "fallback";
+    renderAdminStatusBar();
   }
+}
+
+async function checkCriticalServices() {
+  checkRoutingStatus();
+  checkGeocodingStatus();
+}
+
+async function checkRoutingStatus() {
+  const [lat, lng] = state.center.mapCenter || [];
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !window.fetch) return;
+  state.systemStatus.routing = "prueft";
+  renderAdminStatusBar();
+  try {
+    const params = new URLSearchParams({
+      fromLat: String(lat),
+      fromLng: String(lng),
+      toLat: String(lat + 0.01),
+      toLng: String(lng + 0.01)
+    });
+    const response = await fetch(`/api/route?${params}`);
+    state.systemStatus.routing = response.ok ? "online" : "fallback";
+  } catch {
+    state.systemStatus.routing = "fallback";
+  }
+  renderAdminStatusBar();
+}
+
+async function checkGeocodingStatus() {
+  const [lat, lng] = state.center.mapCenter || [];
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !window.fetch) return;
+  state.systemStatus.geocoding = "prueft";
+  renderAdminStatusBar();
+  try {
+    const response = await fetch(reverseGeocodeUrl(lat, lng), { headers: { accept: "application/json" } });
+    if (!response.ok) throw new Error("geocoding unavailable");
+    const data = await response.json();
+    state.systemStatus.geocoding = formatGeocodeAddress(data) ? "online" : "fallback";
+  } catch {
+    state.systemStatus.geocoding = "fallback";
+  }
+  renderAdminStatusBar();
 }
 
 function weatherLabel(code) {
@@ -494,7 +616,6 @@ function populateKeywordSelectGrouped(filter = "") {
       el.incidentKeyword.value = keyword.label;
       hideKeywordOptions();
       renderDispositionSuggestion();
-      renderPatientConditionEditor(currentIncidentDialogSource());
       const source = currentIncidentDialogSource();
       if (source) renderDialogVehicles(source, state.editingIncidentId ? source : null);
     });
@@ -625,7 +746,7 @@ function rollForeignVehicleAvailability(force = false) {
   state.lastForeignAvailabilityRoll = rollSlot;
   let changed = false;
   state.vehicles.forEach((vehicle) => {
-    if (!vehicle.foreign || ![2, 6].includes(vehicle.status) || vehicle.nextIncidentId || vehicle.incidentId) return;
+    if (!vehicle.foreign || ![2, 6].includes(vehicle.status) || vehicle.status6Reason || vehicle.nextIncidentId || vehicle.incidentId) return;
     const station = state.center.stations.find((item) => item.id === vehicle.stationId);
     if (!vehicleInShift(vehicle)) {
       vehicle.status = 6;
@@ -715,7 +836,9 @@ function startClock() {
     const now = Date.now();
     const elapsedMs = now - state.lastClockTick;
     state.lastClockTick = now;
-    state.minute = (state.minute + (elapsedMs / 60000) * state.speed) % 1440;
+    const elapsedMinutes = (elapsedMs / 60000) * state.speed;
+    state.absoluteMinute += elapsedMinutes;
+    state.minute = (state.minute + elapsedMinutes) % 1440;
     processCallRates();
     rollForeignVehicleAvailability();
     renderClock();
@@ -730,39 +853,6 @@ function startClock() {
   }, 1000));
 }
 
-function processCallRates() {
-  if (state.testMode) {
-    state.lastCallRateMinute = Math.floor(state.minute);
-    return;
-  }
-  if (state.pendingCall || el.incidentDialog.open) return;
-  const currentMinute = Math.floor(state.minute);
-  let previous = state.lastCallRateMinute ?? currentMinute;
-  if (currentMinute < previous) previous -= 1440;
-  const steps = Math.min(60, currentMinute - previous);
-  for (let index = 0; index < steps; index += 1) {
-    const minute = (previous + index + 1 + 1440) % 1440;
-    const type = callTypeForMinute(minute);
-    if (type) {
-      receiveCall(type);
-      break;
-    }
-  }
-  state.lastCallRateMinute = currentMinute;
-}
-
-function callTypeForMinute(minute) {
-  const hour = Math.floor(minute / 60);
-  const rate = normalizedCallRates(state.center.callRates)[hour];
-  const rolls = [
-    ["emergency", rate.emergency],
-    ["transport", rate.transport],
-    ["scheduled", rate.scheduled]
-  ].filter(([, value]) => Math.random() < Math.max(0, Number(value) || 0) / 60);
-  if (!rolls.length) return null;
-  return rolls.sort((a, b) => b[1] - a[1])[0][0];
-}
-
 function normalizedCallRates(rates) {
   const fallback = Array.from({ length: 24 }, (_, hour) => ({
     hour,
@@ -774,7 +864,7 @@ function normalizedCallRates(rates) {
   return fallback.map((base) => ({ ...base, ...(rates.find((item) => Number(item.hour) === base.hour) || {}) }));
 }
 
-function receiveCall(forcedType = null) {
+function legacyReceiveCall(forcedType = null) {
   if (state.pendingCall) return;
   const templates = availableCallTemplates();
   if (!templates.length) {
@@ -842,11 +932,6 @@ function listValue(value) {
 }
 
 function randomPointInCoverage() {
-  const poiPool = locationsInsideCoverage(state.center.poi || []);
-  if (poiPool.length && Math.random() < .45) {
-    const poi = poiPool[randomInt(0, poiPool.length - 1)];
-    return { lat: poi.lat, lng: poi.lng, label: poi.label };
-  }
   const ring = primaryCoverageRing();
   if (!Array.isArray(ring) || !ring.length) {
     return { lat: state.center.mapCenter[0], lng: state.center.mapCenter[1], label: nearestAddressLabel(state.center.mapCenter[0], state.center.mapCenter[1], defaultLocationLabel()) };
@@ -858,7 +943,7 @@ function randomPointInCoverage() {
       lat: randomFloat(Math.min(...lats), Math.max(...lats)),
       lng: randomFloat(Math.min(...lngs), Math.max(...lngs))
     };
-    if (callPointInsideCoverage(point.lat, point.lng)) return point;
+    if (callPointInsideCoverage(point.lat, point.lng)) return { ...point, label: null };
   }
   return { lat: state.center.mapCenter[0], lng: state.center.mapCenter[1], label: nearestAddressLabel(state.center.mapCenter[0], state.center.mapCenter[1], defaultLocationLabel()) };
 }
@@ -941,40 +1026,50 @@ function updateCallAddressFromNearestSource(call) {
 }
 
 function nearestAddressLabel(lat, lng, fallback = defaultLocationLabel()) {
-  const candidates = [
-    ...locationsInsideCoverage(state.center.poi || []),
-    ...locationsInsideCoverage(state.center.hospitals || []),
-    ...locationsInsideCoverage(state.center.stations || [])
-  ]
-    .filter((item) => Number.isFinite(item.lat) && Number.isFinite(item.lng))
-    .map((item) => ({
-      label: item.address || item.label,
-      distance: mapDistance(lat, lng, item.lat, item.lng)
-    }))
-    .sort((a, b) => a.distance - b.distance);
-  if (candidates[0]) return candidates[0].label;
+  if (fallback && fallback !== defaultLocationLabel()) return fallback;
+  if (Number.isFinite(lat) && Number.isFinite(lng)) return "Adresse wird ermittelt...";
   return fallback || defaultLocationLabel();
 }
 
 async function reverseGeocodeCall(call) {
   if (!call || !Number.isFinite(call.lat) || !Number.isFinite(call.lng) || !window.fetch) return;
+  state.systemStatus.geocoding = "fallback";
+  renderAdminStatusBar();
   try {
-    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${call.lat}&lon=${call.lng}&zoom=18&addressdetails=1`;
+    const url = reverseGeocodeUrl(call.lat, call.lng);
     const response = await fetch(url, { headers: { accept: "application/json" } });
-    if (!response.ok) return;
+    if (!response.ok) throw new Error("geocoding unavailable");
     const data = await response.json();
-    const address = data.address || {};
-    const road = address.road || address.pedestrian || address.footway || address.cycleway || address.path;
-    if (!road) return;
-    const city = address.city || address.town || address.village || defaultLocationLabel();
-    call.location = `${road}${address.house_number ? ` ${address.house_number}` : ""}, ${city}`;
+    const label = formatGeocodeAddress(data);
+    if (!label) return;
+    call.location = label;
+    state.systemStatus.geocoding = "online";
+    renderAdminStatusBar();
     if (state.pendingCall?.id === call.id) {
       renderCallDisposition();
-      renderPendingCallActions();
     }
+    if (state.pendingCalls?.some((item) => item.id === call.id)) renderPendingCallActions();
   } catch {
     // Offline/fallback bleibt bei der nächsten bekannten Adresse.
   }
+}
+
+function formatGeocodeAddress(data) {
+  const address = data?.address || {};
+  const road = address.road || address.pedestrian || address.footway || address.cycleway || address.path || address.residential;
+  const place = address.city || address.town || address.village || address.municipality || address.county || defaultLocationLabel();
+  if (road) return `${road}${address.house_number ? ` ${address.house_number}` : ""}, ${place}`;
+  if (data?.display_name) {
+    const parts = String(data.display_name).split(",").map((part) => part.trim()).filter(Boolean);
+    if (parts.length >= 2) return parts.slice(0, 3).join(", ");
+  }
+  return null;
+}
+
+function reverseGeocodeUrl(lat, lng) {
+  const params = new URLSearchParams({ lat: String(lat), lng: String(lng) });
+  if (location.protocol === "http:" || location.protocol === "https:") return `/api/reverse-geocode?${params}`;
+  return `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
 }
 
 function audioContext() {
@@ -1024,7 +1119,7 @@ function playStatusTone(code) {
   }
 }
 
-function weightedCallTemplateIndex(forcedType = null) {
+function legacyWeightedCallTemplateIndex(forcedType = null) {
   const roll = Math.random();
   const wantedType = forcedType || (roll < .72 ? "emergency" : roll < .9 ? "transport" : "scheduled");
   const templates = availableCallTemplates();
@@ -1036,7 +1131,7 @@ function weightedCallTemplateIndex(forcedType = null) {
   return pool[Math.floor(Math.random() * pool.length)].index;
 }
 
-function availableCallTemplates() {
+function legacyAvailableCallTemplates() {
   if (Array.isArray(state.incidentCatalog) && state.incidentCatalog.length) return state.incidentCatalog;
   return [];
 }
@@ -1115,32 +1210,6 @@ function randomDelimitedText(value) {
   return parts[randomInt(0, parts.length - 1)];
 }
 
-function answerCall() {
-  if (!state.pendingCall) return;
-  const call = state.pendingCall;
-  logCall(`${call.callerName}: ${call.callerText}`, "call");
-  logCall(`Einsatzort genannt: ${call.location}.`, "call");
-  el.callActions.innerHTML = "";
-  el.answerButton.disabled = true;
-  el.answerButton.classList.remove("pending-call-alert");
-  renderCallDisposition();
-  showDialog(el.callDispositionDialog);
-}
-
-function renderCallDisposition() {
-  const call = state.pendingCall;
-  if (!call) return;
-  const tag = callTypeTag(call.type);
-  el.callDispositionText.innerHTML = `
-    <section class="call-disposition-summary">
-      <span class="call-type">${escapeHtml(tag)}</span>
-      <h3>${escapeHtml(call.callerName || "Anrufer")}</h3>
-      <p class="call-location">${escapeHtml(call.location || defaultLocationLabel())}</p>
-      <p>${escapeHtml(call.callerText || "")}</p>
-    </section>
-  `;
-}
-
 function normalizeSearch(value) {
   return String(value || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
@@ -1154,12 +1223,7 @@ function defaultLocationLabel() {
   return state.center?.name || "Einsatzgebiet";
 }
 
-function handleCallDispositionClosed() {
-  if (!state.pendingCall || el.incidentDialog.open) return;
-  renderPendingCallActions();
-}
-
-function renderPendingCallActions() {
+function legacyRenderPendingCallActions() {
   el.callActions.innerHTML = "";
   const reopenButton = document.createElement("button");
   reopenButton.type = "button";
@@ -1179,7 +1243,7 @@ function renderPendingCallActions() {
   el.callActions.append(reopenButton, rejectButton, mapButton);
 }
 
-function rejectPendingCall() {
+function legacyRejectPendingCall() {
   if (!state.pendingCall) return;
   logCall("Anruf abgelehnt.", "warn");
   state.pendingCall = null;
@@ -1190,7 +1254,7 @@ function rejectPendingCall() {
   if (el.callDispositionDialog.open) el.callDispositionDialog.close();
 }
 
-function referPendingCall(service) {
+function legacyReferPendingCall(service) {
   if (!state.pendingCall) return;
   const labels = { FW: "Feuerwehr", POL: "Polizei", AEND: "Ärztlichen Notdienst" };
   logCall(`Anruf an ${labels[service] || service} verwiesen.`, "warn");
@@ -1202,7 +1266,7 @@ function referPendingCall(service) {
   el.callDispositionDialog.close();
 }
 
-function forwardCall() {
+function legacyForwardCall() {
   if (!state.pendingCall) return;
   logCall("Anruf beendet oder weitergeleitet.", "warn");
   state.pendingCall = null;
@@ -1232,7 +1296,10 @@ function openIncidentDialog(source = null) {
   el.incidentPol.checked = Boolean(incident?.requiredServices?.includes("POL") || call.requiredServices?.includes?.("POL") || (incident?.services?.POL && incident.services.POL.status !== "nicht alarmiert"));
   el.incidentCaller.value = call.callerName || "";
   el.incidentNote.value = call.note || "";
-  renderPatientConditionEditor(call);
+  if (el.incidentPatientConditions) {
+    el.incidentPatientConditions.hidden = true;
+    el.incidentPatientConditions.innerHTML = "";
+  }
   document.querySelector("#create-incident-button").textContent = incident ? "Änderungen speichern" : "Einsatz erstellen";
   document.querySelector("#create-alarm-button").textContent = incident ? "Speichern & weitere alarmieren" : "Erstellen & alarmieren";
   renderDispositionSuggestion();
@@ -1371,6 +1438,7 @@ function submitIncidentDialog(event) {
   if (submitter?.value === "cancel") {
     state.editingIncidentId = null;
     el.incidentDialog.close();
+    updateCallControls();
     return;
   }
 
@@ -1394,7 +1462,7 @@ function submitIncidentDialog(event) {
   const incidentData = {
     ...source,
     keyword,
-    type: defaults.type,
+    type: editingIncident?.type === "scheduled" ? "scheduled" : defaults.type,
     required: defaultRequired,
     signal: el.incidentSignal.value === "yes",
     requiredServices: selectedRequiredServices,
@@ -1406,8 +1474,7 @@ function submitIncidentDialog(event) {
     location: el.incidentLocation.value.trim() || source.location || defaultLocationLabel(),
     lat: fallbackLat,
     lng: fallbackLng,
-    note: el.incidentNote.value.trim(),
-    patientConditions: collectPatientConditionInputs()
+    note: el.incidentNote.value.trim()
   };
   const incident = editingIncident || createIncident(incidentData);
   if (editingIncident) {
@@ -1423,14 +1490,11 @@ function submitIncidentDialog(event) {
 
   const selectedIds = [...state.selectedDialogVehicleIds];
   if (!editingIncident) {
-    state.pendingCall = null;
-    el.answerButton.disabled = true;
-    el.answerButton.classList.remove("pending-call-alert");
-    el.forwardButton.disabled = true;
-    el.callActions.innerHTML = "";
+    completePendingCall(source.id);
   }
   state.editingIncidentId = null;
   el.incidentDialog.close();
+  updateCallControls();
   renderAll();
   (incident.requiredServices || []).forEach((service) => {
     if (incident.services?.[service]?.status === "nicht alarmiert") alarmService(incident.id, service);
@@ -1470,6 +1534,7 @@ function createIncident(call) {
     lat: Number.isFinite(call.lat) ? call.lat : state.center.mapCenter[0],
     lng: Number.isFinite(call.lng) ? call.lng : state.center.mapCenter[1],
     createdAtMinute: state.minute,
+    createdAtAbsoluteMinute: state.absoluteMinute,
     status: "offen",
     assigned: [],
     patient: patientProfile,
@@ -1524,7 +1589,7 @@ function createPatientProfile(call) {
     status: "unversorgt",
     treatmentStartedAt: null,
     readyForTransport: false,
-    transportNeeded: call.type !== "scheduled",
+    transportNeeded: callTransportNeeded(call),
     requiredDepartmentKey: departmentKey,
     requiredDepartmentKeys: call.requiredDepartmentKeys || [departmentKey],
     requiredDepartment: departmentLabels(call.requiredDepartmentKeys || [departmentKey]),
@@ -1537,7 +1602,11 @@ function createPatientProfile(call) {
     noTransportLikely: Boolean(call.noTransportLikely),
     outcome: null,
     fixedDestinationId: call.fixedDestinationId || null,
-    fixedDestination: call.fixedDestination || null
+    fixedDestination: call.fixedDestination || null,
+    destinationMode: call.destinationMode || "none",
+    destinationPoiProbability: clampProbability(call.destinationPoiProbability),
+    destinationPoiCategories: listValue(call.destinationPoiCategories),
+    destinationPoiIds: listValue(call.destinationPoiIds)
   };
 }
 
@@ -1604,9 +1673,14 @@ function normalizePatients(call, fallbackDepartmentKey) {
     conditionReport: "",
     noTransportProbability: baseRefOnly ? 1 : 0,
     noTransportText: baseRefOnly ? "Ambulante Versorgung durch REF ausreichend, kein Transport." : "Ambulante Versorgung ausreichend, kein Transport.",
-    transportNeeded: baseRefOnly ? false : call.type !== "scheduled",
+    transportNeeded: baseRefOnly ? false : callTransportNeeded(call),
     assignedVehicles: []
   }));
+}
+
+function callTransportNeeded(call) {
+  if (Object.prototype.hasOwnProperty.call(call || {}, "transportNeeded")) return call.transportNeeded !== false;
+  return call?.type !== "scheduled";
 }
 
 function clampProbability(value) {

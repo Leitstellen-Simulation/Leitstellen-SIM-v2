@@ -53,6 +53,28 @@
             <small id="ie-poi-category-count" class="inline-hint"></small>
           </div>
           <label>Konkrete POI-IDs <input id="ie-poi-ids" placeholder="z.B. hospital-kh-st-hedwig"></label>
+          <section class="unit-editor">
+            <h3>Transportziel</h3>
+            <label>Zielmodus
+              <select id="ie-destination-mode">
+                <option value="none">Krankenhaus / normale Zielauswahl</option>
+                <option value="poi">POI-Ziel</option>
+              </select>
+            </label>
+            <label>POI-Ziel-Wahrscheinlichkeit <input id="ie-destination-poi-probability" type="number" min="0" max="100" value="0"></label>
+            <div class="multi-select-box">
+              <strong>Ziel-POI-Kategorien</strong>
+              <input id="ie-destination-poi-category-search" placeholder="Kategorie suchen">
+              <div class="multi-select-actions">
+                <button id="ie-destination-poi-select-visible" type="button">Sichtbare auswählen</button>
+                <button id="ie-destination-poi-clear" type="button">Auswahl löschen</button>
+              </div>
+              <div id="ie-destination-poi-selected" class="selected-chip-list"></div>
+              <div id="ie-destination-poi-categories" class="check-grid poi-category-grid"></div>
+              <small id="ie-destination-poi-category-count" class="inline-hint"></small>
+            </div>
+            <label>Konkrete Ziel-POI-IDs <input id="ie-destination-poi-ids" placeholder="optional"></label>
+          </section>
           <label class="check-row"><input id="ie-fw" type="checkbox"> FW vor Transport erforderlich</label>
           <label class="check-row"><input id="ie-pol" type="checkbox"> POL vor Transport erforderlich</label>
           <section class="unit-editor">

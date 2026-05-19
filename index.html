@@ -52,6 +52,7 @@
             Leitstelle
             <select id="center-select">
               <option value="ils-regensburg-testversion-stadt-regensburg">ILS Regensburg (Testversion Stadt Regensburg)</option>
+              <option value="ils-regensburg-tisch-regensburg-alpha-version">ILS Regensburg Tisch Regensburg (Alpha-Version)</option>
             </select>
           </label>
           <label>
@@ -125,7 +126,7 @@
                 <option value="station">Nach Wache</option>
                 <option value="status">Nach Status</option>
                 <option value="type">Nach Typ</option>
-                <option value="type-status">Nach Status + Typ</option>
+                <option value="type-status" selected>Nach Status + Typ</option>
               </select>
             </div>
             <div id="vehicle-list" class="vehicle-list"></div>
@@ -135,8 +136,8 @@
             <div class="panel-title">
               <h2>Anrufen</h2>
               <div>
-                <button id="answer-button" type="button" disabled>Annehmen</button>
-                <button id="forward-button" type="button" disabled>Weiterleiten</button>
+                <button id="answer-button" type="button" disabled hidden>Annehmen</button>
+                <button id="forward-button" type="button" disabled hidden>Weiterleiten</button>
               </div>
             </div>
             <div id="call-log" class="log-window"></div>
@@ -154,6 +155,7 @@
             <div id="radio-log" class="log-window"></div>
           </section>
         </section>
+        <div id="admin-status-bar" class="admin-status-bar admin-only" hidden></div>
       </section>
     </main>
 
@@ -196,7 +198,6 @@
             Zusatz
             <input id="incident-note" placeholder="optional">
           </label>
-          <div id="incident-patient-conditions" class="patient-condition-editor wide" hidden></div>
           <div class="vehicle-picker wide">
             <div class="picker-head">
               <strong>Zugeordnete Fahrzeuge</strong>
@@ -334,6 +335,8 @@
     <script src="app-render.js"></script>
     <script src="app-editor-tools.js"></script>
     <script src="app-utils.js"></script>
+    <script src="app-scheduled.js"></script>
+    <script src="app-calls.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

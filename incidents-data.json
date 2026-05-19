@@ -12,6 +12,12 @@
         "locationMode": "random",
         "poiCategories": [],
         "poiIds": [],
+        "destinationMode": "poi",
+        "destinationPoiProbability": 1,
+        "destinationPoiCategories": [
+          "practice"
+        ],
+        "destinationPoiIds": [],
         "requiredServices": [],
         "report": "Ein Patient mit ACS-Verdacht",
         "situationReport": "",
@@ -36,7 +42,8 @@
             ],
             "requiredDepartmentKeys": [
               "internal",
-              "cardiology"
+              "cardiology",
+              "icu"
             ],
             "transportSignalProbability": 0.9,
             "conditionReport": "",
@@ -53,13 +60,13 @@
   {
     "id": "mci-small",
     "category": "Sonstiges",
-    "title": "Mehrere Verletzte",
+    "title": "Kellerbrand",
     "type": "emergency",
-    "keyword": "Mehrere Verletzte",
+    "keyword": "Kellerbrand",
     "variants": [
       {
         "callerName": "Anrufer",
-        "callerText": "Kellerbrand, mehrere Personen mit Rauchgasexposition, Feuerwehr ist auf Anfahrt.",
+        "callerText": "Kellerbrand, mehrere Personen mit Rauchgasexposition. | Moin, der Sven hier, gegenüber raucht es stark aus dem Keller | Hello! Am I speaking to the fire department. Our house is smoking!",
         "locationMode": "random",
         "poiCategories": [],
         "poiIds": [],
@@ -70,6 +77,7 @@
         "situationReport": "Drei Patienten mit Rauchgasexposition. Pat 1 kritisch, Pat 2 und Pat 3 stabil.",
         "patients": [
           {
+            "id": "pat-1",
             "label": "Pat 1",
             "options": [
               {
@@ -80,11 +88,21 @@
                 ]
               }
             ],
-            "requiredDepartmentKey": "internal",
+            "requiredDepartmentKeys": [
+              "internal",
+              "trauma",
+              "icu"
+            ],
+            "transportSignalProbability": 0.9,
+            "conditionReport": "massiver Rauchgasintox, intubiert beatmet",
+            "noTransportProbability": 0,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
             "needsFW": true,
-            "id": "pat-1"
+            "needsPOL": false
           },
           {
+            "id": "pat-2",
             "label": "Pat 2",
             "options": [
               {
@@ -94,27 +112,40 @@
                 ]
               }
             ],
-            "requiredDepartmentKey": "internal",
-            "id": "pat-2"
+            "requiredDepartmentKeys": [
+              "internal",
+              "trauma"
+            ],
+            "transportSignalProbability": 0.6,
+            "conditionReport": "Rauchgasintox, CO > 10%",
+            "noTransportProbability": 0.1,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
+            "needsFW": false,
+            "needsPOL": false
           },
           {
+            "id": "pat-1779136919952",
             "label": "Pat 3",
             "options": [
               {
-                "probability": 0.75,
+                "probability": 1,
                 "vehicles": [
                   "RTW"
                 ]
-              },
-              {
-                "probability": 0.25,
-                "vehicles": [
-                  "KTW"
-                ]
               }
             ],
-            "requiredDepartmentKey": "internal",
-            "id": "pat-3"
+            "requiredDepartmentKeys": [
+              "internal",
+              "trauma"
+            ],
+            "transportSignalProbability": 0.1,
+            "conditionReport": "Rauchgasintox, CO normal",
+            "noTransportProbability": 0.3,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
+            "needsFW": false,
+            "needsPOL": false
           }
         ]
       }
@@ -125,22 +156,17 @@
     "category": "Krankentransport",
     "title": "KTP zur Arztpraxis",
     "type": "transport",
-    "keyword": "RD KTP - Ambulanzfahrt",
+    "keyword": "KTP zur Arztpraxis",
     "variants": [
       {
-        "callerName": "Pflegeheim",
+        "callerName": "Anrufer",
         "callerText": "Sitzender Krankentransport zur Hausarztpraxis, Patient stabil.",
-        "locationMode": "poi",
-        "location": "Pflegeheim Regensburg",
-        "lat": 49.025,
-        "lng": 12.105,
-        "fixedDestination": {
-          "label": "Hausarztpraxis Altstadt",
-          "lat": 49.0199,
-          "lng": 12.0965,
-          "type": "practice"
-        },
-        "signal": false,
+        "locationMode": "random",
+        "poiCategories": [],
+        "poiIds": [],
+        "requiredServices": [],
+        "report": "",
+        "situationReport": "",
         "patients": [
           {
             "label": "Pat 1",
@@ -152,7 +178,8 @@
                 ]
               }
             ],
-            "requiredDepartmentKey": "none"
+            "requiredDepartmentKey": "none",
+            "id": "pat-1"
           }
         ]
       }
@@ -271,6 +298,262 @@
             "requiredDepartmentKey": "cardiology",
             "transportSignalProbability": 1,
             "requiresDoctorAccompaniment": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "armfraktur",
+    "category": "Trauma",
+    "title": "Armfraktur",
+    "type": "emergency",
+    "keyword": "Armfraktur",
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Hallo, die Frau Meier ist gestürzt, die schreit so vor Schmerzen. | Grüß Gott, Schwester Melinda von der ambulanten Pflege hier, meine Patientin Frau Hansich ist gerade aus dem Bett gefallen. Können Sie wenn zur Röntgenkontrolle schicken? | Oh gott oh gott, die Frau Humboldt, der Arm oh gott. Schicken Sie schnell hilfe bitte!",
+        "locationMode": "random",
+        "poiCategories": [],
+        "poiIds": [],
+        "requiredServices": [],
+        "report": "Einmal V.a. Armfraktur ins Krankenhaus",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1779137461136",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 0.7,
+                "vehicles": [
+                  "RTW"
+                ]
+              },
+              {
+                "probability": 0.1,
+                "vehicles": [
+                  "RTW",
+                  "NEF"
+                ]
+              },
+              {
+                "probability": 0.2,
+                "vehicles": [
+                  "KTW"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "trauma"
+            ],
+            "transportSignalProbability": 0.05,
+            "conditionReport": "",
+            "noTransportProbability": 0.15,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "heimfahrt",
+    "category": "Krankentransport",
+    "title": "Heimfahrt",
+    "type": "transport",
+    "keyword": "Heimfahrt",
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Guten Tag, die Frau Mayer müsste nach hause gebracht werden! | Moinsen, der Herr Müller müsste mit O2 wieder heimgefahren werden.",
+        "locationMode": "hospital",
+        "poiCategories": [
+          "hospital"
+        ],
+        "poiIds": [],
+        "requiredServices": [],
+        "report": "",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1779137536192",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 1,
+                "vehicles": [
+                  "KTW"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "none"
+            ],
+            "transportSignalProbability": 0,
+            "conditionReport": "",
+            "noTransportProbability": 0,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "psych-ausnahmezustand",
+    "category": "Neuro/Psych",
+    "title": "Psych Ausnahmezustand",
+    "type": "emergency",
+    "keyword": "Psych Ausnahmezustand",
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Ich entschuldige mich schon mal für die Störung, meine Tochter, die Emmy, die hat so psychische Probleme. Und heute ist es ganz arg schlimm. Könnten Sie mal wenn vorbeischicken? | Grüß Gott, Polizeiobermeister Scharf, wir haben einen Anruf über nen psych Ausnahmezustand, klingt bei fehlender Eigen- und Fremdgefährdung eher nach was für euch.",
+        "locationMode": "random",
+        "poiCategories": [],
+        "poiIds": [],
+        "requiredServices": [],
+        "report": "Einmal 16 Jahre mit psychischem Ausnahmezustand",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1779137766557",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 0.5,
+                "vehicles": [
+                  "REF"
+                ]
+              },
+              {
+                "probability": 0.5,
+                "vehicles": [
+                  "KTW"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "psychiatry"
+            ],
+            "transportSignalProbability": 0,
+            "conditionReport": "",
+            "noTransportProbability": 0.25,
+            "noTransportText": "In Obhut der Mutter, soweit jetzt wieder beruhigt",
+            "requiresDoctorAccompaniment": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "krampanfall",
+    "category": "Neuro/Psych",
+    "title": "Krampanfall",
+    "type": "emergency",
+    "keyword": "Krampanfall",
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Schicken Sie bitte Hilfe, hier krampf jemand an der Bushaltestelle! | Guten Morgen, Kammerer hier, hier sitzt einer der ist so ganz komisch am zittern. Könnten Sie mal jemanden zum nachschauen schicken?",
+        "locationMode": "random",
+        "poiCategories": [],
+        "poiIds": [],
+        "requiredServices": [],
+        "report": "Einmal Krampfanfall, jetzt postiktal",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1779137911357",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 0.8,
+                "vehicles": [
+                  "RTW"
+                ]
+              },
+              {
+                "probability": 0.1,
+                "vehicles": [
+                  "KTW"
+                ]
+              },
+              {
+                "probability": 0.1,
+                "vehicles": [
+                  "RTW",
+                  "NEF"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "internal",
+              "neurology"
+            ],
+            "transportSignalProbability": 0.1,
+            "conditionReport": "",
+            "noTransportProbability": 0.1,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "1779138112326",
+    "category": "Krankentransport",
+    "title": "Röntgenkontrolle",
+    "type": "transport",
+    "keyword": "Röntgenkontrolle",
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Grüß Gott, Schwester Melinda von der ambulanten Pflege hier, meine Patientin Frau Hansich ist gerade aus dem Bett gefallen. Können Sie wenn zur Röntgenkontrolle schicken? | Hallo, hier Doktor Wenisch, ich bräuchte einmal einen Krankentransport für die Frau Wagmeier zur Röntgenkontrolle nach Sturz.",
+        "locationMode": "random",
+        "poiCategories": [],
+        "poiIds": [],
+        "requiredServices": [],
+        "report": "",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1779138109422",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 0.95,
+                "vehicles": [
+                  "KTW"
+                ]
+              },
+              {
+                "probability": 0.05,
+                "vehicles": [
+                  "RTW"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "trauma"
+            ],
+            "transportSignalProbability": 0.02,
+            "conditionReport": "",
+            "noTransportProbability": 0.25,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
+            "needsFW": false,
+            "needsPOL": false
           }
         ]
       }

@@ -3,6 +3,8 @@ function sendVehicleHome(vehicleId) {
   if (!vehicle || vehicle.status !== 1) return;
   const station = state.center.stations.find((item) => item.id === vehicle.stationId);
   cancelVehicleRoute(vehicle);
+  clearDispatchTimer(vehicle);
+  vehicle.coverageDispatch = null;
   vehicle.coveragePointId = null;
   vehicle.coveragePoint = null;
   logRadio(`${vehicle.name}: Leitstellenstatus H, Rückfahrt zur Wache.`, "radio");
@@ -14,6 +16,8 @@ function abortVehicleMission(vehicleId) {
   if (!vehicle || vehicle.status !== 3) return;
   const incident = state.incidents.find((item) => item.id === vehicle.incidentId);
   cancelVehicleRoute(vehicle);
+  clearDispatchTimer(vehicle);
+  vehicle.coverageDispatch = null;
   vehicle.status = 1;
   vehicle.statusText = "frei nach Einsatzabbruch";
   if (incident) {
@@ -30,7 +34,7 @@ function openCoverageDialog() {
 }
 
 function renderCoverageDialog() {
-  const available = state.vehicles.filter((vehicle) => !vehicle.foreign && [1, 2].includes(vehicle.status) && !vehicle.nextIncidentId);
+  const available = state.vehicles.filter((vehicle) => !vehicle.foreign && [1, 2].includes(vehicle.status) && !vehicle.nextIncidentId && !vehicle.coverageDispatch);
   el.coverageList.innerHTML = "";
   if (!available.length) {
     el.coverageList.className = "coverage-list empty-state";
@@ -69,12 +73,9 @@ function sendVehicleToCoverage(vehicleId, pointId) {
   const vehicle = state.vehicles.find((unit) => unit.id === vehicleId);
   const point = state.coveragePoints.find((item) => item.id === pointId);
   if (!vehicle || !point || ![1, 2].includes(vehicle.status)) return;
-  if (vehicle.status === 2) vehicle.status = 1;
-  vehicle.statusText = `Gebietsabsicherung ${point.label}`;
   vehicle.coveragePointId = point.id;
-  logRadio(`${vehicle.name}: Gebietsabsicherung ${point.label}.`, "radio");
-  renderAll();
-  driveVehicleTo(vehicle, point, { signal: false, phase: "coverage" }, () => arriveAtCoverage(vehicle.id, point.id));
+  vehicle.coveragePoint = point;
+  scheduleCoverageDispatch(vehicle, point);
   renderCoverageDialog();
 }
 
@@ -99,9 +100,17 @@ function sendVehicleToCoveragePin(vehicleId, latlng) {
   state.pendingCoverageVehicleId = null;
   vehicle.coveragePointId = point.id;
   vehicle.coveragePoint = point;
+  scheduleCoverageDispatch(vehicle, point);
+}
 
+function scheduleCoverageDispatch(vehicle, point) {
+  if (!vehicle || !point || ![1, 2].includes(vehicle.status)) return;
+  vehicle.coveragePointId = point.id;
+  vehicle.coveragePoint = point;
+  vehicle.coverageDispatch = { pointId: point.id };
   const startCoverageRun = () => {
-    if (vehicle.coveragePointId !== point.id) return;
+    if (vehicle.coveragePointId !== point.id || ![1, 2].includes(vehicle.status)) return;
+    vehicle.coverageDispatch = null;
     vehicle.status = 3;
     vehicle.statusText = `Gebietsabsicherung ${point.label}`;
     triggerRadioStatus(vehicle, 5, "Status 3, Gebietsabsicherung.");
@@ -112,12 +121,9 @@ function sendVehicleToCoveragePin(vehicleId, latlng) {
   if (vehicle.status === 2) {
     const delay = turnoutDelayMinutes(vehicle);
     vehicle.statusText = `Gebietsabsicherung alarmiert, rueckt in ca. ${delay} min aus`;
-    logRadio(`${vehicle.name}: Gebietsabsicherung, Ausruecken in ca. ${delay} Minute(n).`, "radio");
+    logRadio(`${vehicle.name}: Gebietsabsicherung ${point.label}, Ausruecken in ca. ${delay} Minute(n).`, "radio");
     renderAll();
-    vehicle.dispatchTimer = scheduleTimeout(() => {
-      vehicle.dispatchTimer = null;
-      startCoverageRun();
-    }, simulationDelay(delay));
+    scheduleDispatchTimer(vehicle, delay, startCoverageRun);
     return;
   }
 
@@ -130,6 +136,7 @@ function arriveAtCoverage(vehicleId, pointId) {
   if (!vehicle || !point) return;
   logRadio(`${vehicle.name}: Status 5, Gebietsabsicherung erreicht.`, "radio");
   vehicle.status = 1;
+  vehicle.coverageDispatch = null;
   vehicle.statusText = `steht zur Gebietsabsicherung: ${point.label}`;
   vehicle.lat = point.lat;
   vehicle.lng = point.lng;

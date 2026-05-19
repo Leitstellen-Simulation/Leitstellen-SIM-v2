@@ -4,18 +4,21 @@ function renderAll() {
   renderIncidents();
   renderVehicles();
   renderRadioAlerts();
+  renderAdminStatusBar();
 }
 
 function renderRadioAlerts() {
   if (!el.radioAlerts) return;
-  const alerts = state.vehicles.filter((vehicle) => vehicle.radioStatus === 5 || vehicle.radioStatus === 0);
+  const alerts = state.vehicles.filter((vehicle) => vehicle.radioStatus === 5 || vehicle.radioStatus === 0 || vehicle.radioStatus === 6);
   el.radioAlerts.innerHTML = "";
   alerts.forEach((vehicle) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `radio-alert radio-alert-${vehicle.radioStatus}`;
     button.textContent = `${vehicle.radioStatus} - ${vehicle.shortName || vehicle.name}`;
-    button.title = `Status ${vehicle.radioStatus} ${vehicle.radioStatus === 0 ? "dringenden Sprechwunsch" : "Sprechwunsch"} ${vehicle.name} annehmen`;
+    button.title = vehicle.radioStatus === 6
+      ? `Status 6 ${vehicle.name} quittieren`
+      : `Status ${vehicle.radioStatus} ${vehicle.radioStatus === 0 ? "dringenden Sprechwunsch" : "Sprechwunsch"} ${vehicle.name} annehmen`;
     button.addEventListener("click", () => sendSpeechPrompt(vehicle.id));
     el.radioAlerts.append(button);
   });
@@ -32,40 +35,93 @@ function updateShiftStates() {
   let changed = false;
   state.vehicles.forEach((vehicle) => {
     const inShift = vehicleInShift(vehicle);
-    const shouldWarn = !inShift && ![2, 6].includes(vehicle.status);
+    const canShiftChange = vehicleCanShiftChangeAtStation(vehicle);
+    const shouldWarn = !inShift && vehicle.status !== 6 && !canShiftChange;
     if (vehicle.shiftWarning !== shouldWarn) {
       vehicle.shiftWarning = shouldWarn;
       changed = true;
     }
-    if (!inShift && vehicle.status === 2) {
+    if (!inShift && canShiftChange) {
       vehicle.status = 6;
+      vehicle.radioContext = "shift-end";
+      vehicle.radioStatus = 6;
+      vehicle.radioMessage = `Schichtende: ${vehicle.shortName || vehicle.name} an Wache ${vehicle.station} ausser Dienst`;
+      logRadio(`${vehicle.name}: Status 6 - Schichtende, Vorhaltende an ${vehicle.station}.`, "radio");
       vehicle.statusText = "außer Dienst";
       changed = true;
     }
-    if (inShift && vehicle.status === 6 && !vehicle.foreign) {
+    if (inShift && vehicle.status === 6 && !vehicle.status6Reason && !vehicle.foreign) {
       vehicle.status = 2;
+      vehicle.radioStatus = 5;
+      vehicle.radioContext = "shift-start";
+      vehicle.radioMessage = `${vehicle.shortName || vehicle.name} an Wache ${vehicle.station} einsatzklar`;
+      logRadio(`${vehicle.name}: Status 5 - Sprechwunsch zur Indienstmeldung.`, "radio");
       vehicle.statusText = "auf Wache";
       changed = true;
     }
   });
-  if (changed) renderVehicles();
+  if (changed) {
+    renderVehicles();
+    renderRadioAlerts();
+  }
 }
 
 function vehicleInShift(vehicle) {
-  if (!vehicle.shift || vehicle.shift.toLowerCase() === "24h") return true;
-  return vehicle.shift.split(/[,;]/).some((interval) => vehicleInShiftInterval(interval.trim()));
+  return vehicleShiftIntervals(vehicle).some((interval) => interval.active);
 }
 
-function vehicleInShiftInterval(interval) {
+function vehicleCanShiftChangeAtStation(vehicle) {
+  if (!vehicle || vehicle.status !== 2 || vehicle.nextIncidentId || vehicle.coverageDispatch) return false;
+  const station = state.center.stations.find((item) => item.id === vehicle.stationId);
+  if (!station) return true;
+  if (String(vehicle.statusText || "").toLowerCase().includes("wache")) return true;
+  return mapDistance(vehicle.lat, vehicle.lng, station.lat, station.lng) < .75;
+}
+
+function vehicleShiftIntervals(vehicle) {
+  if (!vehicle.shift || vehicle.shift.toLowerCase() === "24h") {
+    return [{ label: "24h", active: true, endingSoon: false, expired: false, valid: true }];
+  }
+  return vehicle.shift.split(/[,;]/)
+    .map((interval) => shiftIntervalState(interval.trim()))
+    .filter(Boolean);
+}
+
+function shiftIntervalState(interval) {
   const match = interval.match(/^(\d{1,2})(?:[:.](\d{2}))?\s*-\s*(\d{1,2})(?:[:.](\d{2}))?$/);
-  if (!match) return true;
+  if (!match) return { label: interval, active: true, valid: false };
   const start = shiftTimeToMinute(match[1], match[2]);
   const end = shiftTimeToMinute(match[3], match[4]);
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return true;
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return { label: interval, active: true, valid: false };
   const now = Math.floor(state.minute) % 1440;
-  if (start === end) return true;
-  if (start < end) return now >= start && now < end;
-  return now >= start || now < end;
+  const active = start === end
+    ? true
+    : start < end
+      ? now >= start && now < end
+      : now >= start || now < end;
+  const minutesUntilEnd = active ? shiftMinutesUntilEnd(now, end) : null;
+  return {
+    label: normalizedShiftLabel(match[1], match[2], match[3], match[4]),
+    active,
+    endingSoon: active && minutesUntilEnd !== null && minutesUntilEnd <= 30,
+    expired: !active && shiftAlreadyEndedToday(now, start, end),
+    minutesSinceEnd: !active && shiftAlreadyEndedToday(now, start, end) ? shiftMinutesSinceEnd(now, end) : null,
+    valid: true
+  };
+}
+
+function shiftMinutesUntilEnd(now, end) {
+  return (end - now + 1440) % 1440;
+}
+
+function shiftAlreadyEndedToday(now, start, end) {
+  if (start === end) return false;
+  if (start < end) return now >= end;
+  return now >= end && now < start;
+}
+
+function shiftMinutesSinceEnd(now, end) {
+  return (now - end + 1440) % 1440;
 }
 
 function shiftTimeToMinute(hourText, minuteText = "0") {
@@ -74,6 +130,16 @@ function shiftTimeToMinute(hourText, minuteText = "0") {
   if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 24 || minute < 0 || minute > 59) return NaN;
   if (hour === 24 && minute !== 0) return NaN;
   return hour === 24 ? 1440 : hour * 60 + minute;
+}
+
+function normalizedShiftLabel(startHour, startMinute, endHour, endMinute) {
+  return `${shiftTimeLabel(startHour, startMinute)}-${shiftTimeLabel(endHour, endMinute)}`;
+}
+
+function shiftTimeLabel(hourText, minuteText = "0") {
+  const hour = Number(hourText);
+  const minute = Number(minuteText || 0);
+  return minute ? `${hour}:${String(minute).padStart(2, "0")}` : String(hour);
 }
 
 function renderMap() {
@@ -162,6 +228,10 @@ function vehicleVisibleOnMap(vehicle) {
 }
 
 function incidentHasRadioAttention(incident) {
+  if (incident.assigned?.length && incident.assigned.every((id) => {
+    const vehicle = state.vehicles.find((unit) => unit.id === id);
+    return vehicle && [7, 8, 1, 2, 6].includes(vehicle.status);
+  })) return false;
   return incident.assigned.some((id) => {
     const vehicle = state.vehicles.find((unit) => unit.id === id);
     return vehicle?.radioStatus === 5 || vehicle?.radioStatus === 0;
@@ -370,6 +440,7 @@ function renderCoveragePins() {
 function renderIncidents() {
   const active = state.incidents.filter((incident) => incident.status !== "geschlossen");
   el.incidentCount.textContent = `${active.length} offen`;
+  renderIncidentTabCounts(active);
   const visible = active
     .filter((incident) => incidentListBucket(incident) === state.incidentFilter)
     .sort((a, b) => (b.createdAtMinute ?? 0) - (a.createdAtMinute ?? 0));
@@ -487,9 +558,38 @@ function selectIncidentFromMapOrList(incident) {
 }
 
 function incidentListBucket(incident) {
-  if (incident.signal) return "emergency";
-  if (incident.assigned?.length) return "transport";
-  return "scheduled";
+  if (incident.signal || incident.type === "emergency") return "emergency";
+  if (incident.type === "scheduled") return "scheduled";
+  return "transport";
+}
+
+function renderIncidentTabCounts(active) {
+  const labels = { emergency: "Notfall", transport: "Transport", scheduled: "Planbar" };
+  const stats = Object.fromEntries(Object.keys(labels).map((key) => [key, { total: 0, attention: 0 }]));
+  active.forEach((incident) => {
+    const bucket = incidentListBucket(incident);
+    if (!stats[bucket]) return;
+    stats[bucket].total += 1;
+    if (incidentNeedsDispositionAttention(incident)) stats[bucket].attention += 1;
+  });
+  document.querySelectorAll(".tab").forEach((tab) => {
+    const key = tab.dataset.filter;
+    const count = stats[key] || { total: 0, attention: 0 };
+    const alertClass = key === "emergency" ? "danger" : "warn";
+    tab.innerHTML = `
+      <span>${escapeHtml(labels[key] || key)}</span>
+      <span class="tab-metric${count.attention ? " has-alert" : ""}">
+        <span class="tab-total">${count.total}</span>
+        ${count.attention ? `<span class="tab-alert ${alertClass}">${count.attention}</span>` : ""}
+      </span>
+    `;
+  });
+}
+
+function incidentNeedsDispositionAttention(incident) {
+  if (!incident.assigned?.length) return true;
+  if (incident.assistanceDecision?.missing?.length) return true;
+  return /^Nachforderung/i.test(incident.status || "");
 }
 
 function incidentNeedsSlowAlert(incident) {
@@ -516,7 +616,7 @@ function renderIncidentsCollapsible(visible) {
         <strong>${escapeHtml(incident.keyword)}</strong>
         <small>${escapeHtml(incident.location || "Regensburg")}</small>
       </span>
-      <span class="incident-state">${incidentElapsedLabel(incident)} | ${escapeHtml(incident.status)}</span>
+      <span class="incident-state">${incidentStartTimeLabel(incident)} | ${incidentElapsedLabel(incident)} | ${escapeHtml(incident.status)}</span>
     `;
     summary.addEventListener("click", () => {
       if (isOpen) state.selectedIncidentId = null;
@@ -605,8 +705,18 @@ function renderIncidentReport(text) {
 }
 
 function incidentElapsedLabel(incident) {
-  const elapsed = Math.max(0, Math.floor(state.minute - (incident.createdAtMinute ?? state.minute)));
+  const createdAt = Number.isFinite(incident.createdAtAbsoluteMinute)
+    ? incident.createdAtAbsoluteMinute
+    : (state.absoluteMinute - ((state.minute - (incident.createdAtMinute ?? state.minute) + 1440) % 1440));
+  const elapsed = Math.max(0, Math.floor(state.absoluteMinute - createdAt));
   return `${elapsed} min`;
+}
+
+function incidentStartTimeLabel(incident) {
+  const minute = Math.floor(Number.isFinite(incident.createdAtMinute) ? incident.createdAtMinute : state.minute) % 1440;
+  const hours = String(Math.floor(minute / 60)).padStart(2, "0");
+  const minutes = String(minute % 60).padStart(2, "0");
+  return hours + ":" + minutes;
 }
 
 function renderAssistanceDecision(incident) {
@@ -863,12 +973,11 @@ function appendHospitalChoices(parent, incident, request = incident.transportReq
 }
 
 function transportHospitalChoices(incident, request = incident.transportRequest) {
-  const localHospitals = nearestHospitals(incident, request).slice(0, 5);
+  const localHospitals = nearestHospitals(incident, request);
   if (!state.showForeignHospitalsInTransport) return localHospitals;
   const used = new Set(localHospitals.map((hospital) => hospital.id));
   const foreignHospitals = nearestHospitals(incident, request, { includeForeign: true })
-    .filter((hospital) => hospital.foreign && !used.has(hospital.id))
-    .slice(0, 5);
+    .filter((hospital) => hospital.foreign && !used.has(hospital.id));
   return [...localHospitals, ...foreignHospitals];
 }
 
@@ -986,6 +1095,7 @@ function releasePendingVehicle(vehicleId, incidentId) {
     state.timeouts = state.timeouts.filter((timer) => timer !== vehicle.dispatchTimer);
   }
   vehicle.dispatchTimer = null;
+  vehicle.dispatchHandler = null;
   vehicle.nextIncidentId = null;
   vehicle.incidentId = vehicle.previousIncidentId;
   vehicle.previousIncidentId = null;
@@ -1039,6 +1149,7 @@ function removeAssignedVehicle(vehicleId, incidentId) {
     }
   }
   vehicle.dispatchTimer = null;
+  vehicle.dispatchHandler = null;
   vehicle.nextIncidentId = null;
   vehicle.previousIncidentId = null;
   vehicle.pendingDispatchUntil = null;
@@ -1107,15 +1218,22 @@ function renderDialogVehicles(call, incident = null) {
       if (vehicle.foreign) return state.showForeignVehiclesInDialog && vehicle.status === 2 && isAlarmable(vehicle);
       return isAlarmable(vehicle);
     })
-    .sort((a, b) => distanceToCall(a, call) - distanceToCall(b, call))
+    .sort((a, b) => {
+      const selectedDelta = Number(state.selectedDialogVehicleIds.has(b.id)) - Number(state.selectedDialogVehicleIds.has(a.id));
+      return selectedDelta || distanceToCall(a, call) - distanceToCall(b, call);
+    })
     .forEach((vehicle) => {
       const row = document.createElement("button");
+      const shiftNotice = shiftNoticeForVehicle(vehicle);
+      const nextShift = nextShiftChangeText(vehicle);
       row.type = "button";
-      row.className = `dialog-vehicle-row ${vehicle.foreign ? "foreign-vehicle-row" : ""} ${state.selectedDialogVehicleIds.has(vehicle.id) ? "selected" : ""}`;
+      row.className = `dialog-vehicle-row ${vehicle.foreign ? "foreign-vehicle-row" : ""} ${shiftNotice ? `shift-${shiftNotice.type}` : ""} ${state.selectedDialogVehicleIds.has(vehicle.id) ? "selected" : ""}`;
       row.innerHTML = `
         <div>
           <h3><span class="vehicle-type-badge">${escapeHtml(vehicle.type)}</span> ${escapeHtml(vehicle.name)}</h3>
           <p>${escapeHtml(vehicle.station)} | ${distanceToCall(vehicle, call).toFixed(1).replace(".", ",")} km | ${escapeHtml(vehicle.statusText)}</p>
+          ${nextShift ? `<small class="dialog-shift-next">${escapeHtml(nextShift)}</small>` : ""}
+          ${shiftNotice ? `<small class="dialog-shift-hint">${escapeHtml(shiftNotice.text)}</small>` : ""}
         </div>
         <span class="status-pill status-${vehicle.status}">${vehicle.status}</span>
       `;
@@ -1137,10 +1255,13 @@ function renderQuickVehicleButtons(call, assignedIds, incident = null) {
   wrapper.className = "quick-vehicle-picker";
   ["RTW", "KTW", "NEF", "RTH"].forEach((type) => {
     const vehicle = nearestFreeVehicleOfType(call, type, assignedIds);
+    const shiftNotice = shiftNoticeForVehicle(vehicle);
     const button = document.createElement("button");
     button.type = "button";
+    if (shiftNotice) button.classList.add(`shift-${shiftNotice.type}`);
+    button.title = shiftNotice?.text || "";
     button.innerHTML = vehicle
-      ? `<strong>${escapeHtml(type)}:</strong> ${escapeHtml(vehicle.shortName || vehicle.name)}`
+      ? `<strong>${escapeHtml(type)}:</strong> ${escapeHtml(vehicle.shortName || vehicle.name)}${shiftNotice ? `<small>${escapeHtml(shiftNotice.text)}</small>` : ""}`
       : `<strong>${escapeHtml(type)}:</strong> kein Fzg`;
     button.disabled = !vehicle;
     button.addEventListener("click", () => {
@@ -1160,14 +1281,40 @@ function nearestFreeVehicleOfType(call, type, assignedIds) {
     .sort((a, b) => distanceToCall(a, call) - distanceToCall(b, call))[0];
 }
 
+function nextShiftChangeText(vehicle) {
+  const intervals = vehicleShiftIntervals(vehicle).filter((interval) => interval.valid);
+  if (!intervals.length || intervals.some((interval) => interval.label === "24h")) return "";
+  const now = Math.floor(state.minute) % 1440;
+  const active = intervals.find((interval) => interval.active);
+  if (active) {
+    const end = shiftEndMinuteFromLabel(active.label);
+    const minutes = shiftMinutesUntilEnd(now, end);
+    return Number.isFinite(minutes) ? `Schichtwechsel in ${minutes} min` : "";
+  }
+  const starts = intervals
+    .map((interval) => ({ label: interval.label, start: shiftStartMinuteFromLabel(interval.label) }))
+    .filter((item) => Number.isFinite(item.start))
+    .map((item) => ({ ...item, minutes: (item.start - now + 1440) % 1440 }))
+    .sort((a, b) => a.minutes - b.minutes);
+  return starts[0] ? `Dienstbeginn in ${starts[0].minutes} min` : "";
+}
+
+function shiftStartMinuteFromLabel(label) {
+  const start = String(label || "").split("-")[0];
+  if (!start) return NaN;
+  const [hour, minute = "0"] = start.split(":");
+  return shiftTimeToMinute(hour, minute);
+}
+
 function renderVehicles() {
   const vehicleSortName = (vehicle) => vehicle.shortName || vehicle.name;
   const typeOrder = { RTW: 1, NEF: 2, KTW: 3, REF: 4, RTH: 5 };
   const vehicleTypeRank = (vehicle) => typeOrder[vehicle.type] || 99;
+  const statusRank = (vehicle) => vehicle.status === 6 ? 99 : vehicle.status;
   const sorted = state.vehicles.filter((vehicle) => !vehicle.foreign).sort((a, b) => {
-    if (el.vehicleSort.value === "status") return a.status - b.status || vehicleSortName(a).localeCompare(vehicleSortName(b));
+    if (el.vehicleSort.value === "status") return statusRank(a) - statusRank(b) || vehicleSortName(a).localeCompare(vehicleSortName(b));
     if (el.vehicleSort.value === "type") return a.type.localeCompare(b.type) || vehicleSortName(a).localeCompare(vehicleSortName(b));
-    if (el.vehicleSort.value === "type-status") return a.status - b.status || vehicleTypeRank(a) - vehicleTypeRank(b) || vehicleSortName(a).localeCompare(vehicleSortName(b));
+    if (el.vehicleSort.value === "type-status") return statusRank(a) - statusRank(b) || vehicleTypeRank(a) - vehicleTypeRank(b) || vehicleSortName(a).localeCompare(vehicleSortName(b));
     return a.station.localeCompare(b.station) || vehicleSortName(a).localeCompare(vehicleSortName(b));
   });
 
@@ -1183,7 +1330,10 @@ function renderVehicles() {
     summary.innerHTML = `
       <strong>${escapeHtml(displayName)}</strong>
       <span class="vehicle-type-label vehicle-type-${escapeHtml(vehicle.type)}">${escapeHtml(vehicle.type)}</span>
-      <span>${escapeHtml(vehicle.station)}</span>
+      <span class="vehicle-station-shift">
+        <span>${escapeHtml(vehicle.station)}</span>
+        ${currentShiftBadgeHtml(vehicle)}
+      </span>
       <em class="status-pill status-${vehicle.status}">${vehicle.status}</em>
     `;
     summary.addEventListener("click", () => {
@@ -1196,7 +1346,7 @@ function renderVehicles() {
       details.className = "vehicle-details";
       appendTextBlock(details, "p", `${vehicle.statusText}${vehicle.radioMessage ? ` | ${vehicle.radioMessage}` : ""}`);
       if (vehicle.shortName && vehicle.shortName !== vehicle.name) appendTextBlock(details, "p", `FRN: ${vehicle.name}`);
-    if (vehicle.shift) appendTextBlock(details, "p", `Schicht: ${vehicle.shift}`);
+      details.append(renderVehicleShiftInfo(vehicle));
       if (vehicle.shiftWarning) appendTextBlock(details, "p", "Schichtende überschritten, Wechsel erst an der Wache möglich.");
       const actions = document.createElement("div");
       actions.className = "vehicle-actions";
@@ -1216,6 +1366,68 @@ function renderVehicles() {
     }
     el.vehicleList.append(row);
   });
+}
+
+function currentShiftBadgeHtml(vehicle) {
+  const intervals = vehicleShiftIntervals(vehicle);
+  const active = intervals.find((interval) => interval.active);
+  const notice = shiftNoticeForVehicle(vehicle);
+  const label = notice?.text || active?.label || "ausser Dienst";
+  const toneClass = notice?.type === "ending" ? " shift-current-ending"
+    : notice?.type === "overtime" ? " shift-current-expired"
+      : active ? ""
+        : " shift-current-inactive";
+  return `<small class="shift-current${toneClass}">${escapeHtml(label)}</small>`;
+}
+
+function shiftNoticeForVehicle(vehicle) {
+  if (!vehicle) return null;
+  const intervals = vehicleShiftIntervals(vehicle);
+  const active = intervals.find((interval) => interval.active);
+  const expired = shiftExpiredMinutes(vehicle);
+  if (vehicle.shiftWarning) {
+    return {
+      type: "overtime",
+      text: expired !== null ? `Überstunden: Schichtende vor ${expired} min` : "Überstunden: Schichtende überschritten"
+    };
+  }
+  if (active?.endingSoon) {
+    const minutes = shiftMinutesUntilEnd(Math.floor(state.minute) % 1440, shiftEndMinuteFromLabel(active.label));
+    return {
+      type: "ending",
+      text: Number.isFinite(minutes) ? `Bald Feierabend in ${minutes} min` : "Bald Feierabend"
+    };
+  }
+  return null;
+}
+
+function shiftEndMinuteFromLabel(label) {
+  const end = String(label || "").split("-")[1];
+  if (!end) return NaN;
+  const [hour, minute = "0"] = end.split(":");
+  return shiftTimeToMinute(hour, minute);
+}
+
+function shiftExpiredMinutes(vehicle) {
+  const expired = vehicleShiftIntervals(vehicle)
+    .filter((interval) => interval.expired && Number.isFinite(interval.minutesSinceEnd))
+    .sort((a, b) => a.minutesSinceEnd - b.minutesSinceEnd)[0];
+  return expired ? Math.max(1, Math.floor(expired.minutesSinceEnd)) : null;
+}
+
+function renderVehicleShiftInfo(vehicle) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "vehicle-shift-list";
+  const title = document.createElement("strong");
+  title.textContent = "Schicht";
+  wrapper.append(title);
+  vehicleShiftIntervals(vehicle).forEach((interval) => {
+    const badge = document.createElement("span");
+    badge.className = `vehicle-shift-chip${interval.active ? " active" : ""}${interval.endingSoon ? " ending" : ""}${vehicle.shiftWarning && interval.expired ? " expired" : ""}`;
+    badge.textContent = interval.label;
+    wrapper.append(badge);
+  });
+  return wrapper;
 }
 
 function addVehicleAction(parent, label, handler) {

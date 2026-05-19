@@ -64,7 +64,7 @@ function appendStatusFormattedText(parent, message) {
 function logToneClass(message) {
   if (message.includes("Status 0")) return "radio-critical";
   if (message.includes("Nachforderung")) return "radio-critical";
-  if (message.includes("Status 5") || message.includes("Sprechaufforderung")) return "radio-speech";
+  if (message.includes("Sprechwunsch") || message.includes("Sprechaufforderung")) return "radio-speech";
   if (/Status\s+[1-8]/.test(message)) return "radio-status";
   if (message.includes("Neuer Einsatz") || message.includes("Neuer Telefonanruf")) return "radio-new";
   return "";

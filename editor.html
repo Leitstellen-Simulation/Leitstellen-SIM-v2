@@ -39,6 +39,18 @@
             </div>
           </section>
 
+          <details class="editor-section editor-osm-import-section">
+            <summary>OSM-POI importieren</summary>
+            <p class="inline-hint">Einmaliger Import aus OpenStreetMap fuer das Einsatzgebiet. Ohne Einsatzgebiet wird der aktuelle Kartenausschnitt verwendet.</p>
+            <div id="se-osm-poi-categories" class="check-grid osm-poi-grid"></div>
+            <div class="editor-actions">
+              <button id="se-import-pois" type="button">POIs suchen</button>
+              <button id="se-apply-imported-pois" class="primary-action" type="button" disabled>Treffer übernehmen</button>
+            </div>
+            <small id="se-osm-poi-status" class="inline-hint">Keine Suche gestartet.</small>
+            <div id="se-osm-poi-preview" class="editor-point-list osm-poi-preview"></div>
+          </details>
+
           <section id="se-coverage-form" class="editor-workbench" hidden>
             <div class="editor-workbench-head">
               <strong>Einsatzgebiet</strong>
@@ -131,7 +143,7 @@
       <section class="editor-map-panel panel">
         <div class="panel-title">
           <h2>Karte</h2>
-          <span>Grenzen: aktuell manuell/GeoJSON-vorbereitet</span>
+          <label class="compact-check"><input id="se-show-poi-markers" type="checkbox"> POI anzeigen</label>
         </div>
         <div id="se-map" class="map"></div>
       </section>
@@ -144,7 +156,11 @@
           <section class="editor-list-section">
             <div class="editor-list-header">
               <h3>Punkte</h3>
-              <span>Wachen, Kliniken, POI</span>
+              <div class="editor-list-tabs">
+                <button id="se-point-filter-stations" class="active" type="button">Wachen</button>
+                <button id="se-point-filter-hospitals" type="button">KH</button>
+                <button id="se-point-filter-poi" type="button">POI</button>
+              </div>
             </div>
             <div id="se-points" class="editor-point-list"></div>
           </section>

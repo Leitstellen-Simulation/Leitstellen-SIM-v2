@@ -3,12 +3,14 @@ const state = {
   editingId: null,
   editingPatientId: null,
   patients: [],
-  selectedPoiCategories: new Set()
+  selectedPoiCategories: new Set(),
+  selectedDestinationPoiCategories: new Set()
 };
 
 const el = Object.fromEntries([
   "category", "title", "type", "caller-text", "report", "location-mode", "poi-category-search",
   "poi-categories", "poi-selected", "poi-select-visible", "poi-clear", "poi-category-count", "poi-ids", "fw", "pol", "patient-options", "departments", "patient-signal", "patient-condition-report",
+  "destination-mode", "destination-poi-probability", "destination-poi-category-search", "destination-poi-categories", "destination-poi-selected", "destination-poi-select-visible", "destination-poi-clear", "destination-poi-category-count", "destination-poi-ids",
   "patient-no-transport", "patient-no-transport-text", "patient-doctor-required", "patient-fw", "patient-pol", "add-patient",
   "patient-list", "new", "save", "list", "count"
 ].map((id) => [id.replaceAll("-", "_"), document.querySelector(`#ie-${id}`)]));
@@ -18,6 +20,7 @@ init();
 async function init() {
   await loadIncidents();
   renderPoiCategorySelect();
+  renderDestinationPoiCategorySelect();
   renderDepartmentChecks(el.departments);
   el.add_patient.addEventListener("click", addPatient);
   el.save.addEventListener("click", saveIncident);
@@ -25,6 +28,9 @@ async function init() {
   el.poi_category_search.addEventListener("input", () => renderPoiCategorySelect());
   el.poi_select_visible.addEventListener("click", selectVisiblePoiCategories);
   el.poi_clear.addEventListener("click", clearPoiCategories);
+  el.destination_poi_category_search.addEventListener("input", () => renderDestinationPoiCategorySelect());
+  el.destination_poi_select_visible.addEventListener("click", selectVisibleDestinationPoiCategories);
+  el.destination_poi_clear.addEventListener("click", clearDestinationPoiCategories);
   renderPatients();
   renderList();
 }
@@ -94,6 +100,10 @@ async function saveIncident() {
       locationMode: el.location_mode.value,
       poiCategories: selectedPoiCategories(),
       poiIds: splitList(el.poi_ids.value),
+      destinationMode: el.destination_mode.value,
+      destinationPoiProbability: clampPercent(el.destination_poi_probability.value),
+      destinationPoiCategories: selectedDestinationPoiCategories(),
+      destinationPoiIds: splitList(el.destination_poi_ids.value),
       requiredServices: [el.fw.checked ? "FW" : null, el.pol.checked ? "POL" : null].filter(Boolean),
       report: state.patients.length > 1 ? "" : el.report.value.trim(),
       situationReport: state.patients.length > 1 ? el.report.value.trim() : "",
@@ -124,6 +134,10 @@ function editIncident(incident) {
   el.location_mode.value = variant.locationMode || "random";
   setSelectedPoiCategories(variant.poiCategories || []);
   el.poi_ids.value = (variant.poiIds || []).join(", ");
+  el.destination_mode.value = variant.destinationMode || "none";
+  el.destination_poi_probability.value = Math.round((variant.destinationPoiProbability || 0) * 100);
+  setSelectedDestinationPoiCategories(variant.destinationPoiCategories || []);
+  el.destination_poi_ids.value = (variant.destinationPoiIds || []).join(", ");
   el.fw.checked = (variant.requiredServices || []).includes("FW");
   el.pol.checked = (variant.requiredServices || []).includes("POL");
   state.patients = (variant.patients || []).map((patient) => ({ ...patient }));
@@ -141,6 +155,11 @@ function clearForm() {
   el.poi_category_search.value = "";
   setSelectedPoiCategories([]);
   el.poi_ids.value = "";
+  el.destination_mode.value = "none";
+  el.destination_poi_probability.value = 0;
+  el.destination_poi_category_search.value = "";
+  setSelectedDestinationPoiCategories([]);
+  el.destination_poi_ids.value = "";
   el.fw.checked = false;
   el.pol.checked = false;
   state.patients = [];
@@ -297,6 +316,69 @@ function selectVisiblePoiCategories() {
 function clearPoiCategories() {
   state.selectedPoiCategories.clear();
   renderPoiCategorySelect();
+}
+
+function setSelectedDestinationPoiCategories(selected = []) {
+  state.selectedDestinationPoiCategories = new Set((selected || []).filter(Boolean));
+  renderDestinationPoiCategorySelect();
+}
+
+function renderDestinationPoiCategorySelect() {
+  const query = normalizeSearch(el.destination_poi_category_search?.value || "");
+  el.destination_poi_categories.innerHTML = "";
+  const allCategories = window.poiCategoryCatalog || [];
+  const matches = allCategories
+    .filter((category) => !query || normalizeSearch(`${category.id || category.key} ${category.label}`).includes(query));
+  matches.slice(0, 60).forEach((category) => {
+    const value = category.id || category.key;
+    const label = document.createElement("label");
+    label.innerHTML = `<input type="checkbox" value="${escapeHtml(value)}"> ${escapeHtml(category.label)}`;
+    const input = label.querySelector("input");
+    input.checked = state.selectedDestinationPoiCategories.has(value);
+    input.addEventListener("change", () => {
+      if (input.checked) state.selectedDestinationPoiCategories.add(value);
+      else state.selectedDestinationPoiCategories.delete(value);
+      renderSelectedDestinationPoiCategories();
+    });
+    el.destination_poi_categories.append(label);
+  });
+  el.destination_poi_category_count.textContent = `${matches.length} Treffer${matches.length > 60 ? " - bitte Suche eingrenzen" : ""}`;
+  renderSelectedDestinationPoiCategories();
+}
+
+function selectedDestinationPoiCategories() {
+  return [...state.selectedDestinationPoiCategories];
+}
+
+function renderSelectedDestinationPoiCategories() {
+  el.destination_poi_selected.innerHTML = "";
+  const selected = selectedDestinationPoiCategories();
+  if (!selected.length) {
+    el.destination_poi_selected.textContent = "Keine Ziel-POI-Kategorien ausgewÃ¤hlt.";
+    return;
+  }
+  selected.forEach((value) => {
+    const category = (window.poiCategoryCatalog || []).find((item) => (item.id || item.key) === value);
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "selected-chip";
+    chip.textContent = `${category?.label || value} x`;
+    chip.addEventListener("click", () => {
+      state.selectedDestinationPoiCategories.delete(value);
+      renderDestinationPoiCategorySelect();
+    });
+    el.destination_poi_selected.append(chip);
+  });
+}
+
+function selectVisibleDestinationPoiCategories() {
+  el.destination_poi_categories.querySelectorAll("input[type='checkbox']").forEach((input) => state.selectedDestinationPoiCategories.add(input.value));
+  renderDestinationPoiCategorySelect();
+}
+
+function clearDestinationPoiCategories() {
+  state.selectedDestinationPoiCategories.clear();
+  renderDestinationPoiCategorySelect();
 }
 
 function departmentLabels(keys) {

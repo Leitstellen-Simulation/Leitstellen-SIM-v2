@@ -10,9 +10,22 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo Starte DispatchSim Server im Admin-Testmodus...
-start "DispatchSim Server" /min cmd /k "cd /d ""%~dp0"" && node server.mjs"
-
-timeout /t 2 /nobreak >nul
-set "DISPATCHSIM_URL=http://127.0.0.1:4173/index.html?preset=admin-test"
-start "" "%DISPATCHSIM_URL%"
+echo Pruefe DispatchSim Server...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-WebRequest -Uri 'http://127.0.0.1:4173/' -UseBasicParsing -TimeoutSec 1; if ($r.StatusCode -eq 200) { exit 0 } else { exit 1 } } catch { exit 1 }"
+if errorlevel 1 (
+  echo Starte DispatchSim Server im Admin-Testmodus...
+  start "" powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command "Start-Sleep -Seconds 2; Start-Process 'http://127.0.0.1:4173/index.html?preset=admin-test'"
+  echo.
+  echo Server laeuft in diesem Fenster. Mit Strg+C beenden.
+  echo.
+  node server.mjs
+) else (
+  echo DispatchSim Server laeuft bereits auf Port 4173.
+  echo Der Server laeuft schon in einem anderen Prozess/Fenster.
+  netstat -ano | findstr ":4173"
+  set "DISPATCHSIM_URL=http://127.0.0.1:4173/index.html?preset=admin-test"
+  start "" "%DISPATCHSIM_URL%"
+  echo.
+  echo Dieses Fenster kann geschlossen werden. Zum Stoppen den oben angezeigten Prozess beenden.
+  pause
+)
