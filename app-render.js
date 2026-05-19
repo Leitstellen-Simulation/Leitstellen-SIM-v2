@@ -1200,7 +1200,7 @@ function renderDialogVehicles(call, incident = null) {
       if (!vehicle) return;
       const line = document.createElement("div");
       line.className = "assigned-vehicle-line";
-      line.innerHTML = `<span>${escapeHtml(vehicle.name)} | Status ${vehicle.status}${vehicle.nextIncidentId === incident.id ? " | alarmiert" : ""}</span>`;
+      line.innerHTML = `<span>${escapeHtml(vehicle.name)} | Status ${vehicleDisplayStatus(vehicle)}${vehicle.nextIncidentId === incident.id ? " | alarmiert" : ""}</span>`;
       if (canRemoveAssignedVehicle(vehicle, incident)) {
         const button = document.createElement("button");
         button.type = "button";
@@ -1216,7 +1216,7 @@ function renderDialogVehicles(call, incident = null) {
     .filter((vehicle) => {
       if (assignedIds.has(vehicle.id)) return false;
       if (vehicle.foreign) return state.showForeignVehiclesInDialog && vehicle.status === 2 && isAlarmable(vehicle);
-      return isAlarmable(vehicle);
+      return isAlarmable(vehicle) || isPendingStatusC(vehicle);
     })
     .sort((a, b) => {
       const selectedDelta = Number(state.selectedDialogVehicleIds.has(b.id)) - Number(state.selectedDialogVehicleIds.has(a.id));
@@ -1238,7 +1238,7 @@ function renderDialogVehicles(call, incident = null) {
           ${nextShift ? `<small class="dialog-shift-next">${escapeHtml(nextShift)}</small>` : ""}
           ${shiftNotice ? `<small class="dialog-shift-hint">${escapeHtml(shiftNotice.text)}</small>` : ""}
         </div>
-        <span class="status-pill status-${vehicle.status}">${vehicle.status}</span>
+        <span class="status-pill status-${vehicleDisplayStatus(vehicle)}">${vehicleDisplayStatus(vehicle)}</span>
       `;
       const travelButton = row.querySelector(".dialog-travel-time-button");
       travelButton?.addEventListener("click", (event) => {
@@ -1263,6 +1263,14 @@ function renderDialogVehicles(call, incident = null) {
       el.dialogVehicleList.append(row);
       if (autoTravelTimeIds.has(vehicle.id)) requestDialogTravelTime(vehicle, call);
     });
+}
+
+function isPendingStatusC(vehicle) {
+  return Boolean(vehicle?.status === 2 && vehicle.nextIncidentId && !vehicle.incidentId);
+}
+
+function vehicleDisplayStatus(vehicle) {
+  return isPendingStatusC(vehicle) ? "C" : String(vehicle?.status ?? "");
 }
 
 function dialogTravelTimeStatus(vehicle, call) {
@@ -1434,7 +1442,7 @@ function renderVehicles() {
         <span>${escapeHtml(vehicle.station)}</span>
         ${currentShiftBadgeHtml(vehicle)}
       </span>
-      <em class="status-pill status-${vehicle.status}">${vehicle.status}</em>
+      <em class="status-pill status-${vehicleDisplayStatus(vehicle)}">${vehicleDisplayStatus(vehicle)}</em>
     `;
     summary.addEventListener("click", () => {
       state.selectedVehicleId = isOpen ? null : vehicle.id;

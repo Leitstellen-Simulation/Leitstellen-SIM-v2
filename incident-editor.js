@@ -8,9 +8,9 @@ const state = {
 };
 
 const el = Object.fromEntries([
-  "category", "title", "type", "caller-text", "report", "location-mode", "poi-category-search",
+  "category", "title", "type", "time-windows", "caller-text", "report", "location-mode", "poi-category-search",
   "poi-categories", "poi-selected", "poi-select-visible", "poi-clear", "poi-category-count", "poi-ids", "fw", "pol", "patient-options", "departments", "patient-signal", "patient-condition-report",
-  "destination-mode", "destination-poi-probability", "destination-poi-category-search", "destination-poi-categories", "destination-poi-selected", "destination-poi-select-visible", "destination-poi-clear", "destination-poi-category-count", "destination-poi-ids",
+  "destination-mode", "destination-poi-probability-row", "destination-poi-probability", "destination-poi-category-search", "destination-poi-categories", "destination-poi-selected", "destination-poi-select-visible", "destination-poi-clear", "destination-poi-category-count", "destination-poi-ids",
   "patient-no-transport", "patient-no-transport-text", "patient-doctor-required", "patient-fw", "patient-pol", "add-patient",
   "patient-list", "new", "save", "list", "count"
 ].map((id) => [id.replaceAll("-", "_"), document.querySelector(`#ie-${id}`)]));
@@ -28,9 +28,11 @@ async function init() {
   el.poi_category_search.addEventListener("input", () => renderPoiCategorySelect());
   el.poi_select_visible.addEventListener("click", selectVisiblePoiCategories);
   el.poi_clear.addEventListener("click", clearPoiCategories);
+  el.destination_mode.addEventListener("change", updateDestinationPoiControls);
   el.destination_poi_category_search.addEventListener("input", () => renderDestinationPoiCategorySelect());
   el.destination_poi_select_visible.addEventListener("click", selectVisibleDestinationPoiCategories);
   el.destination_poi_clear.addEventListener("click", clearDestinationPoiCategories);
+  updateDestinationPoiControls();
   renderPatients();
   renderList();
 }
@@ -88,20 +90,22 @@ async function saveIncident() {
   renumberPatients();
   const id = state.editingId || makeId(el.title.value || Date.now());
   const title = el.title.value.trim() || "Neuer Einsatz";
+  const destinationMode = el.destination_mode.value;
   const incident = {
     id,
     category: el.category.value,
     title,
     type: el.type.value,
     keyword: title,
+    timeWindows: parseTimeWindows(el.time_windows.value),
     variants: [{
       callerName: "Anrufer",
       callerText: el.caller_text.value.trim(),
       locationMode: el.location_mode.value,
       poiCategories: selectedPoiCategories(),
       poiIds: splitList(el.poi_ids.value),
-      destinationMode: el.destination_mode.value,
-      destinationPoiProbability: clampPercent(el.destination_poi_probability.value),
+      destinationMode,
+      destinationPoiProbability: destinationMode === "poi" ? 1 : clampPercent(el.destination_poi_probability.value),
       destinationPoiCategories: selectedDestinationPoiCategories(),
       destinationPoiIds: splitList(el.destination_poi_ids.value),
       requiredServices: [el.fw.checked ? "FW" : null, el.pol.checked ? "POL" : null].filter(Boolean),
@@ -129,6 +133,7 @@ function editIncident(incident) {
   el.category.value = incident.category || "Sonstiges";
   el.title.value = incident.title || "";
   el.type.value = incident.type || "emergency";
+  el.time_windows.value = formatTimeWindows(incident.timeWindows || variant.timeWindows || []);
   el.caller_text.value = variant.callerText || "";
   el.report.value = variant.situationReport || variant.report || "";
   el.location_mode.value = variant.locationMode || "random";
@@ -136,6 +141,7 @@ function editIncident(incident) {
   el.poi_ids.value = (variant.poiIds || []).join(", ");
   el.destination_mode.value = variant.destinationMode || "none";
   el.destination_poi_probability.value = Math.round((variant.destinationPoiProbability || 0) * 100);
+  updateDestinationPoiControls();
   setSelectedDestinationPoiCategories(variant.destinationPoiCategories || []);
   el.destination_poi_ids.value = (variant.destinationPoiIds || []).join(", ");
   el.fw.checked = (variant.requiredServices || []).includes("FW");
@@ -150,6 +156,7 @@ function clearForm() {
   state.editingId = null;
   state.editingPatientId = null;
   el.title.value = "";
+  el.time_windows.value = "";
   el.caller_text.value = "";
   el.report.value = "";
   el.poi_category_search.value = "";
@@ -157,6 +164,7 @@ function clearForm() {
   el.poi_ids.value = "";
   el.destination_mode.value = "none";
   el.destination_poi_probability.value = 0;
+  updateDestinationPoiControls();
   el.destination_poi_category_search.value = "";
   setSelectedDestinationPoiCategories([]);
   el.destination_poi_ids.value = "";
@@ -269,7 +277,8 @@ function renderPoiCategorySelect() {
   matches.slice(0, 60).forEach((category) => {
     const value = category.id || category.key;
     const label = document.createElement("label");
-    label.innerHTML = `<input type="checkbox" value="${escapeHtml(value)}"> ${escapeHtml(category.label)}`;
+    label.className = "poi-select-chip";
+    label.innerHTML = `<input type="checkbox" value="${escapeHtml(value)}"><span>${escapeHtml(category.label)}</span>`;
     const input = label.querySelector("input");
     input.checked = state.selectedPoiCategories.has(value);
     input.addEventListener("change", () => {
@@ -332,7 +341,8 @@ function renderDestinationPoiCategorySelect() {
   matches.slice(0, 60).forEach((category) => {
     const value = category.id || category.key;
     const label = document.createElement("label");
-    label.innerHTML = `<input type="checkbox" value="${escapeHtml(value)}"> ${escapeHtml(category.label)}`;
+    label.className = "poi-select-chip";
+    label.innerHTML = `<input type="checkbox" value="${escapeHtml(value)}"><span>${escapeHtml(category.label)}</span>`;
     const input = label.querySelector("input");
     input.checked = state.selectedDestinationPoiCategories.has(value);
     input.addEventListener("change", () => {
@@ -381,6 +391,14 @@ function clearDestinationPoiCategories() {
   renderDestinationPoiCategorySelect();
 }
 
+function updateDestinationPoiControls() {
+  const isFixedPoiTarget = el.destination_mode.value === "poi";
+  el.destination_poi_probability.disabled = isFixedPoiTarget;
+  el.destination_poi_probability.value = isFixedPoiTarget ? 100 : (el.destination_poi_probability.value || 0);
+  el.destination_poi_probability_row.classList.toggle("disabled-field", isFixedPoiTarget);
+  el.destination_poi_probability.title = isFixedPoiTarget ? "Bei POI-Ziel wird immer ein Ziel-POI genutzt." : "";
+}
+
 function departmentLabels(keys) {
   const catalog = window.departmentCatalog || [];
   return (keys || []).map((key) => catalog.find((item) => item.key === key)?.label || key).join(" / ") || "kein Klinikziel";
@@ -392,7 +410,8 @@ function renderList() {
   state.incidents.forEach((incident) => {
     const row = document.createElement("article");
     row.className = "incident-card";
-    row.innerHTML = `<h3>${escapeHtml(incident.title || incident.keyword)}</h3><p>${escapeHtml(incident.category || incident.type)}</p>`;
+    const timeWindows = formatTimeWindows(incident.timeWindows || []);
+    row.innerHTML = `<h3>${escapeHtml(incident.title || incident.keyword)}</h3><p>${escapeHtml(incident.category || incident.type)}${timeWindows ? ` | ${escapeHtml(timeWindows)}` : ""}</p>`;
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = "Bearbeiten";
@@ -408,6 +427,49 @@ function makeId(value) {
 
 function splitList(value) {
   return String(value || "").split(/[,;|]/).map((item) => item.trim()).filter(Boolean);
+}
+
+function parseTimeWindows(value) {
+  return String(value || "")
+    .split(/[;,|]/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const [start, end] = part.split("-").map((item) => item.trim());
+      return normalizeTimeWindow(start, end);
+    })
+    .filter(Boolean);
+}
+
+function normalizeTimeWindow(start, end) {
+  const startMinute = parseTimeToMinute(start);
+  const endMinute = parseTimeToMinute(end);
+  if (!Number.isFinite(startMinute) || !Number.isFinite(endMinute) || startMinute === endMinute) return null;
+  return { start: minuteToTimeLabel(startMinute), end: minuteToTimeLabel(endMinute) };
+}
+
+function parseTimeToMinute(value) {
+  const text = String(value || "").trim();
+  if (!text) return NaN;
+  const [hourText, minuteText = "0"] = text.split(":");
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return NaN;
+  if (hour < 0 || hour > 24 || minute < 0 || minute > 59) return NaN;
+  return ((hour % 24) * 60) + minute;
+}
+
+function minuteToTimeLabel(minute) {
+  const normalized = ((Math.round(minute) % 1440) + 1440) % 1440;
+  const hour = Math.floor(normalized / 60);
+  const part = normalized % 60;
+  return part ? `${hour}:${String(part).padStart(2, "0")}` : String(hour);
+}
+
+function formatTimeWindows(windows = []) {
+  return (windows || [])
+    .map((window) => `${window.start}-${window.end}`)
+    .join("; ");
 }
 
 function clampPercent(value) {

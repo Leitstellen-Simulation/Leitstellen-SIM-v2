@@ -8,7 +8,14 @@ const GLOBAL_TRAVEL_SPEED_FACTOR = 1.25;
 function assignVehicle(vehicleId, incidentId) {
   const vehicle = state.vehicles.find((unit) => unit.id === vehicleId);
   const incident = state.incidents.find((item) => item.id === incidentId);
-  if (!vehicle || !incident || !isAlarmable(vehicle) || incident.assigned.includes(vehicle.id)) return;
+  if (!vehicle || !incident || incident.assigned.includes(vehicle.id)) return;
+
+  if (vehicle.nextIncidentId && vehicle.nextIncidentId !== incident.id) {
+    if (!vehicleCanBeRedispatchedBeforeResponse(vehicle)) return;
+    removePendingVehicleFromPreviousIncident(vehicle, incident);
+  } else if (!isAlarmable(vehicle)) {
+    return;
+  }
 
   if (vehicle.status === 8 && vehicle.incidentId && vehicle.incidentId !== incident.id) {
     detachVehicleFromIncident(vehicle.id, vehicle.incidentId);
@@ -68,6 +75,27 @@ function assignVehicle(vehicleId, incidentId) {
   playPagerTone();
   renderAll();
   scheduleDispatchTimer(vehicle, delayMinutes, () => startResponse(vehicle.id));
+}
+
+function vehicleCanBeRedispatchedBeforeResponse(vehicle) {
+  return Boolean(vehicle?.nextIncidentId && vehicle.status === 2 && !vehicle.incidentId);
+}
+
+function removePendingVehicleFromPreviousIncident(vehicle, newIncident) {
+  const previousIncident = state.incidents.find((item) => item.id === vehicle.nextIncidentId);
+  clearDispatchTimer(vehicle);
+  if (previousIncident) {
+    previousIncident.assigned = previousIncident.assigned.filter((id) => id !== vehicle.id);
+    previousIncident.status = previousIncident.assigned.length
+      ? hasRequiredVehicles(previousIncident) ? "alarmiert" : "in Bearbeitung"
+      : "offen";
+    clearTransportRequest(previousIncident, null, vehicle.id);
+    logRadio(`${vehicle.name}: Umplanung von ${previousIncident.keyword} zu ${newIncident.keyword}.`, "warn");
+  }
+  vehicle.nextIncidentId = null;
+  vehicle.previousIncidentId = null;
+  vehicle.pendingDispatchUntil = null;
+  vehicle.pendingDispatchDelay = null;
 }
 
 function scheduleDispatchTimer(vehicle, delayMinutes, handler) {
@@ -1141,8 +1169,6 @@ function transportPoiDestinationForPatient(incident, patient) {
   patient.destinationDecision = { type: "none", destination: null };
   const config = incident.patient || {};
   if (config.destinationMode !== "poi") return null;
-  const probability = Number(config.destinationPoiProbability) || 0;
-  if (probability <= 0 || Math.random() >= probability) return null;
   const destination = randomPoiTransportDestination(config);
   if (!destination) {
     logRadio(`Kein passender Ziel-POI fÃ¼r ${incident.keyword} gefunden, Krankenhaus-Zuweisung bleibt aktiv.`, "warn");

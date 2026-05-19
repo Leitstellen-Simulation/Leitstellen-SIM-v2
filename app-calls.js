@@ -264,6 +264,56 @@ function weightedCallTemplateIndex(forcedType = null) {
 }
 
 function availableCallTemplates() {
-  if (Array.isArray(state.incidentCatalog) && state.incidentCatalog.length) return state.incidentCatalog;
-  return [];
+  const catalog = Array.isArray(state.incidentCatalog) ? state.incidentCatalog : [];
+  return catalog.filter((template) => templateAvailableAtMinute(template, state.minute));
+}
+
+function templateAvailableAtMinute(template, minute) {
+  const windows = templateTimeWindows(template);
+  if (!windows.length) return true;
+  const current = Math.floor(minute) % 1440;
+  return windows.some((window) => timeWindowContainsMinute(window, current));
+}
+
+function templateTimeWindows(template) {
+  const raw = template?.timeWindows || template?.variants?.[0]?.timeWindows || [];
+  if (typeof raw === "string") return parseRuntimeTimeWindows(raw);
+  if (!Array.isArray(raw)) return [];
+  return raw.map((window) => {
+    if (typeof window === "string") return parseRuntimeTimeWindow(window);
+    return normalizeRuntimeTimeWindow(window?.start, window?.end);
+  }).filter(Boolean);
+}
+
+function parseRuntimeTimeWindows(value) {
+  return String(value || "")
+    .split(/[;,|]/)
+    .map((part) => parseRuntimeTimeWindow(part))
+    .filter(Boolean);
+}
+
+function parseRuntimeTimeWindow(value) {
+  const [start, end] = String(value || "").split("-").map((item) => item.trim());
+  return normalizeRuntimeTimeWindow(start, end);
+}
+
+function normalizeRuntimeTimeWindow(start, end) {
+  const startMinute = runtimeTimeToMinute(start);
+  const endMinute = runtimeTimeToMinute(end);
+  if (!Number.isFinite(startMinute) || !Number.isFinite(endMinute) || startMinute === endMinute) return null;
+  return { startMinute, endMinute };
+}
+
+function runtimeTimeToMinute(value) {
+  const [hourText, minuteText = "0"] = String(value || "").trim().split(":");
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return NaN;
+  if (hour < 0 || hour > 24 || minute < 0 || minute > 59) return NaN;
+  return ((hour % 24) * 60) + minute;
+}
+
+function timeWindowContainsMinute(window, minute) {
+  if (window.startMinute < window.endMinute) return minute >= window.startMinute && minute < window.endMinute;
+  return minute >= window.startMinute || minute < window.endMinute;
 }

@@ -157,13 +157,26 @@
     "title": "KTP zur Arztpraxis",
     "type": "transport",
     "keyword": "KTP zur Arztpraxis",
+    "timeWindows": [
+      {
+        "start": "7",
+        "end": "19:30"
+      }
+    ],
     "variants": [
       {
         "callerName": "Anrufer",
-        "callerText": "Sitzender Krankentransport zur Hausarztpraxis, Patient stabil.",
+        "callerText": "Mein Vater müsste heute bitte zum Hausarzt! | Guten Morgen, ich bräuchte einen Transport für meine Mutter zum Arzt.",
         "locationMode": "random",
         "poiCategories": [],
         "poiIds": [],
+        "destinationMode": "poi",
+        "destinationPoiProbability": 0,
+        "destinationPoiCategories": [
+          "practice",
+          "dentist"
+        ],
+        "destinationPoiIds": [],
         "requiredServices": [],
         "report": "",
         "situationReport": "",
@@ -190,13 +203,12 @@
     "category": "Neuro/Psych",
     "title": "Schlaganfall",
     "type": "emergency",
-    "keyword": "RD 1 Sonstige - Ereignis/Zustand",
+    "keyword": "Schlaganfall",
     "variants": [
       {
         "callerName": "Anrufer",
         "callerText": "Hier ist der Herr Maier! Helfen Sie mir schnell, mein Vater kann plötzlich nicht mehr sprechen.",
         "locationMode": "random",
-        "location": "Regensburg",
         "requiredServices": [],
         "report": "Schlaganfall <2h, Hemiparese, Aphasie",
         "situationReport": "",
@@ -272,15 +284,23 @@
     "title": "ACS mit NA",
     "type": "emergency",
     "keyword": "ACS mit NA",
+    "timeWindows": [],
     "variants": [
       {
         "callerName": "Anrufer",
-        "callerText": "Kritischer Patient mit Herzinfarktverdacht, der Notarzt muss den Transport zwingend begleiten.",
+        "callerText": "Hallo, hier Dr Maier. Kritischer Patient mit Herzinfarktverdacht, der Notarzt muss den Transport zwingend begleiten. | Guten Morgen, hier ist die Arzthelferin Sonja, wir bräuchten bitte hier mal Unterstützung, der Patient hat Druck auf der Brust",
         "locationMode": "random",
-        "poiCategories": [],
+        "poiCategories": [
+          "practice",
+          "dentist"
+        ],
         "poiIds": [],
+        "destinationMode": "none",
+        "destinationPoiProbability": 0,
+        "destinationPoiCategories": [],
+        "destinationPoiIds": [],
         "requiredServices": [],
-        "report": "Kritischer ACS-Patient, Notarztbegleitung zwingend erforderlich.",
+        "report": "Kritischer ACS-Patient",
         "situationReport": "",
         "patients": [
           {
@@ -295,9 +315,18 @@
                 ]
               }
             ],
-            "requiredDepartmentKey": "cardiology",
-            "transportSignalProbability": 1,
-            "requiresDoctorAccompaniment": true
+            "requiredDepartmentKeys": [
+              "internal",
+              "cardiology",
+              "icu"
+            ],
+            "transportSignalProbability": 0.9,
+            "conditionReport": "",
+            "noTransportProbability": 0.05,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": true,
+            "needsFW": false,
+            "needsPOL": false
           }
         ]
       }
@@ -309,6 +338,7 @@
     "title": "Armfraktur",
     "type": "emergency",
     "keyword": "Armfraktur",
+    "timeWindows": [],
     "variants": [
       {
         "callerName": "Anrufer",
@@ -316,6 +346,12 @@
         "locationMode": "random",
         "poiCategories": [],
         "poiIds": [],
+        "destinationMode": "none",
+        "destinationPoiProbability": 0.05,
+        "destinationPoiCategories": [
+          "practice"
+        ],
+        "destinationPoiIds": [],
         "requiredServices": [],
         "report": "Einmal V.a. Armfraktur ins Krankenhaus",
         "situationReport": "",
@@ -551,6 +587,67 @@
             "conditionReport": "",
             "noTransportProbability": 0.25,
             "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "schenkelhals",
+    "category": "Trauma",
+    "title": "Schenkelhals",
+    "type": "emergency",
+    "keyword": "Schenkelhals",
+    "timeWindows": [],
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Guten Tag, meine Mutter, die Erna ist gerade hingefallen und kommt nicht mehr hoch. Könnten Sie mir Hilfe schicken? | Hallo, hier Bruno von Hausnotruf. Frau Dobler ist Boden. Jetzt Schmerzen! Ganz Schlimm!",
+        "locationMode": "random",
+        "poiCategories": [],
+        "poiIds": [],
+        "destinationMode": "none",
+        "destinationPoiProbability": 0,
+        "destinationPoiCategories": [],
+        "destinationPoiIds": [],
+        "requiredServices": [],
+        "report": "V.a. Oberschenkelhalsfraktur.",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1779231450140",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 0.4,
+                "vehicles": [
+                  "RTW"
+                ]
+              },
+              {
+                "probability": 0.1,
+                "vehicles": [
+                  "RTW",
+                  "NEF"
+                ]
+              },
+              {
+                "probability": 0.5,
+                "vehicles": [
+                  "KTW"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "trauma"
+            ],
+            "transportSignalProbability": 0.05,
+            "conditionReport": "",
+            "noTransportProbability": 0.05,
+            "noTransportText": "Patientin aufgeholfen, jetzt wieder frei",
             "requiresDoctorAccompaniment": false,
             "needsFW": false,
             "needsPOL": false

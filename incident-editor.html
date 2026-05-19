@@ -32,6 +32,7 @@
               <option value="scheduled">Planbar</option>
             </select>
           </label>
+          <label>Zeitfenster <input id="ie-time-windows" placeholder="z.B. 8-18; 19:30-23"></label>
           <label>Notruftext <textarea id="ie-caller-text" rows="4" placeholder="Mehrere Texte mit | trennen"></textarea></label>
           <label>Rückmeldung / Lagemeldung <textarea id="ie-report" rows="3"></textarea></label>
           <label>Einsatzort-Modus
@@ -61,7 +62,7 @@
                 <option value="poi">POI-Ziel</option>
               </select>
             </label>
-            <label>POI-Ziel-Wahrscheinlichkeit <input id="ie-destination-poi-probability" type="number" min="0" max="100" value="0"></label>
+            <label id="ie-destination-poi-probability-row">POI-Ziel-Wahrscheinlichkeit <input id="ie-destination-poi-probability" type="number" min="0" max="100" value="0"><small class="inline-hint">Bei Zielmodus POI-Ziel wird immer ein POI genutzt.</small></label>
             <div class="multi-select-box">
               <strong>Ziel-POI-Kategorien</strong>
               <input id="ie-destination-poi-category-search" placeholder="Kategorie suchen">

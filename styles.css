@@ -1621,6 +1621,10 @@ label {
   background: #197347;
 }
 
+.status-C {
+  background: #315b8f;
+}
+
 .status-3 {
   background: #f0c94a;
   color: #3d3100;
@@ -2482,6 +2486,60 @@ label {
   border: 1px solid #d2dce6;
   border-radius: 8px;
   background: #fff;
+}
+
+.disabled-field {
+  opacity: .58;
+}
+
+.disabled-field input {
+  cursor: not-allowed;
+}
+
+.poi-category-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 6px;
+  padding: 7px;
+  border: 1px solid #d4dfe8;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.poi-category-grid label.poi-select-chip {
+  position: relative;
+  display: inline-flex;
+  width: auto;
+  min-height: 30px;
+  padding: 6px 10px;
+  border: 1px solid #cbd6e1;
+  border-radius: 999px;
+  background: #f7fafc;
+  color: #314152;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+}
+
+.poi-category-grid label.poi-select-chip:hover {
+  border-color: #7ea7cf;
+  background: #eef5fc;
+}
+
+.poi-category-grid label.poi-select-chip:has(input:checked) {
+  border-color: #2d6fb5;
+  background: #2d6fb5;
+  color: #fff;
+}
+
+.poi-category-grid .poi-select-chip input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .osm-poi-preview {
