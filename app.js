@@ -101,6 +101,12 @@ const el = {
   endShiftButton: document.querySelector("#end-shift-button"),
   editorButton: document.querySelector("#editor-button"),
   incidentEditorButton: document.querySelector("#incident-editor-button"),
+  adminLoginDialog: document.querySelector("#admin-login-dialog"),
+  adminLoginForm: document.querySelector("#admin-login-form"),
+  adminLoginPassword: document.querySelector("#admin-login-password"),
+  adminLoginError: document.querySelector("#admin-login-error"),
+  closeAdminLoginDialog: document.querySelector("#close-admin-login-dialog"),
+  cancelAdminLogin: document.querySelector("#cancel-admin-login"),
   coverageButton: document.querySelector("#coverage-button"),
   vehicleSort: document.querySelector("#vehicle-sort"),
   clockLabel: document.querySelector("#clock-label"),
@@ -159,6 +165,9 @@ el.forwardButton.addEventListener("click", forwardCall);
 el.newCallButton.addEventListener("click", receiveCall);
 el.testModeButton?.addEventListener("click", toggleTestMode);
 el.adminModeButton.addEventListener("click", enableAdminMode);
+el.adminLoginForm?.addEventListener("submit", handleAdminLoginSubmit);
+el.closeAdminLoginDialog?.addEventListener("click", closeAdminLoginDialog);
+el.cancelAdminLogin?.addEventListener("click", closeAdminLoginDialog);
 el.startMapEditorButton?.addEventListener("click", openEditor);
 el.startIncidentEditorButton?.addEventListener("click", openIncidentEditor);
 el.callFwButton.addEventListener("click", () => referPendingCall("FW"));
@@ -375,11 +384,36 @@ async function enableAdminMode() {
     updateAdminControls();
     return;
   }
-  const password = window.prompt("Admin-Passwort");
+  openAdminLoginDialog();
+}
+
+function openAdminLoginDialog() {
+  if (!el.adminLoginDialog) return;
+  if (el.adminLoginPassword) el.adminLoginPassword.value = "";
+  if (el.adminLoginError) {
+    el.adminLoginError.hidden = true;
+    el.adminLoginError.textContent = "";
+  }
+  showDialog(el.adminLoginDialog);
+  setTimeout(() => el.adminLoginPassword?.focus(), 0);
+}
+
+function closeAdminLoginDialog() {
+  if (el.adminLoginDialog?.open) el.adminLoginDialog.close();
+}
+
+async function handleAdminLoginSubmit(event) {
+  event.preventDefault();
+  const password = el.adminLoginPassword?.value || "";
   if (!password || !(await verifyAdminPassword(password))) {
+    if (el.adminLoginError) {
+      el.adminLoginError.textContent = "Falsches Passwort oder Hintergrundserver nicht erreichbar.";
+      el.adminLoginError.hidden = false;
+    }
     logRadio("Admin-Modus: falsches Passwort.", "admin");
     return;
   }
+  closeAdminLoginDialog();
   state.adminMode = true;
   updateAdminControls();
   logRadio("Admin-Modus aktiviert.", "admin");

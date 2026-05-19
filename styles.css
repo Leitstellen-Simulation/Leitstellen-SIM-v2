@@ -1897,6 +1897,10 @@ label {
   width: min(1060px, calc(100vw - 28px));
 }
 
+.small-modal {
+  width: min(420px, calc(100vw - 28px));
+}
+
 .modal::backdrop {
   background: rgba(9, 18, 27, .34);
 }
@@ -1956,6 +1960,11 @@ label {
   min-height: 0;
   overflow: auto;
   padding: 14px;
+}
+
+.admin-login-body {
+  display: grid;
+  gap: 10px;
 }
 
 .incident-create-grid {

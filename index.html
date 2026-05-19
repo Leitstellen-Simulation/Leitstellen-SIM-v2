@@ -159,6 +159,26 @@
       </section>
     </main>
 
+    <dialog id="admin-login-dialog" class="modal small-modal">
+      <form id="admin-login-form" class="modal-card">
+        <header class="modal-header">
+          <h2>Admin-Modus</h2>
+          <button id="close-admin-login-dialog" class="icon-button" aria-label="Schließen" type="button">x</button>
+        </header>
+        <div class="modal-body admin-login-body">
+          <label>
+            Admin-Passwort
+            <input id="admin-login-password" type="password" autocomplete="current-password" required>
+          </label>
+          <p id="admin-login-error" class="error-text" hidden></p>
+        </div>
+        <footer class="modal-footer">
+          <button id="cancel-admin-login" type="button">Abbrechen</button>
+          <button class="primary-action" type="submit">Aktivieren</button>
+        </footer>
+      </form>
+    </dialog>
+
     <dialog id="incident-dialog" class="modal">
       <form method="dialog" id="incident-form" class="modal-card">
         <header class="modal-header">
