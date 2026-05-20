@@ -9,13 +9,14 @@ function processCallRates() {
   const steps = Math.min(60, currentMinute - previous);
   for (let index = 0; index < steps; index += 1) {
     const minute = (previous + index + 1 + 1440) % 1440;
-    const type = callTypeForMinute(minute);
-    if (type) {
-      if (type === "scheduled") {
-        if (typeof createScheduledIncidentFromRate === "function") createScheduledIncidentFromRate();
-      } else {
-        receiveCall(type);
-      }
+    const events = callEventsForMinute(minute);
+    if (events.scheduled && typeof createScheduledIncidentFromRate === "function") {
+      createScheduledIncidentFromRate();
+    }
+    if (events.callType) {
+      receiveCall(events.callType);
+    }
+    if (events.scheduled || events.callType) {
       break;
     }
   }
@@ -23,24 +24,37 @@ function processCallRates() {
 }
 
 function callTypeForMinute(minute) {
+  return callEventsForMinute(minute).callType;
+}
+
+function callEventsForMinute(minute) {
   const hour = Math.floor(minute / 60);
   const rate = normalizedCallRates(state.center.callRates)[hour];
   const rolls = [
     ["emergency", rate.emergency],
-    ["transport", rate.transport],
-    ["scheduled", rate.scheduled]
+    ["transport", rate.transport]
   ].filter(([, value]) => Math.random() < Math.max(0, Number(value) || 0) / 60);
-  if (!rolls.length) return null;
-  return rolls.sort((a, b) => b[1] - a[1])[0][0];
+  return {
+    callType: rolls.length ? rolls.sort((a, b) => b[1] - a[1])[0][0] : null,
+    scheduled: Math.random() < Math.max(0, Number(rate.scheduled) || 0) / 60
+  };
 }
 
 function receiveCall(forcedType = null) {
+  if (forcedType === "scheduled") {
+    if (typeof createScheduledIncidentFromRate === "function") createScheduledIncidentFromRate();
+    return;
+  }
   const templates = availableCallTemplates();
   if (!templates.length) {
     logCall("Kein Einsatzkatalog geladen. Bitte Einsatzeditor oder incidents-data.json pruefen.", "warn");
     return;
   }
   let templateIndex = weightedCallTemplateIndex(forcedType);
+  if (templateIndex < 0) {
+    logCall("Kein passender Telefon-Einsatz im Katalog gefunden.", "warn");
+    return;
+  }
   if (templates.length > 1 && templateIndex === state.lastCallTemplateIndex) {
     templateIndex = (templateIndex + randomInt(1, templates.length - 1)) % templates.length;
   }
@@ -253,13 +267,17 @@ function forwardCall() {
 
 function weightedCallTemplateIndex(forcedType = null) {
   const roll = Math.random();
-  const wantedType = forcedType || (roll < .72 ? "emergency" : roll < .9 ? "transport" : "scheduled");
+  const wantedType = forcedType || (roll < .75 ? "emergency" : "transport");
   const templates = availableCallTemplates();
   if (!templates.length) return -1;
   const candidates = templates
     .map((template, index) => ({ template, index }))
     .filter((item) => item.template.type === wantedType);
-  const pool = candidates.length ? candidates : templates.map((template, index) => ({ template, index }));
+  const fallback = templates
+    .map((template, index) => ({ template, index }))
+    .filter((item) => item.template.type !== "scheduled");
+  const pool = candidates.length ? candidates : fallback;
+  if (!pool.length) return -1;
   return pool[Math.floor(Math.random() * pool.length)].index;
 }
 

@@ -655,5 +655,427 @@
         ]
       }
     ]
+  },
+  {
+    "id": "ki-rd-1-sonstiges---hypoglyk-mie-somnolent--1779280075733",
+    "category": "Sonstiges",
+    "title": "RD 1 Sonstiges - Hypoglykämie (somnolent)",
+    "type": "emergency",
+    "keyword": "RD 1 Sonstiges - Hypoglykämie (somnolent)",
+    "timeWindows": [],
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Mein Mann ist plötzlich ganz verwirrt und schläfrig, er ist Diabetiker und hat heute kaum etwas gegessen.|Hilfe, mein Vater reagiert nicht richtig, er ist zuckerkrank und ganz benommen.",
+        "locationMode": "random",
+        "poiCategories": [],
+        "poiIds": [],
+        "destinationMode": "none",
+        "destinationPoiProbability": 0,
+        "destinationPoiCategories": [],
+        "destinationPoiIds": [],
+        "requiredServices": [],
+        "report": "Patient somnolent, BZ 40 mg/dl, nach Gabe von Glukose 40% i.v. BZ-Anstieg auf 120 mg/dl, jetzt wach und orientiert, Transport in Klinik.",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 0.85,
+                "vehicles": [
+                  "RTW"
+                ]
+              },
+              {
+                "probability": 0.15,
+                "vehicles": [
+                  "NEF",
+                  "RTW"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "internal"
+            ],
+            "transportSignalProbability": 0.2,
+            "conditionReport": "Somnolenter Patient, BZ 40 mg/dl, nach Glukosegabe wach, BZ 120 mg/dl.",
+            "noTransportProbability": 0.4,
+            "noTransportText": "Patient nach Glukosegabe vollständig orientiert und vital stabil, lehnt Transport ab.",
+            "requiresDoctorAccompaniment": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ki-ktp---dialysefahrt-1779280215997",
+    "category": "Krankentransport",
+    "title": "KTP - Dialysefahrt",
+    "type": "scheduled",
+    "keyword": "KTP - Dialysefahrt",
+    "timeWindows": [
+      {
+        "start": "8",
+        "end": "20"
+      }
+    ],
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Wir brauchen einen Krankentransport für eine Dialysepatientin zur Behandlung. Die Patientin ist *Vorname* *Nachname*, wohnhaft in der *Straße* *Hausnummer*. Die Dialyse ist um *Uhrzeit* im Dialysezentrum *POI*.",
+        "locationMode": "random",
+        "poiCategories": [],
+        "poiIds": [],
+        "destinationMode": "poi",
+        "destinationPoiProbability": 1,
+        "destinationPoiCategories": [
+          "dialysis"
+        ],
+        "destinationPoiIds": [],
+        "requiredServices": [],
+        "report": "Patientin sitzt bereit im Wohnzimmer, Vitalparameter stabil, keine Beschwerden, Transport in den KTW problemlos möglich.",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 1,
+                "vehicles": [
+                  "KTW"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "none"
+            ],
+            "transportSignalProbability": 0,
+            "conditionReport": "Wach, orientiert, kreislaufstabil, bekannte Niereninsuffizienz, heute geplante Hämodialyse.",
+            "noTransportProbability": 0,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ki-rd-2-trauma---schwerer-verkehrsunfall-1779280898992",
+    "category": "Trauma",
+    "title": "RD 2 Trauma - Schwerer Verkehrsunfall",
+    "type": "emergency",
+    "keyword": "RD 2 Trauma - Schwerer Verkehrsunfall",
+    "timeWindows": [],
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Schwerer Verkehrsunfall auf der Kreuzung, zwei Autos ineinander gekracht! Eine Person blutet stark, eine weitere ist ansprechbar aber verletzt!",
+        "locationMode": "random",
+        "poiCategories": [],
+        "poiIds": [],
+        "destinationMode": "none",
+        "destinationPoiProbability": 0,
+        "destinationPoiCategories": [],
+        "destinationPoiIds": [],
+        "requiredServices": [
+          "FW",
+          "POL"
+        ],
+        "report": "",
+        "situationReport": "Schwerer Verkehrsunfall, Kreuzungsbereich blockiert. 2 PKW beteiligt. 1 Person eingeklemmt, bewusstlos, stark blutend. 1 Person selbstständig ausgestiegen, orientiert, Schürfwunden.",
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 0.7,
+                "vehicles": [
+                  "RTW",
+                  "NEF"
+                ]
+              },
+              {
+                "probability": 0.3,
+                "vehicles": [
+                  "RTW",
+                  "RTH"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "trauma",
+              "icu"
+            ],
+            "transportSignalProbability": 0.9,
+            "conditionReport": "Patient bewusstlos, instabiler Kreislauf, multiple Frakturen, Verdacht auf innere Blutungen.",
+            "noTransportProbability": 0,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": true,
+            "needsFW": true,
+            "needsPOL": false
+          },
+          {
+            "id": "pat-2",
+            "label": "Pat 2",
+            "options": [
+              {
+                "probability": 1,
+                "vehicles": [
+                  "RTW"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "trauma"
+            ],
+            "transportSignalProbability": 0.1,
+            "conditionReport": "Patient ansprechbar, Schürfwunden, Prellungen, keine kritischen Verletzungen.",
+            "noTransportProbability": 0.2,
+            "noTransportText": "Ambulante Versorgung ausreichend, Patient lehnt Transport ab.",
+            "requiresDoctorAccompaniment": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ki-rd-2-sonstiges---verschlechterter-allgemeinzustand-1779282069495",
+    "category": "Sonstiges",
+    "title": "RD 2 Sonstiges - Verschlechterter Allgemeinzustand",
+    "type": "emergency",
+    "keyword": "RD 2 Sonstiges - Verschlechterter Allgemeinzustand",
+    "timeWindows": [],
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Meiner Mutter geht es plötzlich schlecht, sie ist ganz schwach und kann kaum aufstehen. Ich weiß nicht, was los ist. | Mein Vater ist heute Morgen ganz apathisch und isst nichts, das ist nicht normal. | Meine Frau fühlt sich seit gestern immer schlechter, sie ist ganz blass und hat keinen Appetit.",
+        "locationMode": "random",
+        "poiCategories": [],
+        "poiIds": [],
+        "destinationMode": "none",
+        "destinationPoiProbability": 0.05,
+        "destinationPoiCategories": [
+          "practice"
+        ],
+        "destinationPoiIds": [],
+        "requiredServices": [],
+        "report": "Patient/in wach, blass, schwach, Vitalparameter altersentsprechend, kein akutes kritisches Ereignis erkennbar. Transport in geeignete Klinik zur Abklärung.",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 0.8,
+                "vehicles": [
+                  "KTW"
+                ]
+              },
+              {
+                "probability": 0.2,
+                "vehicles": [
+                  "RTW"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "internal"
+            ],
+            "transportSignalProbability": 0,
+            "conditionReport": "Patient/in in reduziertem Allgemeinzustand, orientiert, Kreislauf stabil, kein Fieber, keine Schmerzen, benötigt ärztliche Abklärung.",
+            "noTransportProbability": 0.1,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ki-rd-1-herz-kreislauf---herzrhythmusst-rungen-1779282261550",
+    "category": "Herz/Kreislauf",
+    "title": "RD 1 Herz/Kreislauf - Herzrhythmusstörungen",
+    "type": "emergency",
+    "keyword": "RD 1 Herz/Kreislauf - Herzrhythmusstörungen",
+    "timeWindows": [],
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Hallo hier ist *Nachname*, ich habe so ein komisches Stolpern in der Brust. Das fühlt sich ganz unregelmäßig an und macht mir Angst.| Guten Tag, ich bin *Nachname* Mein Herz rast und stolpert die ganze Zeit, ich weiß nicht, was das ist.",
+        "locationMode": "random",
+        "poiCategories": [],
+        "poiIds": [],
+        "destinationMode": "none",
+        "destinationPoiProbability": 0,
+        "destinationPoiCategories": [],
+        "destinationPoiIds": [],
+        "requiredServices": [],
+        "report": "Patientin wach, orientiert, kreislaufstabil. EKG zeigt vereinzelte Extrasystolen. Keine akute Ischämie, keine Dyspnoe. Ambulante Abklärung durch Notarzt ausreichend.",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 0.75,
+                "vehicles": [
+                  "REF"
+                ]
+              },
+              {
+                "probability": 0.25,
+                "vehicles": [
+                  "RTW"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "internal"
+            ],
+            "transportSignalProbability": 0.02,
+            "conditionReport": "Patientin subjektiv stark beunruhigt, somatisch stabile Herzrhythmusstörungen ohne Zeichen der kardialen Dekompensation.",
+            "noTransportProbability": 0,
+            "noTransportText": "Nach notärztlicher Untersuchung und EKG-Kontrolle kein Hinweis auf akutes Koronarsyndrom. Ambulante Versorgung ausreichend, Vorstellung beim Hausarzt empfohlen.",
+            "requiresDoctorAccompaniment": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ki-rd-1-herz-kreislauf---gastrointestinale-blutung-1779282357971",
+    "category": "Herz/Kreislauf",
+    "title": "RD 1 Herz/Kreislauf - Gastrointestinale Blutung",
+    "type": "emergency",
+    "keyword": "RD 1 Herz/Kreislauf - Gastrointestinale Blutung",
+    "timeWindows": [],
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Hier ist Schwester *Vorname*. Wir haben einen Patienten mit einer akuten gastrointestinalen Blutung. Er ist kreislaufstabil, aber wir brauchen dringend einen Rettungswagen. | Grüß Gott, Schwester *Vorname*. Ein Bewohner hat eine starke Blutung im Magen-Darm-Trakt. Er ist bei Bewusstsein, bitte schnell kommen.",
+        "locationMode": "poi",
+        "poiCategories": [
+          "nursing-home"
+        ],
+        "poiIds": [],
+        "destinationMode": "none",
+        "destinationPoiProbability": 0,
+        "destinationPoiCategories": [],
+        "destinationPoiIds": [],
+        "requiredServices": [],
+        "report": "Patient kreislaufstabil, wach und orientiert. Hat frisches Blut erbrochen. Benötigt zügigen Transport in eine Klinik mit gastroenterologischer Abteilung.",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 0.4,
+                "vehicles": [
+                  "KTW"
+                ]
+              },
+              {
+                "probability": 0.5,
+                "vehicles": [
+                  "RTW"
+                ]
+              },
+              {
+                "probability": 0.1,
+                "vehicles": [
+                  "RTW",
+                  "NEF"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "internal"
+            ],
+            "transportSignalProbability": 0.3,
+            "conditionReport": "Hämodynamisch stabil, Blässe, Hämatemesis.",
+            "noTransportProbability": 0,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ki-rd-1-herz-kreislauf---leblose-person-1779283686112",
+    "category": "Herz/Kreislauf",
+    "title": "RD 1 Herz/Kreislauf - Leblose Person",
+    "type": "emergency",
+    "keyword": "RD 1 Herz/Kreislauf - Leblose Person",
+    "timeWindows": [],
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Hilfe, ich habe *Nachname* leblos in der Wohnung gefunden! Ich kann keine Atmung feststellen! | Guten Tag, hier ist *Name*. Mein Nachbar reagiert nicht und atmet nicht mehr!",
+        "locationMode": "random",
+        "poiCategories": [],
+        "poiIds": [],
+        "destinationMode": "none",
+        "destinationPoiProbability": 0,
+        "destinationPoiCategories": [],
+        "destinationPoiIds": [],
+        "requiredServices": [],
+        "report": "Person leblos aufgefunden, keine Atmung, Reanimation läuft.",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 0.5,
+                "vehicles": [
+                  "RTW",
+                  "NEF"
+                ]
+              },
+              {
+                "probability": 0.5,
+                "vehicles": [
+                  "REF"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "internal",
+              "cardiology",
+              "icu"
+            ],
+            "transportSignalProbability": 1,
+            "conditionReport": "Patient unter Reanimation, ROSC noch nicht erreicht.",
+            "noTransportProbability": 0,
+            "noTransportText": "Tod sicher festgestellt, keine Transportindikation",
+            "requiresDoctorAccompaniment": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
   }
 ]

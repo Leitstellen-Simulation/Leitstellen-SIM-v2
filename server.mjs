@@ -1,4 +1,4 @@
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const port = Number(process.env.PORT || 4173);
 const root = dirname(fileURLToPath(import.meta.url));
+loadLocalEnvFile();
 const dataRoot = process.env.DISPATCH_DATA_DIR ? resolve(process.env.DISPATCH_DATA_DIR) : root;
 const usesExternalDataDir = dataRoot !== root;
 const defaultMapsDir = join(root, "maps");
@@ -14,6 +15,10 @@ const mapsDir = join(dataRoot, "maps");
 const incidentsFile = join(dataRoot, "incidents-data.json");
 const maxBodyBytes = 2_000_000;
 const adminPassword = process.env.DISPATCH_ADMIN_PASSWORD || "XXX112XXX";
+const openRouterApiKey = process.env.OPENROUTER_API_KEY || "OPENROUTER_API_KEY_HIER_EINTRAGEN";
+const openRouterModel = process.env.OPENROUTER_MODEL || "deepseek/deepseek-v4-pro";
+const openRouterReferer = process.env.OPENROUTER_SITE_URL || "http://127.0.0.1:4173";
+const openRouterAppName = process.env.OPENROUTER_APP_NAME || "Leitstellen-SIM";
 const types = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -46,6 +51,10 @@ const server = createServer(async (request, response) => {
     }
     if (url.pathname === "/api/admin-login") {
       await handleAdminLogin(request, response);
+      return;
+    }
+    if (url.pathname === "/api/generate-incident") {
+      await handleGenerateIncidentApi(request, response);
       return;
     }
     await serveStaticFile(request, response, url);
@@ -483,6 +492,361 @@ async function handleAdminLogin(request, response) {
   sendJson(response, { ok: body.password === adminPassword });
 }
 
+async function handleGenerateIncidentApi(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, { error: "method not allowed" }, 405);
+    return;
+  }
+  if (!isOpenRouterConfigured()) {
+    sendJson(response, {
+      error: "OpenRouter API-Key fehlt. Setze OPENROUTER_API_KEY als System-Umgebungsvariable oder optional in einer nicht versionierten .env-Datei."
+    }, 503);
+    return;
+  }
+
+  const body = await readJsonBody(request, response, {});
+  if (!body) return;
+  const userPrompt = String(body.prompt || "").trim();
+  if (userPrompt.length < 8) {
+    sendJson(response, { error: "Bitte eine kurze Beschreibung fuer den KI-Einsatz eingeben." }, 400);
+    return;
+  }
+
+  try {
+    const generated = await generateIncidentWithOpenRouter(userPrompt);
+    const incident = normalizeGeneratedIncident(generated, userPrompt);
+    sendJson(response, { incident, model: openRouterModel });
+  } catch (error) {
+    sendJson(response, { error: error.message || "KI-Generierung fehlgeschlagen" }, 502);
+  }
+}
+
+function isOpenRouterConfigured() {
+  return Boolean(openRouterApiKey && openRouterApiKey !== "OPENROUTER_API_KEY_HIER_EINTRAGEN");
+}
+
+async function generateIncidentWithOpenRouter(userPrompt) {
+  const first = await requestOpenRouterIncident(userPrompt, false);
+  if (first.content) {
+    try {
+      return parseGeneratedIncidentJson(first.content);
+    } catch (error) {
+      logOpenRouterJsonFailure("parse-first", first, error);
+    }
+  } else {
+    logOpenRouterJsonFailure("empty-first", first);
+  }
+  const retry = await requestOpenRouterIncident(userPrompt, true);
+  if (retry.content) {
+    try {
+      return parseGeneratedIncidentJson(retry.content);
+    } catch (error) {
+      logOpenRouterJsonFailure("parse-retry", retry, error);
+    }
+  } else {
+    logOpenRouterJsonFailure("empty-retry", retry);
+  }
+  throw new Error("OpenRouter hat keine JSON-Antwort geliefert.");
+}
+
+async function requestOpenRouterIncident(userPrompt, retry = false) {
+  const messages = retry
+    ? [
+        { role: "system", content: `${incidentGenerationSystemPrompt()}\n\nWICHTIG: Gib jetzt nur ein einziges JSON-Objekt aus. Kein Denken, keine Erklaerung, kein leerer Inhalt.` },
+        { role: "user", content: `${userPrompt}\n\nAntworte ausschliesslich als JSON object.` }
+      ]
+    : [
+        { role: "system", content: incidentGenerationSystemPrompt() },
+        { role: "user", content: userPrompt }
+      ];
+  const openRouterResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${openRouterApiKey}`,
+      "content-type": "application/json",
+      "HTTP-Referer": openRouterReferer,
+      "X-Title": openRouterAppName
+    },
+    body: JSON.stringify({
+      model: openRouterModel,
+      temperature: retry ? 0.2 : 0.55,
+      max_tokens: retry ? 1400 : 1800,
+      response_format: { type: "json_object" },
+      reasoning: {
+        effort: "none",
+        exclude: true
+      },
+      include_reasoning: false,
+      messages
+    }),
+    signal: AbortSignal.timeout(60000)
+  });
+
+  const data = await openRouterResponse.json().catch(() => null);
+  if (!openRouterResponse.ok) {
+    const message = data?.error?.message || data?.message || `OpenRouter Fehler ${openRouterResponse.status}`;
+    throw new Error(message);
+  }
+  const message = data?.choices?.[0]?.message || {};
+  const rawContent = message.content ?? message.reasoning_content ?? data?.choices?.[0]?.text;
+  const content = Array.isArray(rawContent)
+    ? rawContent.map((part) => part?.text || part?.content || "").join("")
+    : rawContent;
+  const fallbackContent = content || jsonFromReasoningDetails(message.reasoning_details);
+  return { content: String(fallbackContent || "").trim(), raw: data, status: openRouterResponse.status };
+}
+
+function jsonFromReasoningDetails(details) {
+  if (!Array.isArray(details)) return "";
+  return details
+    .map((detail) => detail?.text || detail?.content || detail?.reasoning || "")
+    .join("\n");
+}
+
+function logOpenRouterJsonFailure(stage, result, error = null) {
+  const choice = result?.raw?.choices?.[0] || {};
+  const message = choice.message || {};
+  const rawContent = message.content ?? message.reasoning_content ?? choice.text ?? "";
+  const reasoningDetails = Array.isArray(message.reasoning_details)
+    ? message.reasoning_details.map((detail) => detail?.text || detail?.content || detail?.reasoning || "").join("\n")
+    : "";
+  const printable = {
+    stage,
+    status: result?.status || null,
+    model: result?.raw?.model || null,
+    provider: result?.raw?.provider || null,
+    finish_reason: choice.finish_reason || null,
+    native_finish_reason: choice.native_finish_reason || null,
+    error: error?.message || null,
+    content_preview: truncateForLog(rawContent),
+    reasoning_preview: truncateForLog(reasoningDetails),
+    raw_preview: truncateForLog(JSON.stringify(result?.raw || {}))
+  };
+  console.warn("[OpenRouter JSON Fehler]", JSON.stringify(printable, null, 2));
+}
+
+function truncateForLog(value, maxLength = 1800) {
+  const text = String(value || "");
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength)}... [gekuerzt, ${text.length} Zeichen]`;
+}
+
+function incidentGenerationSystemPrompt() {
+  return `Du generierst Einsatzvorlagen fuer eine deutsche Rettungsdienst-Leitstellen-Simulation.
+Antworte ausschliesslich als valides JSON-Objekt ohne Markdown.
+Das Wort JSON ist absichtlich genannt: Die Antwort muss ein JSON object sein.
+
+Ziel: Erzeuge genau einen Einsatz im bestehenden Katalogformat. Verwende realistische, kurze Texte.
+Namen duerfen Platzhalter nutzen: *Vorname*, *Nachname*, *Name*. Bei Nachname setzt die Simulation automatisch Frau/Herr davor.
+
+JSON-Schema:
+{
+  "category": "Herz/Kreislauf|Atmung|Trauma|Neuro/Psych|Sonstiges|Krankentransport",
+  "title": "kurzer Einsatzname inklusive RD-Stufe, z.B. RD 1 Herz/Kreislauf - Brustschmerz",
+  "type": "emergency|transport|scheduled",
+  "timeWindows": [{"start":"8","end":"18"}],
+  "variants": [{
+    "callerName": "Anrufer",
+    "callerText": "Notruftext, mehrere Varianten mit | trennen",
+    "locationMode": "random|hospital|poi",
+    "poiCategories": ["practice|dentist|dialysis|nursing-home|school|kindergarten|university|railway-station|fire-station|police|townhall|church|cinema|sports-centre|mall|hotel|public|home"],
+    "destinationMode": "none|poi",
+    "destinationPoiProbability": 0,
+    "destinationPoiCategories": ["practice|dentist|dialysis|nursing-home|home"],
+    "requiredServices": ["FW","POL"],
+    "report": "kurze Rueckmeldung an die Leitstelle, z.B. Zustand und benoetigtes Transportmittel, kein Abschlussbericht",
+    "situationReport": "Lagemeldung bei mehreren Patienten",
+    "patients": [{
+      "options": [{"probability":1,"vehicles":["RTW"]}],
+      "requiredDepartmentKeys": ["internal|cardiology|neurology|trauma|pediatrics|obstetrics|psychiatry|stroke|icu|none"],
+      "transportSignalProbability": 0,
+      "conditionReport": "individuelle Patientenrueckmeldung",
+      "noTransportProbability": 0,
+      "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+      "requiresDoctorAccompaniment": false,
+      "needsFW": false,
+      "needsPOL": false
+    }]
+  }]
+}
+
+Regeln:
+- Erlaubte Fahrzeugtypen: KTW, RTW, NEF, REF, RTH.
+- options-Wahrscheinlichkeiten pro Patient muessen zusammen etwa 1 ergeben.
+- KTP ueber 19222 oder mit Anrufer ist type transport, auch wenn die Fahrt zeitlich geplant ist. type scheduled nur fuer automatisch im Hintergrund entstehende Planfahrten ohne Telefonanruf und ohne initial zugewiesenes Fahrzeug.
+- RTW-Notfaelle ca. 1 Patient, requiredDepartmentKeys passend zur Lage.
+- requiredDepartmentKeys ist eine Mehrfachauswahl. Setze bei Bedarf mehrere Fachrichtungen, z.B. ["trauma","icu"] bei Polytrauma, ["neurology","stroke"] bei Schlaganfall, ["internal","cardiology"] bei ACS. Nutze ["none"] nur, wenn kein Klinikziel gebraucht wird.
+- NEF/RTH nur bei kritisch, Bewusstlosigkeit, Reanimation, schwerem Trauma, Geburt/Kind kritisch oder Notarztbegleitung.
+- destinationMode poi nur fuer Fahrten zu Arztpraxis, Zahnarztpraxis, Dialyse oder andere echte POI-Ziele. Heimfahrt nach Hause nicht als POI-Ziel modellieren.
+- locationMode poi nur wenn der Einsatz sinnvoll an einer echten POI-Kategorie startet. Wohnadresse/Privatadresse ist locationMode random.
+- report und situationReport beschreiben die Lage nach Erkundung, nicht dass der Transport bereits abgeschlossen ist.
+- Setze requiredServices nur wenn FW/POL wirklich vor Transport erforderlich sind.
+- Keine Koordinaten, keine IDs, keine Kommentare.`;
+}
+
+function parseGeneratedIncidentJson(content) {
+  const text = String(content || "").trim();
+  try {
+    return JSON.parse(text);
+  } catch {
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error("KI-Antwort war kein valides JSON.");
+    return JSON.parse(match[0]);
+  }
+}
+
+function normalizeGeneratedIncident(input, fallbackTitle) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("KI-JSON muss ein Objekt sein.");
+  if (input.incident && typeof input.incident === "object" && !Array.isArray(input.incident)) {
+    input = input.incident;
+  }
+  const sourceVariant = Array.isArray(input.variants) && input.variants[0] && typeof input.variants[0] === "object"
+    ? input.variants[0]
+    : input;
+  const title = stringValue(input.title || input.keyword || sourceVariant.keyword || fallbackTitle, 80) || "KI Einsatz";
+  const rawType = enumValue(input.type || sourceVariant.type, ["emergency", "transport", "scheduled"], "emergency");
+  const type = normalizeGeneratedIncidentType(rawType, sourceVariant);
+  const category = enumValue(input.category, ["Herz/Kreislauf", "Atmung", "Trauma", "Neuro/Psych", "Sonstiges", "Krankentransport"], type === "transport" || type === "scheduled" ? "Krankentransport" : "Sonstiges");
+  const patients = normalizeGeneratedPatients(sourceVariant.patients);
+  const poiCategories = allowedList(sourceVariant.poiCategories, allowedOriginPoiCategories());
+  const destinationPoiCategories = allowedList(sourceVariant.destinationPoiCategories, allowedDestinationPoiCategories());
+  const locationMode = enumValue(sourceVariant.locationMode, ["random", "hospital", "poi"], "random");
+  const destinationMode = enumValue(sourceVariant.destinationMode, ["none", "poi"], "none");
+  const effectiveLocationMode = locationMode === "poi" && !poiCategories.length ? "random" : locationMode;
+  const effectiveDestinationMode = destinationMode === "poi" && !destinationPoiCategories.length ? "none" : destinationMode;
+  const variant = {
+    callerName: stringValue(sourceVariant.callerName, 60) || "Anrufer",
+    callerText: stringValue(sourceVariant.callerText, 900) || "Hallo, ich brauche bitte Hilfe.",
+    locationMode: effectiveLocationMode,
+    poiCategories,
+    poiIds: [],
+    destinationMode: effectiveDestinationMode,
+    destinationPoiProbability: effectiveDestinationMode === "poi" ? 1 : probabilityValue(sourceVariant.destinationPoiProbability),
+    destinationPoiCategories,
+    destinationPoiIds: [],
+    requiredServices: allowedList(sourceVariant.requiredServices, ["FW", "POL"]),
+    report: patients.length > 1 ? "" : stringValue(sourceVariant.report, 500),
+    situationReport: patients.length > 1 ? stringValue(sourceVariant.situationReport || sourceVariant.report, 600) : "",
+    patients
+  };
+  return {
+    id: safeId(`ki-${title}-${Date.now()}`),
+    category,
+    title,
+    type,
+    keyword: title,
+    timeWindows: normalizeGeneratedTimeWindows(input.timeWindows || sourceVariant.timeWindows),
+    variants: [variant]
+  };
+}
+
+function normalizeGeneratedIncidentType(rawType, variant) {
+  if (rawType !== "scheduled") return rawType;
+  const hasPhoneContext = Boolean(String(variant?.callerText || "").trim() || String(variant?.callerName || "").trim());
+  return hasPhoneContext ? "transport" : "scheduled";
+}
+
+function normalizeGeneratedPatients(value) {
+  const rawPatients = Array.isArray(value) && value.length ? value.slice(0, 8) : [{}];
+  return rawPatients.map((patient, index) => ({
+    id: `pat-${index + 1}`,
+    label: `Pat ${index + 1}`,
+    options: normalizeGeneratedOptions(patient?.options),
+    requiredDepartmentKeys: allowedList(patient?.requiredDepartmentKeys || patient?.requiredDepartmentKey, allowedDepartmentKeys(), ["internal"]),
+    transportSignalProbability: probabilityValue(patient?.transportSignalProbability),
+    conditionReport: stringValue(patient?.conditionReport, 400),
+    noTransportProbability: probabilityValue(patient?.noTransportProbability),
+    noTransportText: stringValue(patient?.noTransportText, 220) || "Ambulante Versorgung ausreichend, kein Transport.",
+    requiresDoctorAccompaniment: Boolean(patient?.requiresDoctorAccompaniment),
+    needsFW: Boolean(patient?.needsFW),
+    needsPOL: Boolean(patient?.needsPOL)
+  }));
+}
+
+function normalizeGeneratedOptions(value) {
+  const allowedVehicles = ["KTW", "RTW", "NEF", "REF", "RTH"];
+  const options = Array.isArray(value) ? value : [];
+  const normalized = options.map((option) => {
+    const vehicles = allowedList(option?.vehicles, allowedVehicles);
+    if (!vehicles.length) return null;
+    return { probability: probabilityValue(option?.probability, 1), vehicles };
+  }).filter(Boolean);
+  return normalized.length ? normalized : [{ probability: 1, vehicles: ["RTW"] }];
+}
+
+function normalizeGeneratedTimeWindows(value) {
+  const windows = Array.isArray(value) ? value : [];
+  return windows.map((window) => {
+    if (typeof window === "string") {
+      const [start, end] = window.split("-").map((part) => part.trim());
+      return normalizeGeneratedTimeWindow(start, end);
+    }
+    return normalizeGeneratedTimeWindow(window?.start, window?.end);
+  }).filter(Boolean).slice(0, 4);
+}
+
+function normalizeGeneratedTimeWindow(start, end) {
+  const startMinute = generatedTimeToMinute(start);
+  const endMinute = generatedTimeToMinute(end);
+  if (!Number.isFinite(startMinute) || !Number.isFinite(endMinute) || startMinute === endMinute) return null;
+  return { start: generatedMinuteToLabel(startMinute), end: generatedMinuteToLabel(endMinute) };
+}
+
+function generatedTimeToMinute(value) {
+  const [hourText, minuteText = "0"] = String(value || "").trim().split(":");
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return NaN;
+  if (hour < 0 || hour > 24 || minute < 0 || minute > 59) return NaN;
+  return ((hour % 24) * 60) + minute;
+}
+
+function generatedMinuteToLabel(minute) {
+  const normalized = ((Math.round(minute) % 1440) + 1440) % 1440;
+  const hour = Math.floor(normalized / 60);
+  const part = normalized % 60;
+  return part ? `${hour}:${String(part).padStart(2, "0")}` : String(hour);
+}
+
+function stringValue(value, maxLength = 240) {
+  return String(value || "").trim().slice(0, maxLength);
+}
+
+function enumValue(value, allowed, fallback) {
+  return allowed.includes(value) ? value : fallback;
+}
+
+function probabilityValue(value, fallback = 0) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  const normalized = number > 1 ? number / 100 : number;
+  return Math.max(0, Math.min(1, normalized));
+}
+
+function allowedList(value, allowed, fallback = []) {
+  const raw = Array.isArray(value) ? value : String(value || "").split(/[,;|]/);
+  const result = raw
+    .map((item) => String(item || "").trim())
+    .filter((item) => allowed.includes(item));
+  return result.length ? [...new Set(result)] : fallback;
+}
+
+function allowedDepartmentKeys() {
+  return ["internal", "cardiology", "neurology", "trauma", "pediatrics", "obstetrics", "psychiatry", "stroke", "icu", "none"];
+}
+
+function allowedPoiCategories() {
+  return ["practice", "dentist", "dialysis", "nursing-home", "school", "kindergarten", "university", "railway-station", "fire-station", "police", "townhall", "church", "cinema", "sports-centre", "mall", "hotel", "public", "home"];
+}
+
+function allowedOriginPoiCategories() {
+  return allowedPoiCategories().filter((category) => category !== "home");
+}
+
+function allowedDestinationPoiCategories() {
+  return ["practice", "dentist", "dialysis", "nursing-home", "school", "university", "railway-station", "hotel"];
+}
+
 async function readSavedMaps() {
   const files = (await readdir(mapsDir)).filter((file) => file.endsWith(".json")).sort();
   const maps = [];
@@ -576,4 +940,20 @@ function isValidMap(map) {
 
 function safeId(value) {
   return String(value).toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || `map-${Date.now()}`;
+}
+
+function loadLocalEnvFile() {
+  const envFile = join(root, ".env");
+  if (!existsSync(envFile)) return;
+  const lines = readFileSync(envFile, "utf8").split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const separator = trimmed.indexOf("=");
+    if (separator <= 0) continue;
+    const key = trimmed.slice(0, separator).trim();
+    const rawValue = trimmed.slice(separator + 1).trim();
+    if (!key || process.env[key] !== undefined) continue;
+    process.env[key] = rawValue.replace(/^["']|["']$/g, "");
+  }
 }

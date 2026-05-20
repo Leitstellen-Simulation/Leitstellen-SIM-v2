@@ -33,7 +33,7 @@
             </select>
           </label>
           <label>Zeitfenster <input id="ie-time-windows" placeholder="z.B. 8-18; 19:30-23"></label>
-          <label>Notruftext <textarea id="ie-caller-text" rows="4" placeholder="Mehrere Texte mit | trennen"></textarea></label>
+          <label>Notruftext <textarea id="ie-caller-text" rows="4" placeholder="Mehrere Texte mit | trennen, Namen mit *Vorname*, *Nachname* oder *Name*"></textarea><small class="inline-hint">*Nachname* erzeugt automatisch Frau/Herr + Nachname.</small></label>
           <label>Rückmeldung / Lagemeldung <textarea id="ie-report" rows="3"></textarea></label>
           <label>Einsatzort-Modus
             <select id="ie-location-mode">
@@ -108,6 +108,18 @@
         </div>
         <div id="ie-list" class="incident-list"></div>
       </section>
+      <aside class="editor-list-sidebar panel ai-generator-sidebar">
+        <div class="panel-title">
+          <h2>KI-Generator</h2>
+        </div>
+        <section class="ai-incident-generator">
+          <label>Beschreibung
+            <textarea id="ie-ai-prompt" rows="6" placeholder="z.B. planbare Dialysefahrt morgens aus Wohnadresse, KTW, kein Sondersignal"></textarea>
+          </label>
+          <button id="ie-ai-generate" class="primary-action" type="button">Generieren</button>
+          <small id="ie-ai-status" class="inline-hint">DeepSeek V4 Pro über OpenRouter. Key bleibt lokal.</small>
+        </section>
+      </aside>
     </main>
     <script src="departments.js"></script>
     <script src="poi.js"></script>

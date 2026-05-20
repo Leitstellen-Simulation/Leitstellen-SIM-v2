@@ -1222,11 +1222,11 @@ async function loadSelectedMap(mapId) {
 
 function normalizeIncidentTemplate(template) {
   if (!template.variants) {
-    return {
+    return applyDynamicIncidentPlaceholders({
       ...template,
       callerText: randomDelimitedText(template.callerText),
       callerName: randomDelimitedText(template.callerName) || "Anrufer"
-    };
+    });
   }
   const variant = template.variants[Math.floor(Math.random() * template.variants.length)];
   const normalized = {
@@ -1243,7 +1243,14 @@ function normalizeIncidentTemplate(template) {
   };
   normalized.callerText = randomDelimitedText(normalized.callerText);
   normalized.callerName = randomDelimitedText(normalized.callerName) || "Anrufer";
-  return normalized;
+  return applyDynamicIncidentPlaceholders(normalized);
+}
+
+function applyDynamicIncidentPlaceholders(template) {
+  if (typeof window.applyDynamicNamePlaceholdersToIncidentTemplate === "function") {
+    return window.applyDynamicNamePlaceholdersToIncidentTemplate(template);
+  }
+  return template;
 }
 
 function randomDelimitedText(value) {
@@ -1332,10 +1339,14 @@ function openIncidentDialog(source = null) {
   el.incidentDialog.querySelector(".modal-header h2").textContent = incident ? "Einsatz bearbeiten" : "Neuen Einsatz erstellen";
   el.incidentLocation.value = call.location || defaultLocationLabel();
   populateKeywordSelectGrouped();
-  el.incidentKeyword.value = call.keyword && keywordDefaults[call.keyword] ? call.keyword : "";
+  el.incidentKeyword.value = incident ? call.keyword || "" : "";
   setIncidentSignal(call.signal ? "yes" : "no");
-  el.incidentFw.checked = Boolean(incident?.requiredServices?.includes("FW") || call.requiredServices?.includes?.("FW") || (incident?.services?.FW && incident.services.FW.status !== "nicht alarmiert"));
-  el.incidentPol.checked = Boolean(incident?.requiredServices?.includes("POL") || call.requiredServices?.includes?.("POL") || (incident?.services?.POL && incident.services.POL.status !== "nicht alarmiert"));
+  el.incidentFw.checked = incident
+    ? Boolean(incident.requiredServices?.includes("FW") || (incident.services?.FW && incident.services.FW.status !== "nicht alarmiert"))
+    : false;
+  el.incidentPol.checked = incident
+    ? Boolean(incident.requiredServices?.includes("POL") || (incident.services?.POL && incident.services.POL.status !== "nicht alarmiert"))
+    : false;
   el.incidentNote.value = call.note || "";
   renderIncidentCallText(call);
   if (el.incidentPatientConditions) {
@@ -1359,7 +1370,7 @@ function renderIncidentCallText(source) {
 
 function renderDispositionSuggestion() {
   if (!el.dispositionSuggestion) return;
-  const keyword = el.incidentKeyword.value;
+  const keyword = el.incidentKeyword.value.trim();
   const defaults = keywordDefaults[keyword];
   if (!defaults) {
     el.dispositionSuggestion.hidden = true;
@@ -1384,7 +1395,7 @@ function renderDispositionSuggestion() {
 }
 
 function applyDispositionSuggestion() {
-  const keyword = el.incidentKeyword.value;
+  const keyword = el.incidentKeyword.value.trim();
   const defaults = keywordDefaults[keyword];
   const source = currentIncidentDialogSource();
   if (!defaults || !source) return;
@@ -1507,7 +1518,7 @@ function submitIncidentDialog(event) {
   const source = editingIncident || state.pendingCall;
   if (!source) return;
 
-  const keyword = el.incidentKeyword.value;
+  const keyword = el.incidentKeyword.value.trim() || source.keyword || "Eigener Einsatz";
   const defaults = keywordDefaults[keyword] || keywordDefaults[source.keyword] || {
     type: source.type || "emergency",
     required: source.required || ["RTW"],
@@ -1658,7 +1669,6 @@ function createPatientProfile(call) {
     patientCount: patients.length,
     patients,
     requiredVehicles,
-    noTransportLikely: Boolean(call.noTransportLikely),
     outcome: null,
     fixedDestinationId: call.fixedDestinationId || null,
     fixedDestination: call.fixedDestination || null,

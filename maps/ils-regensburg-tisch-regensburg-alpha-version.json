@@ -16500,145 +16500,145 @@
       "hour": 0,
       "emergency": 3,
       "transport": 1,
-      "scheduled": 0
+      "scheduled": 0.1
     },
     {
       "hour": 1,
       "emergency": 3,
       "transport": 1,
-      "scheduled": 0
+      "scheduled": 0.1
     },
     {
       "hour": 2,
       "emergency": 3,
       "transport": 1,
-      "scheduled": 0
+      "scheduled": 0.1
     },
     {
       "hour": 3,
       "emergency": 3,
       "transport": 1,
-      "scheduled": 0
+      "scheduled": 0.1
     },
     {
       "hour": 4,
       "emergency": 2.5,
       "transport": 1,
-      "scheduled": 0
+      "scheduled": 0.1
     },
     {
       "hour": 5,
       "emergency": 2,
       "transport": 1,
-      "scheduled": 0
+      "scheduled": 0.2
     },
     {
       "hour": 6,
       "emergency": 3,
       "transport": 1,
-      "scheduled": 0
+      "scheduled": 0.5
     },
     {
       "hour": 7,
       "emergency": 4,
       "transport": 2,
-      "scheduled": 0
+      "scheduled": 1
     },
     {
       "hour": 8,
       "emergency": 4,
       "transport": 2,
-      "scheduled": 0
+      "scheduled": 1
     },
     {
       "hour": 9,
       "emergency": 4,
       "transport": 3,
-      "scheduled": 0
+      "scheduled": 1
     },
     {
       "hour": 10,
       "emergency": 6,
       "transport": 4,
-      "scheduled": 0
+      "scheduled": 1
     },
     {
       "hour": 11,
       "emergency": 6,
       "transport": 6,
-      "scheduled": 0
+      "scheduled": 1
     },
     {
       "hour": 12,
       "emergency": 7,
       "transport": 7,
-      "scheduled": 0
+      "scheduled": 1
     },
     {
       "hour": 13,
       "emergency": 8,
       "transport": 8,
-      "scheduled": 0
+      "scheduled": 1
     },
     {
       "hour": 14,
       "emergency": 8,
       "transport": 8,
-      "scheduled": 0
+      "scheduled": 1
     },
     {
       "hour": 15,
       "emergency": 8,
       "transport": 6,
-      "scheduled": 0
+      "scheduled": 1
     },
     {
       "hour": 16,
       "emergency": 8,
       "transport": 6,
-      "scheduled": 0
+      "scheduled": 1
     },
     {
       "hour": 17,
       "emergency": 6,
       "transport": 6,
-      "scheduled": 0
+      "scheduled": 1
     },
     {
       "hour": 18,
       "emergency": 5,
       "transport": 4,
-      "scheduled": 0
+      "scheduled": 1
     },
     {
       "hour": 19,
       "emergency": 4,
       "transport": 4,
-      "scheduled": 0
+      "scheduled": 1
     },
     {
       "hour": 20,
       "emergency": 4,
       "transport": 4,
-      "scheduled": 0
+      "scheduled": 1
     },
     {
       "hour": 21,
       "emergency": 4,
       "transport": 2,
-      "scheduled": 0
+      "scheduled": 1
     },
     {
       "hour": 22,
       "emergency": 4,
       "transport": 2,
-      "scheduled": 0
+      "scheduled": 0.5
     },
     {
       "hour": 23,
       "emergency": 4,
       "transport": 2,
-      "scheduled": 0
+      "scheduled": 0.2
     }
   ]
 }

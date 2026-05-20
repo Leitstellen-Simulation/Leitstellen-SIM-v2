@@ -19,6 +19,10 @@
       "**/*",
       "!server.out.log",
       "!server.err.log",
+      "!.env",
+      "!.env.*",
+      "!test-admin.local.js",
+      "!*.local.js",
       "!node_modules/.cache/**",
       "!dist/**"
     ],

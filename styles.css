@@ -929,6 +929,20 @@ label {
   text-align: left;
 }
 
+.assistance-patient-decision {
+  display: grid;
+  gap: 5px;
+  padding: 6px;
+  border: 1px solid #f1cc93;
+  border-radius: 6px;
+  background: #fffdf8;
+}
+
+.assistance-patient-decision span {
+  font-size: 12px;
+  color: #5d4b2f;
+}
+
 .transport-choice strong {
   font-size: 13px;
 }
@@ -1256,6 +1270,11 @@ label {
   background: #fff2f2;
 }
 
+.vehicle-row.shift-warning.active {
+  border-color: #2d6fb5;
+  background: linear-gradient(90deg, #fff2f2 0 50%, #edf6ff 50% 100%);
+}
+
 .vehicle-summary {
   display: grid;
   grid-template-columns: minmax(130px, 1fr) 58px minmax(100px, .85fr) auto;
@@ -1510,6 +1529,16 @@ label {
 .quick-vehicle-picker button.shift-overtime {
   border-color: #d9a05f;
   background: #ffe7c2;
+}
+
+.dialog-vehicle-row.shift-ending.selected {
+  border-color: #2d75b8;
+  background: linear-gradient(90deg, #fff7d6 0 50%, #edf6ff 50% 100%);
+}
+
+.dialog-vehicle-row.shift-overtime.selected {
+  border-color: #2d75b8;
+  background: linear-gradient(90deg, #ffe7c2 0 50%, #edf6ff 50% 100%);
 }
 
 .dialog-vehicle-row {
@@ -2477,6 +2506,61 @@ label {
 .unit-editor h3 {
   margin: 0;
   font-size: 14px;
+}
+
+.ai-incident-generator {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-color: #b9cce0;
+  background: #f3f8fd;
+}
+
+.ai-generator-sidebar {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  align-content: start;
+  overflow: auto;
+}
+
+.ai-generator-sidebar .ai-incident-generator {
+  margin: 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.ai-generator-sidebar textarea {
+  min-height: 124px;
+  max-height: 260px;
+}
+
+.ai-generator-sidebar .primary-action {
+  width: 100%;
+}
+
+.ai-generator-sidebar .panel-title {
+  min-height: 38px;
+  padding-block: 8px;
+}
+
+.ai-status {
+  display: block;
+}
+
+.ai-status-ok {
+  color: #197347;
+  font-weight: 700;
+}
+
+.ai-status-error {
+  color: #a83232;
+  font-weight: 700;
+}
+
+.ai-status-pending {
+  color: #315b8f;
+  font-weight: 700;
 }
 
 .osm-poi-grid {

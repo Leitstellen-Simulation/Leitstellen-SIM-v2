@@ -4,3 +4,8 @@ dist-fresh/
 server.out.log
 server.err.log
 *.tmp
+.env
+.env.*
+!.env.example
+test-admin.local.js
+*.local.js

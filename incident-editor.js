@@ -8,6 +8,7 @@ const state = {
 };
 
 const el = Object.fromEntries([
+  "ai-prompt", "ai-generate", "ai-status",
   "category", "title", "type", "time-windows", "caller-text", "report", "location-mode", "poi-category-search",
   "poi-categories", "poi-selected", "poi-select-visible", "poi-clear", "poi-category-count", "poi-ids", "fw", "pol", "patient-options", "departments", "patient-signal", "patient-condition-report",
   "destination-mode", "destination-poi-probability-row", "destination-poi-probability", "destination-poi-category-search", "destination-poi-categories", "destination-poi-selected", "destination-poi-select-visible", "destination-poi-clear", "destination-poi-category-count", "destination-poi-ids",
@@ -25,6 +26,7 @@ async function init() {
   el.add_patient.addEventListener("click", addPatient);
   el.save.addEventListener("click", saveIncident);
   el.new.addEventListener("click", clearForm);
+  el.ai_generate.addEventListener("click", generateAiIncident);
   el.poi_category_search.addEventListener("input", () => renderPoiCategorySelect());
   el.poi_select_visible.addEventListener("click", selectVisiblePoiCategories);
   el.poi_clear.addEventListener("click", clearPoiCategories);
@@ -35,6 +37,36 @@ async function init() {
   updateDestinationPoiControls();
   renderPatients();
   renderList();
+}
+
+async function generateAiIncident() {
+  const prompt = el.ai_prompt.value.trim();
+  if (prompt.length < 8) {
+    setAiStatus("Bitte erst kurz beschreiben, was generiert werden soll.", "error");
+    return;
+  }
+  el.ai_generate.disabled = true;
+  setAiStatus("KI generiert Einsatz und validiert JSON...", "pending");
+  try {
+    const response = await fetch("/api/generate-incident", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "KI-Generierung fehlgeschlagen.");
+    editIncident(data.incident);
+    setAiStatus(`KI-Einsatz übernommen (${data.model || "OpenRouter"}). Bitte prüfen und speichern.`, "ok");
+  } catch (error) {
+    setAiStatus(error.message || "KI-Generierung fehlgeschlagen.", "error");
+  } finally {
+    el.ai_generate.disabled = false;
+  }
+}
+
+function setAiStatus(message, tone = "neutral") {
+  el.ai_status.textContent = message;
+  el.ai_status.className = `inline-hint ai-status ai-status-${tone}`;
 }
 
 async function loadIncidents() {
