@@ -1722,6 +1722,17 @@ label {
   gap: 8px;
 }
 
+.coverage-hint {
+  margin-bottom: 10px;
+  padding: 9px 10px;
+  border: 1px solid #c8d5e3;
+  border-radius: 6px;
+  background: #f7fbff;
+  color: #334252;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
 .coverage-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

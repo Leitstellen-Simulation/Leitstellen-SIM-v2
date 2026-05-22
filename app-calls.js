@@ -59,22 +59,27 @@ function receiveCall(forcedType = null) {
     templateIndex = (templateIndex + randomInt(1, templates.length - 1)) % templates.length;
   }
   state.lastCallTemplateIndex = templateIndex;
-  const template = resolveTemplateDestination(resolveTemplateLocation(normalizeIncidentTemplate(templates[templateIndex])));
-  const call = {
-    ...template,
-    id: makeId(),
-    receivedAtMinute: state.minute,
-    receivedAtAbsoluteMinute: state.absoluteMinute,
-    answered: false,
-    location: template.location || defaultLocationLabel(),
-    lat: Number.isFinite(template.lat) ? template.lat : state.center.mapCenter[0],
-    lng: Number.isFinite(template.lng) ? template.lng : state.center.mapCenter[1]
-  };
+  const call = callFromIncidentTemplate(templates[templateIndex]);
   keepCallInsideCoverage(call);
   updateCallAddressFromNearestSource(call);
   queueIncomingCall(call);
   reverseGeocodeCall(call);
   reverseGeocodeCallDestination(call);
+}
+
+function callFromIncidentTemplate(template, extra = {}) {
+  const resolved = resolveTemplateDestination(resolveTemplateLocation(normalizeIncidentTemplate(template)));
+  return {
+    ...resolved,
+    id: makeId(),
+    receivedAtMinute: state.minute,
+    receivedAtAbsoluteMinute: state.absoluteMinute,
+    answered: false,
+    location: resolved.location || defaultLocationLabel(),
+    lat: Number.isFinite(resolved.lat) ? resolved.lat : state.center.mapCenter[0],
+    lng: Number.isFinite(resolved.lng) ? resolved.lng : state.center.mapCenter[1],
+    ...extra
+  };
 }
 
 function queueIncomingCall(call, options = {}) {

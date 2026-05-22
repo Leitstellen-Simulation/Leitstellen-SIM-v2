@@ -451,8 +451,16 @@ function arriveOnScene(vehicleId) {
   scheduleSceneSupportReleaseAfterHandover(incident, vehicle.id);
   releaseSupportDoctorsReadyForHandover(incident);
   maybeRequestKtwHandover(vehicle, incident);
-  maybeSendSituationReport(vehicle, incident);
-  if (!incident.patient?.situationRequested) maybeRequestAdditionalResources(vehicle, incident);
+  const assignedPatient = patientForVehicle(vehicle, incident);
+  const firstResponderNeedsTransport = vehicle.supportOnly
+    && assignedPatient
+    && patientMissingTypes(assignedPatient).some((type) => ["RTW", "KTW"].includes(type));
+  if (firstResponderNeedsTransport) {
+    maybeRequestAdditionalResources(vehicle, incident);
+  } else {
+    maybeSendSituationReport(vehicle, incident);
+    if (!incident.patient?.situationRequested) maybeRequestAdditionalResources(vehicle, incident);
+  }
   incident.patient.status = "in Behandlung";
   if (incident.patient.patients?.some((patient) => patient.assignedVehicles?.length)) {
     incident.patient.treatmentStartedAt ??= state.minute;
@@ -460,8 +468,23 @@ function arriveOnScene(vehicleId) {
   incident.status = "vor Ort";
   logRadio(`${vehicle.name}: Status 4, Einsatzstelle erreicht. Patientenversorgung begonnen.`, "radio");
   renderAll();
+  maybeScheduleLongTransportRthHint(vehicle, incident);
   scheduleSurplusCancellationReport(vehicle, incident);
   scheduleTreatmentCompletion(vehicle, incident);
+}
+
+function maybeScheduleLongTransportRthHint(vehicle, incident) {
+  if (!vehicle || vehicle.type !== "RTW" || !incident || incident.longTransportRthHintScheduled) return;
+  const patient = patientForVehicle(vehicle, incident);
+  if (!patient?.required?.some(isDoctorRequirement)) return;
+  if (suitableHospitalWithinKm(incident, null, 30)) return;
+  incident.longTransportRthHintScheduled = true;
+  scheduleTimeout(() => {
+    if (vehicle.status !== 4 || vehicle.incidentId !== incident.id) return;
+    if (incident.status === "Transport" || patient.transporting || patient.completed) return;
+    triggerRadioStatus(vehicle, 5, "Kein geeignetes Krankenhaus im 30-km-Umkreis. RTH fuer Transport pruefen?");
+    renderAll();
+  }, simulationDelay(2));
 }
 
 function releaseSupportDoctorsReadyForHandover(incident) {
@@ -503,7 +526,15 @@ function sceneSupportCanRelease(unit, incident) {
   const patient = patientForVehicle(unit, incident);
   if (!patient) return !patientsNeedVehicleType(incident, unit.type);
   if (patientMissingTypes(patient).length > 0) return false;
+  if (doctorStillRequiredForPatient(unit, patient)) return false;
   return unit.supportOnly || !vehicleCanTransportPatient(unit, patient);
+}
+
+function doctorStillRequiredForPatient(unit, patient) {
+  return isDoctorVehicle(unit?.type)
+    && patientRequiresTransport(patient)
+    && !patient.doctorCareCompleted
+    && (patient.required || []).some(isDoctorRequirement);
 }
 
 function scheduleTreatmentCompletion(vehicle, incident) {
@@ -841,14 +872,15 @@ function maybeRequestAdditionalResources(vehicle, incident, options = {}) {
   const missing = missingVehicleTypesForDispatch(incident);
   const missingServices = missingExternalServices(incident, "dispatch");
   const needsDoctor = missing.some(isDoctorRequirement);
+  const missingAfterCurrentVehicle = missing.filter((type) => !vehicleSatisfiesRequirement(vehicle.type, type));
   const needsSceneTransport = ["NEF", "RTH", "REF"].includes(vehicle.type) && missing.some((type) => ["RTW", "KTW"].includes(type));
-  const needsAdditionalTransport = ["RTW", "KTW"].includes(vehicle.type) && missing.some((type) => ["RTW", "KTW"].includes(type));
+  const needsAdditionalTransport = ["RTW", "KTW"].includes(vehicle.type) && missingAfterCurrentVehicle.some((type) => ["RTW", "KTW"].includes(type));
   const needsTransport = vehicle.type === "KTW" && (missing.includes("RTW") || missing.includes("NEF"));
   const needsRef = vehicle.type === "KTW" && missing.includes("REF");
   const refNeedsTransport = vehicle.type === "REF" && (missing.includes("RTW") || missing.includes("KTW"));
   if (![...missing, ...missingServices].length) return [];
   if (!needsDoctor && !needsSceneTransport && !needsAdditionalTransport && !needsTransport && !needsRef && !refNeedsTransport && !missingServices.length) return [];
-  const allMissing = [...missing, ...missingServices];
+  const allMissing = [...(needsAdditionalTransport && !needsDoctor ? missingAfterCurrentVehicle : missing), ...missingServices];
   if (options.asPartOfReport) {
     incident.status = "Nachforderung";
     incident.assistanceDecision = {
@@ -1553,7 +1585,7 @@ function maybeDoctorAccompaniesTransport(incident, transportingVehicle, destinat
   logRadio(`${doctor.name}: Status 7, ${active ? "aktive" : "abkömmliche"} Notarztbegleitung.`, "radio");
   const destinationPhase = destination.type === "destination" ? "destination" : "hospital";
   const arrivalHandler = destination.type === "destination" ? arriveAtTransportDestination : arriveAtHospital;
-  driveVehicleTo(doctor, destination, { signal, phase: destinationPhase }, () => arrivalHandler(doctor.id));
+  driveVehicleTo(doctor, destination, { signal: false, phase: destinationPhase }, () => arrivalHandler(doctor.id));
 }
 
 function holdBoundDoctorForDestinationChange(transportingVehicle, incident) {
@@ -1581,6 +1613,7 @@ function releaseSupportVehiclesAfterHandover(incident, patient, activeVehicleId)
     .map((id) => state.vehicles.find((unit) => unit.id === id))
     .filter((unit) => unit && unit.status === 4)
     .filter((unit) => unit.boundTransportVehicleId !== activeVehicleId)
+    .filter((unit) => !doctorStillRequiredForPatient(unit, patient))
     .filter((unit) => unit.supportOnly || !vehicleCanTransportPatient(unit, patient))
     .forEach((unit) => requestVehicleClearance(unit, incident, `${patient.label} durch ${unitName(activeVehicleId)} übernommen`));
 }
@@ -1590,6 +1623,7 @@ function scheduleSupportReleaseAfterCareComplete(incident, patient, activeVehicl
     .filter((id) => id !== activeVehicleId)
     .map((id) => state.vehicles.find((unit) => unit.id === id))
     .filter((unit) => unit && unit.status === 4)
+    .filter((unit) => !doctorStillRequiredForPatient(unit, patient))
     .filter((unit) => unit.supportOnly || !vehicleCanTransportPatient(unit, patient));
   if (supportUnits.some((unit) => isDoctorVehicle(unit.type))) {
     patient.doctorCareCompleted = true;
@@ -1728,6 +1762,11 @@ function buildSecondaryTransferCall(sourceIncident, hospital) {
 
 function nearestSuitableHospital(incident) {
   return nearestHospitals(incident).find((hospital) => hospital.suitable);
+}
+
+function suitableHospitalWithinKm(incident, request = incident?.transportRequest, maxKm = 30) {
+  return nearestHospitals(incident, request, { includeForeign: true })
+    .some((hospital) => hospital.suitable && hospital.distance <= maxKm);
 }
 
 function finishWithoutTransport(incidentId, reason) {

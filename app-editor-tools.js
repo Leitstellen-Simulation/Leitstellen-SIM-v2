@@ -84,7 +84,8 @@ function startCoveragePinSelection(vehicleId) {
   if (!vehicle || ![1, 2].includes(vehicle.status) || vehicle.nextIncidentId) return;
   state.pendingCoverageVehicleId = vehicle.id;
   state.selectedVehicleId = vehicle.id;
-  logRadio(`${vehicle.name}: Gebietsabsicherung gewaehlt, Ziel-Pin auf der Karte setzen.`, "radio");
+  vehicle.statusText = "Gebietsabsicherung: Ziel-Pin auf Karte setzen";
+  logRadio(`${vehicle.name}: Gebietsabsicherung gewaehlt, Ziel-Pin auf der Karte setzen. Fahrzeug bleibt dort bis neuer Auftrag oder Leitstellenstatus H.`, "radio");
   renderVehicles();
 }
 

@@ -297,6 +297,7 @@ function vehiclePopupContent(vehicle) {
     addPopupButton(wrapper, "mit Sondersignal zum Auftrag", () => toggleVehicleSignal(vehicle.id));
   }
   if (vehicle.status === 7) addPopupButton(wrapper, "Zielortwechsel", () => changeTransportDestination(vehicle.id));
+  if (canAskAccompanyingDoctorRelease(vehicle)) addPopupButton(wrapper, "Abkömmlich?", () => askAccompanyingDoctorRelease(vehicle.id));
   if (canReleaseAccompanyingDoctor(vehicle)) addPopupButton(wrapper, "abkömmlich freimelden", () => releaseAccompanyingDoctor(vehicle.id));
   if (vehicle.status === 8) addPopupButton(wrapper, "einsatzklar?", () => askVehicleReadiness(vehicle.id));
   return wrapper;
@@ -317,6 +318,28 @@ function forceRtwTransport(vehicleId) {
 
 function canReleaseAccompanyingDoctor(vehicle) {
   return ["NEF", "RTH"].includes(vehicle.type) && vehicle.status === 7 && vehicle.accompanyingActive === false && /abkömmlich|abkoemmlich/i.test(vehicle.statusText || "");
+}
+
+function canAskAccompanyingDoctorRelease(vehicle) {
+  return ["NEF", "RTH"].includes(vehicle.type) && vehicle.status === 7 && vehicle.boundTransportVehicleId && vehicle.accompanyingActive !== false;
+}
+
+function askAccompanyingDoctorRelease(vehicleId) {
+  const vehicle = state.vehicles.find((unit) => unit.id === vehicleId);
+  if (!vehicle || !canAskAccompanyingDoctorRelease(vehicle)) return;
+  const incident = state.incidents.find((item) => item.id === vehicle.incidentId);
+  const patient = incident ? patientForVehicle(vehicle, incident) : null;
+  const canRelease = !patient?.requiresDoctorAccompaniment && Math.random() < 0.25;
+  if (canRelease) {
+    vehicle.accompanyingActive = false;
+    vehicle.statusText = vehicle.statusText.replace(/begleitet aktiv/i, "begleitet abkoemmlich");
+    logRadio(`${vehicle.name}: Status 5 - Notarzt abkoemmlich, Freimeldung moeglich.`, "radio");
+    releaseAccompanyingDoctor(vehicle.id);
+    return;
+  }
+  logRadio(`${vehicle.name}: Status 5 - Notarzt derzeit nicht abkoemmlich.`, "radio");
+  vehicle.statusText = "Notarztbegleitung weiter gebunden";
+  renderAll();
 }
 
 function releaseAccompanyingDoctor(vehicleId) {
@@ -635,6 +658,8 @@ function renderIncidentsCollapsible(visible) {
     const details = document.createElement("div");
     details.className = "incident-details";
     details.append(renderIncidentVehicleStatus(incident));
+    const destinationInfo = renderIncidentDestinationInfo(incident);
+    if (destinationInfo) details.append(destinationInfo);
     if (incident.patient && incidentHasVehicleStatus(incident, 4)) {
       if (incident.patient.report) details.append(renderIncidentReport(incident.patient.report));
       if (incident.patient.outcome) appendTextBlock(details, "p", `Ergebnis: ${incident.patient.outcome}`);
@@ -710,6 +735,82 @@ function incidentElapsedLabel(incident) {
     : (state.absoluteMinute - ((state.minute - (incident.createdAtMinute ?? state.minute) + 1440) % 1440));
   const elapsed = Math.max(0, Math.floor(state.absoluteMinute - createdAt));
   return `${elapsed} min`;
+}
+
+function renderIncidentDestinationInfo(incident) {
+  const destination = incidentDestinationPoint(incident);
+  if (!destination) return null;
+  const box = document.createElement("div");
+  box.className = "incident-target-info";
+  const distance = mapDistance(incident.lat, incident.lng, destination.lat, destination.lng);
+  const status = incidentDestinationTravelStatus(incident, destination);
+  box.innerHTML = `
+    <strong>Ziel:</strong> ${escapeHtml(destination.label || destination.address || "Zielort")}
+    <span> | ${distance.toFixed(1).replace(".", ",")} km Luftlinie${incidentDestinationTravelMarkup(status)}</span>
+  `;
+  requestIncidentDestinationTravelTime(incident, destination);
+  return box;
+}
+
+function incidentDestinationPoint(incident) {
+  if (!incident?.patient) return null;
+  if (incident.patient.fixedDestination && Number.isFinite(incident.patient.fixedDestination.lat) && Number.isFinite(incident.patient.fixedDestination.lng)) {
+    return incident.patient.fixedDestination;
+  }
+  if (incident.patient.fixedDestinationId) {
+    return state.center.hospitals.find((hospital) => hospital.id === incident.patient.fixedDestinationId) || null;
+  }
+  return null;
+}
+
+function incidentDestinationTravelStatus(incident, destination) {
+  state.incidentDestinationTravelTimes ||= new Map();
+  state.incidentDestinationTravelRequests ||= new Set();
+  const key = incidentDestinationTravelKey(incident, destination);
+  if (state.incidentDestinationTravelTimes.has(key)) return state.incidentDestinationTravelTimes.get(key);
+  if (state.incidentDestinationTravelRequests.has(key)) return { state: "loading" };
+  return { state: "idle" };
+}
+
+function incidentDestinationTravelMarkup(status) {
+  if (status?.state === "ready") {
+    const minutes = Math.max(1, Math.round(status.durationMs / 60000));
+    const source = status.source === "fallback" ? "Fallback" : status.source === "air" ? "direkt" : "Route";
+    return ` | ca. ${minutes} min Fahrt (${source})`;
+  }
+  if (status?.state === "loading") return " | Fahrzeit...";
+  return "";
+}
+
+function incidentDestinationTravelKey(incident, destination) {
+  return [
+    incident.id,
+    Number(incident.lat).toFixed(5),
+    Number(incident.lng).toFixed(5),
+    Number(destination.lat).toFixed(5),
+    Number(destination.lng).toFixed(5)
+  ].join("|");
+}
+
+async function requestIncidentDestinationTravelTime(incident, destination) {
+  state.incidentDestinationTravelTimes ||= new Map();
+  state.incidentDestinationTravelRequests ||= new Set();
+  const key = incidentDestinationTravelKey(incident, destination);
+  if (state.incidentDestinationTravelTimes.has(key) || state.incidentDestinationTravelRequests.has(key)) return;
+  state.incidentDestinationTravelRequests.add(key);
+  try {
+    const route = await buildRoute({ type: "KTW", lat: incident.lat, lng: incident.lng }, destination);
+    state.incidentDestinationTravelTimes.set(key, {
+      state: "ready",
+      durationMs: Math.max(1, route.baseDurationMs || 0),
+      source: route.source
+    });
+  } catch {
+    state.incidentDestinationTravelTimes.set(key, { state: "error" });
+  } finally {
+    state.incidentDestinationTravelRequests.delete(key);
+  }
+  if (state.selectedIncidentId === incident.id) renderIncidents();
 }
 
 function incidentStartTimeLabel(incident) {
@@ -1030,10 +1131,51 @@ function appendHospitalChoices(parent, incident, request = incident.transportReq
     button.textContent = `${hospital.foreign ? "Fremd-KH: " : ""}${hospital.label} (${hospital.distance.toFixed(1).replace(".", ",")} km)`;
     button.addEventListener("click", (event) => {
       event.stopPropagation();
-      beginTransport(incident.id, hospital.id, request.vehicleId, request.id);
+      handleHospitalChoice(incident, hospital, request);
     });
     parent.append(button);
   });
+}
+
+function handleHospitalChoice(incident, hospital, request = incident.transportRequest) {
+  if (shouldOfferRthForLongTransport(incident, hospital, request)) {
+    const ok = window.confirm(`Transportziel ${hospital.label} liegt mehr als 30 km entfernt. RTH fuer Transport nachfordern und Krankenhausauswahl pausieren?`);
+    if (ok) {
+      requestRthForLongTransport(incident, hospital, request);
+      return;
+    }
+  }
+  beginTransport(incident.id, hospital.id, request.vehicleId, request.id);
+}
+
+function shouldOfferRthForLongTransport(incident, hospital, request = incident.transportRequest) {
+  if (!incident || !hospital || !request || hospital.distance <= 30 || request.rthPrompted) return false;
+  const vehicle = state.vehicles.find((unit) => unit.id === request.vehicleId);
+  const patient = (incident.patient?.patients || []).find((item) => item.id === request.patientId) || patientForVehicle(vehicle, incident);
+  if (!patient?.required?.some(isDoctorRequirement)) return false;
+  return Boolean(findAvailableRthForLongTransport(incident));
+}
+
+function requestRthForLongTransport(incident, hospital, request = incident.transportRequest) {
+  const rth = findAvailableRthForLongTransport(incident);
+  if (!rth) {
+    window.alert("Kein freier RTH verfuegbar.");
+    beginTransport(incident.id, hospital.id, request.vehicleId, request.id);
+    return;
+  }
+  request.rthPrompted = true;
+  request.rthRequestedForHospitalId = hospital.id;
+  incident.transportRequest = request;
+  incident.status = "wartet auf RTH fuer Transport";
+  logRadio(`RTH fuer langen Transport nach ${hospital.label} nachgefordert. Krankenhausauswahl bleibt offen.`, "warn");
+  assignVehicle(rth.id, incident.id);
+  renderAll();
+}
+
+function findAvailableRthForLongTransport(incident) {
+  return state.vehicles
+    .filter((vehicle) => vehicle.type === "RTH" && !vehicle.foreign && isAlarmable(vehicle) && !vehicle.nextIncidentId)
+    .sort((a, b) => mapDistance(a.lat, a.lng, incident.lat, incident.lng) - mapDistance(b.lat, b.lng, incident.lat, incident.lng))[0] || null;
 }
 
 function transportHospitalChoices(incident, request = incident.transportRequest) {
@@ -1534,6 +1676,7 @@ function renderVehicles() {
       if (vehicle.status === 3) addVehicleAction(actions, "Einsatzabbruch (E)", () => abortVehicleMission(vehicle.id));
       if (vehicle.status === 7) addVehicleAction(actions, "Zielort ändern", () => changeTransportDestination(vehicle.id));
       if (canReleaseAccompanyingDoctor(vehicle)) addVehicleAction(actions, "abkömmlich frei", () => releaseAccompanyingDoctor(vehicle.id));
+      if (canAskAccompanyingDoctorRelease(vehicle)) addVehicleAction(actions, "Abkoemmlich?", () => askAccompanyingDoctorRelease(vehicle.id));
       if (vehicle.status === 8) addVehicleAction(actions, "Einsatzklar?", () => askVehicleReadiness(vehicle.id));
       details.append(actions);
       row.append(details);
