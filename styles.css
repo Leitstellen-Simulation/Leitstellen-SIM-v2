@@ -2106,6 +2106,19 @@ label {
   white-space: pre-wrap;
 }
 
+.incident-target-info {
+  border: 1px solid #c8d5e3;
+  border-radius: 6px;
+  background: #f7fbff;
+  padding: 8px 10px;
+  color: #24364a;
+  font-size: 13px;
+}
+
+.incident-target-info span {
+  color: #52657a;
+}
+
 .patient-condition-editor {
   display: grid;
   gap: 8px;

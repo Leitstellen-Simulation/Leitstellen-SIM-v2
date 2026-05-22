@@ -1185,6 +1185,15 @@ function transportOrClear(vehicleId) {
     beginTransportToDestination(incident.id, poiDestination, vehicle.id);
     return;
   }
+  if (isAutomaticTransport(incident) && transportPatientHasNoClinicTarget(assignedPatient || incident.patient)) {
+    const destination = randomHomeDestinationNear({
+      lat: incident.lat,
+      lng: incident.lng,
+      keyword: incident.keyword
+    });
+    beginTransportToDestination(incident.id, destination, vehicle.id);
+    return;
+  }
   if (isAutomaticTransport(incident)) {
     beginTransport(incident.id, nearestHospital(incident)?.id, vehicle.id);
     return;
@@ -1296,6 +1305,11 @@ function isAutomaticTransport(incident) {
   return incident.type === "transport" || incident.keyword.includes("KTP") || incident.keyword.includes("Verlegung");
 }
 
+function transportPatientHasNoClinicTarget(patient) {
+  const keys = patient?.requiredDepartmentKeys || [patient?.requiredDepartmentKey || "none"];
+  return keys.every((key) => normalizeDepartmentKey(key) === "none");
+}
+
 function transportPoiDestinationForPatient(incident, patient) {
   if (!incident || !patient || !patientRequiresTransport(patient)) return null;
   if (patient.destinationDecisionMade) return patient.destinationDecision?.destination || null;
@@ -1303,7 +1317,7 @@ function transportPoiDestinationForPatient(incident, patient) {
   patient.destinationDecision = { type: "none", destination: null };
   const config = incident.patient || {};
   if (config.destinationMode !== "poi") return null;
-  const destination = randomPoiTransportDestination(config);
+  const destination = randomPoiTransportDestination(config, incident);
   if (!destination) {
     logRadio(`Kein passender Ziel-POI fÃ¼r ${incident.keyword} gefunden, Krankenhaus-Zuweisung bleibt aktiv.`, "warn");
     return null;
@@ -1312,17 +1326,19 @@ function transportPoiDestinationForPatient(incident, patient) {
   return destination;
 }
 
-function randomPoiTransportDestination(config) {
+function randomPoiTransportDestination(config, incident = null) {
   const candidates = matchingDestinationPoiCandidates(config);
   if (!candidates.length) return null;
-  const poi = candidates[randomInt(0, candidates.length - 1)];
+  const poi = typeof weightedLocationChoice === "function"
+    ? weightedLocationChoice(candidates, { lat: incident?.lat || state.center.mapCenter[0], lng: incident?.lng || state.center.mapCenter[1] })
+    : candidates[randomInt(0, candidates.length - 1)];
   return {
     id: poi.id,
     label: poi.label || poi.address || "POI-Ziel",
     address: poi.address || poi.label || "POI-Ziel",
     lat: poi.lat,
     lng: poi.lng,
-    type: "destination",
+    type: (poi.categories || []).includes("hospital") ? "hospital" : "destination",
     categories: poi.categories || []
   };
 }
@@ -1478,7 +1494,8 @@ function beginTransportToDestination(incidentId, destination, vehicleId) {
   const signal = transportUsesSignal(vehicle, incident);
   maybeDoctorAccompaniesTransport(incident, vehicle, target, signal);
   if (patient) releaseSupportVehiclesAfterHandover(incident, patient, vehicle.id);
-  driveVehicleTo(vehicle, target, { signal, phase: "destination" }, () => arriveAtTransportDestination(vehicle.id));
+  const arrivalHandler = target.type === "hospital" ? arriveAtHospital : arriveAtTransportDestination;
+  driveVehicleTo(vehicle, target, { signal, phase: target.type === "hospital" ? "hospital" : "destination" }, () => arrivalHandler(vehicle.id));
 }
 
 function clearTransportRequest(incident, requestId = null, vehicleId = null) {

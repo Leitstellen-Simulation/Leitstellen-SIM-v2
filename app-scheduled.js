@@ -38,7 +38,7 @@ function scheduledTransportPlan() {
   if (medicalPractices.length && localHospitals.length) {
     candidates.push(() => {
       const origin = randomItem(medicalPractices);
-      const destination = randomItem(localHospitals);
+      const destination = weightedLocationChoice(localHospitals, origin);
       return scheduledPlan(
         "RD KTP - Transport zum Krankenhaus",
         origin,
@@ -91,7 +91,7 @@ function scheduledTransportPlan() {
   if (localHospitals.length) {
     candidates.push(() => {
       const origin = randomItem(localHospitals);
-      const destination = randomScheduledAddress("Wohnadresse im Einsatzgebiet");
+      const destination = randomHomeDestinationNear(origin);
       return scheduledPlan(
         Math.random() < 0.75 ? "RD KTP - Heimfahrt" : "RD KTP - Ambulanzfahrt",
         origin,
@@ -142,7 +142,9 @@ function destinationPoint(point) {
     label: point.label || point.address || "Zielort",
     address: point.address || point.label || "Zielort",
     lat: point.lat,
-    lng: point.lng
+    lng: point.lng,
+    type: point.type || ((point.categories || []).includes("hospital") ? "hospital" : "destination"),
+    categories: point.categories || []
   };
 }
 

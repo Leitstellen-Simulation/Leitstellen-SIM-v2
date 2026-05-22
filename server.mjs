@@ -507,14 +507,15 @@ async function handleGenerateIncidentApi(request, response) {
   const body = await readJsonBody(request, response, {});
   if (!body) return;
   const userPrompt = String(body.prompt || "").trim();
+  const mode = body.mode === "transport" ? "transport" : "emergency";
   if (userPrompt.length < 8) {
     sendJson(response, { error: "Bitte eine kurze Beschreibung fuer den KI-Einsatz eingeben." }, 400);
     return;
   }
 
   try {
-    const generated = await generateIncidentWithOpenRouter(userPrompt);
-    const incident = normalizeGeneratedIncident(generated, userPrompt);
+    const generated = await generateIncidentWithOpenRouter(userPrompt, mode);
+    const incident = normalizeGeneratedIncident(generated, userPrompt, mode);
     sendJson(response, { incident, model: openRouterModel });
   } catch (error) {
     sendJson(response, { error: error.message || "KI-Generierung fehlgeschlagen" }, 502);
@@ -525,8 +526,8 @@ function isOpenRouterConfigured() {
   return Boolean(openRouterApiKey && openRouterApiKey !== "OPENROUTER_API_KEY_HIER_EINTRAGEN");
 }
 
-async function generateIncidentWithOpenRouter(userPrompt) {
-  const first = await requestOpenRouterIncident(userPrompt, false);
+async function generateIncidentWithOpenRouter(userPrompt, mode = "emergency") {
+  const first = await requestOpenRouterIncident(userPrompt, false, mode);
   if (first.content) {
     try {
       return parseGeneratedIncidentJson(first.content);
@@ -536,7 +537,7 @@ async function generateIncidentWithOpenRouter(userPrompt) {
   } else {
     logOpenRouterJsonFailure("empty-first", first);
   }
-  const retry = await requestOpenRouterIncident(userPrompt, true);
+  const retry = await requestOpenRouterIncident(userPrompt, true, mode);
   if (retry.content) {
     try {
       return parseGeneratedIncidentJson(retry.content);
@@ -549,14 +550,14 @@ async function generateIncidentWithOpenRouter(userPrompt) {
   throw new Error("OpenRouter hat keine JSON-Antwort geliefert.");
 }
 
-async function requestOpenRouterIncident(userPrompt, retry = false) {
+async function requestOpenRouterIncident(userPrompt, retry = false, mode = "emergency") {
   const messages = retry
     ? [
-        { role: "system", content: `${incidentGenerationSystemPrompt()}\n\nWICHTIG: Gib jetzt nur ein einziges JSON-Objekt aus. Kein Denken, keine Erklaerung, kein leerer Inhalt.` },
+        { role: "system", content: `${incidentGenerationSystemPrompt(mode)}\n\nWICHTIG: Gib jetzt nur ein einziges JSON-Objekt aus. Kein Denken, keine Erklaerung, kein leerer Inhalt.` },
         { role: "user", content: `${userPrompt}\n\nAntworte ausschliesslich als JSON object.` }
       ]
     : [
-        { role: "system", content: incidentGenerationSystemPrompt() },
+        { role: "system", content: incidentGenerationSystemPrompt(mode) },
         { role: "user", content: userPrompt }
       ];
   const openRouterResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -631,7 +632,19 @@ function truncateForLog(value, maxLength = 1800) {
   return `${text.slice(0, maxLength)}... [gekuerzt, ${text.length} Zeichen]`;
 }
 
-function incidentGenerationSystemPrompt() {
+function incidentGenerationSystemPrompt(mode = "emergency") {
+  const modeRules = mode === "transport"
+    ? `Modus: Krankentransport.
+- type muss transport sein, nicht scheduled. scheduled ist nur fuer interne Hintergrundgeneratoren.
+- Standardfahrzeug ist KTW, ausser der Nutzer nennt RTW/NEF/RTH ausdruecklich.
+- Heimfahrt nach Hause: destinationMode "home", requiredDepartmentKeys ["none"], locationMode meist "hospital".
+- Fahrt zu Arztpraxis/Zahnarzt/Dialyse/Altenheim: destinationMode "poi" und passende destinationPoiCategories.
+- Transport in ein Krankenhaus ohne Fachrichtung: destinationMode "poi", destinationPoiCategories ["hospital"], requiredDepartmentKeys ["none"].
+- KTP mit benoetigter Fachrichtung oder geeigneter Klinik: destinationMode "none"; die Leitstelle waehlt das Krankenhaus spaeter aus.`
+    : `Modus: Notfalleinsatz.
+- type muss emergency sein.
+- destinationMode bleibt "none"; bei Notfaellen wird das Krankenhaus erst nach Rueckmeldung zugewiesen.
+- Verwende RTW/NEF/RTH nur passend zur Lage, REF nur bei eindeutig ambulanten/niedrigprioren Lagen.`;
   return `Du generierst Einsatzvorlagen fuer eine deutsche Rettungsdienst-Leitstellen-Simulation.
 Antworte ausschliesslich als valides JSON-Objekt ohne Markdown.
 Das Wort JSON ist absichtlich genannt: Die Antwort muss ein JSON object sein.
@@ -650,9 +663,9 @@ JSON-Schema:
     "callerText": "Notruftext, mehrere Varianten mit | trennen",
     "locationMode": "random|hospital|poi",
     "poiCategories": ["practice|dentist|dialysis|nursing-home|school|kindergarten|university|railway-station|fire-station|police|townhall|church|cinema|sports-centre|mall|hotel|public|home"],
-    "destinationMode": "none|poi",
+    "destinationMode": "none|poi|home",
     "destinationPoiProbability": 0,
-    "destinationPoiCategories": ["practice|dentist|dialysis|nursing-home|home"],
+    "destinationPoiCategories": ["practice|dentist|dialysis|nursing-home|hospital"],
     "requiredServices": ["FW","POL"],
     "report": "kurze Rueckmeldung an die Leitstelle, z.B. Zustand und benoetigtes Transportmittel, kein Abschlussbericht",
     "situationReport": "Lagemeldung bei mehreren Patienten",
@@ -671,13 +684,15 @@ JSON-Schema:
 }
 
 Regeln:
+${modeRules}
 - Erlaubte Fahrzeugtypen: KTW, RTW, NEF, REF, RTH.
+- Gib keinen Wahrscheinlichkeitsfaktor/weight aus; dieser wird lokal immer automatisch auf 1 gesetzt.
 - options-Wahrscheinlichkeiten pro Patient muessen zusammen etwa 1 ergeben.
 - KTP ueber 19222 oder mit Anrufer ist type transport, auch wenn die Fahrt zeitlich geplant ist. type scheduled nur fuer automatisch im Hintergrund entstehende Planfahrten ohne Telefonanruf und ohne initial zugewiesenes Fahrzeug.
 - RTW-Notfaelle ca. 1 Patient, requiredDepartmentKeys passend zur Lage.
 - requiredDepartmentKeys ist eine Mehrfachauswahl. Setze bei Bedarf mehrere Fachrichtungen, z.B. ["trauma","icu"] bei Polytrauma, ["neurology","stroke"] bei Schlaganfall, ["internal","cardiology"] bei ACS. Nutze ["none"] nur, wenn kein Klinikziel gebraucht wird.
 - NEF/RTH nur bei kritisch, Bewusstlosigkeit, Reanimation, schwerem Trauma, Geburt/Kind kritisch oder Notarztbegleitung.
-- destinationMode poi nur fuer Fahrten zu Arztpraxis, Zahnarztpraxis, Dialyse oder andere echte POI-Ziele. Heimfahrt nach Hause nicht als POI-Ziel modellieren.
+- destinationMode poi nur fuer Fahrten zu Arztpraxis, Zahnarztpraxis, Dialyse, Altenheim oder Krankenhaus als festes Ziel. Heimfahrt nach Hause ist destinationMode home.
 - locationMode poi nur wenn der Einsatz sinnvoll an einer echten POI-Kategorie startet. Wohnadresse/Privatadresse ist locationMode random.
 - report und situationReport beschreiben die Lage nach Erkundung, nicht dass der Transport bereits abgeschlossen ist.
 - Setze requiredServices nur wenn FW/POL wirklich vor Transport erforderlich sind.
@@ -695,7 +710,7 @@ function parseGeneratedIncidentJson(content) {
   }
 }
 
-function normalizeGeneratedIncident(input, fallbackTitle) {
+function normalizeGeneratedIncident(input, fallbackTitle, mode = "emergency") {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("KI-JSON muss ein Objekt sein.");
   if (input.incident && typeof input.incident === "object" && !Array.isArray(input.incident)) {
     input = input.incident;
@@ -704,16 +719,23 @@ function normalizeGeneratedIncident(input, fallbackTitle) {
     ? input.variants[0]
     : input;
   const title = stringValue(input.title || input.keyword || sourceVariant.keyword || fallbackTitle, 80) || "KI Einsatz";
-  const rawType = enumValue(input.type || sourceVariant.type, ["emergency", "transport", "scheduled"], "emergency");
+  const rawType = mode === "transport"
+    ? "transport"
+    : "emergency";
   const type = normalizeGeneratedIncidentType(rawType, sourceVariant);
   const category = enumValue(input.category, ["Herz/Kreislauf", "Atmung", "Trauma", "Neuro/Psych", "Sonstiges", "Krankentransport"], type === "transport" || type === "scheduled" ? "Krankentransport" : "Sonstiges");
   const patients = normalizeGeneratedPatients(sourceVariant.patients);
   const poiCategories = allowedList(sourceVariant.poiCategories, allowedOriginPoiCategories());
   const destinationPoiCategories = allowedList(sourceVariant.destinationPoiCategories, allowedDestinationPoiCategories());
   const locationMode = enumValue(sourceVariant.locationMode, ["random", "hospital", "poi"], "random");
-  const destinationMode = enumValue(sourceVariant.destinationMode, ["none", "poi"], "none");
+  const destinationMode = enumValue(sourceVariant.destinationMode, ["none", "poi", "home"], "none");
   const effectiveLocationMode = locationMode === "poi" && !poiCategories.length ? "random" : locationMode;
-  const effectiveDestinationMode = destinationMode === "poi" && !destinationPoiCategories.length ? "none" : destinationMode;
+  const needsClinicSelection = patients.some((patient) => (patient.requiredDepartmentKeys || []).some((key) => key !== "none"));
+  const effectiveDestinationMode = needsClinicSelection
+    ? "none"
+    : destinationMode === "poi" && !destinationPoiCategories.length
+      ? "none"
+      : destinationMode;
   const variant = {
     callerName: stringValue(sourceVariant.callerName, 60) || "Anrufer",
     callerText: stringValue(sourceVariant.callerText, 900) || "Hallo, ich brauche bitte Hilfe.",
@@ -734,6 +756,7 @@ function normalizeGeneratedIncident(input, fallbackTitle) {
     category,
     title,
     type,
+    weight: 1,
     keyword: title,
     timeWindows: normalizeGeneratedTimeWindows(input.timeWindows || sourceVariant.timeWindows),
     variants: [variant]
@@ -844,7 +867,7 @@ function allowedOriginPoiCategories() {
 }
 
 function allowedDestinationPoiCategories() {
-  return ["practice", "dentist", "dialysis", "nursing-home", "school", "university", "railway-station", "hotel"];
+  return ["practice", "dentist", "dialysis", "nursing-home", "hospital", "school", "university", "railway-station", "hotel"];
 }
 
 async function readSavedMaps() {

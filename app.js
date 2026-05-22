@@ -123,6 +123,7 @@ const el = {
   dispositionSuggestion: document.querySelector("#disposition-suggestion"),
   incidentCallTextPanel: document.querySelector("#incident-call-text-panel"),
   incidentCallText: document.querySelector("#incident-call-text"),
+  incidentTargetInfo: document.querySelector("#incident-target-info"),
   incidentFw: document.querySelector("#incident-fw"),
   incidentPol: document.querySelector("#incident-pol"),
   incidentNote: document.querySelector("#incident-note"),
@@ -510,6 +511,7 @@ function ensurePoiCatalog(center) {
     address: hospital.address,
     lat: hospital.lat,
     lng: hospital.lng,
+    foreign: Boolean(hospital.foreign),
     categories: ["hospital", ...(hospital.departments || [])]
   }));
   const byId = new Map([...existing, ...stations, ...hospitals].map((poi) => [poi.id || poi.label, poi]));
@@ -956,6 +958,126 @@ function resolveTemplateLocation(template) {
   return template;
 }
 
+function resolveTemplateDestination(template) {
+  if (!template || template.fixedDestination || template.fixedDestinationId) return template;
+  if (!isDirectTransportTemplate(template)) return template;
+  if (transportTemplateNeedsClinicSelection(template)) return template;
+  if (template.destinationMode === "poi") {
+    const destination = randomWeightedPoiTransportDestination(template);
+    return destination ? withDirectTransportDestination(template, destination) : template;
+  }
+  if (template.destinationMode === "home"
+    || (template.destinationMode === "none" && template.type === "transport")
+    || normalizeSearch(template.keyword || template.title || "").includes("heimfahrt")) {
+    return withDirectTransportDestination(template, randomHomeDestinationNear(template));
+  }
+  return template;
+}
+
+function isDirectTransportTemplate(template) {
+  const keyword = String(template?.keyword || template?.title || "");
+  return template?.type === "transport" || template?.type === "scheduled" || keyword.includes("KTP") || keyword.includes("Heimfahrt");
+}
+
+function transportTemplateNeedsClinicSelection(template) {
+  const patients = Array.isArray(template?.patients) ? template.patients : [];
+  const keys = patients.flatMap((patient) => patient.requiredDepartmentKeys || [patient.requiredDepartmentKey || "none"]);
+  return keys.some((key) => normalizeDepartmentKey(key) !== "none");
+}
+
+function withDirectTransportDestination(template, destination) {
+  if (!destination) return template;
+  const target = {
+    id: destination.id || makeId(`destination-${Date.now()}-${Math.random()}`),
+    label: destination.label || destination.address || "Zieladresse",
+    address: destination.address || destination.label || "Zieladresse",
+    lat: destination.lat,
+    lng: destination.lng,
+    type: (destination.categories || []).includes("hospital") ? "hospital" : "destination",
+    categories: destination.categories || []
+  };
+  return {
+    ...template,
+    fixedDestination: target,
+    callerText: appendDestinationToCallerText(template.callerText, target)
+  };
+}
+
+function appendDestinationToCallerText(text, destination) {
+  const base = String(text || "").trim();
+  const label = destination?.label || destination?.address || "";
+  if (!label || normalizeSearch(base).includes(normalizeSearch(label))) return base;
+  return `${base}${base ? " " : ""}Ziel: ${label}.`;
+}
+
+function randomWeightedPoiTransportDestination(template) {
+  const candidates = matchingDestinationPoiCandidatesForTemplate(template);
+  if (!candidates.length) return null;
+  return weightedLocationChoice(candidates, template);
+}
+
+function matchingDestinationPoiCandidatesForTemplate(template) {
+  const poiIds = listValue(template.destinationPoiIds).map((item) => item.toLowerCase());
+  const categories = listValue(template.destinationPoiCategories).map((item) => item.toLowerCase());
+  return (state.center.poi || [])
+    .filter((poi) => Number.isFinite(poi.lat) && Number.isFinite(poi.lng))
+    .filter((poi) => {
+      const id = String(poi.id || poi.label || "").toLowerCase();
+      const poiCategories = (poi.categories || []).map((category) => String(category).toLowerCase());
+      const idMatches = !poiIds.length || poiIds.includes(id);
+      const categoryMatches = !categories.length || categories.some((category) => poiCategories.includes(category));
+      return idMatches && categoryMatches;
+    });
+}
+
+function weightedLocationChoice(candidates, origin) {
+  const weighted = candidates.map((candidate) => {
+    const distance = mapDistance(origin.lat, origin.lng, candidate.lat, candidate.lng);
+    return { candidate, weight: 1 / Math.pow(Math.max(1, distance), 1.6) };
+  });
+  const total = weighted.reduce((sum, item) => sum + item.weight, 0);
+  let draw = Math.random() * total;
+  for (const item of weighted) {
+    draw -= item.weight;
+    if (draw <= 0) return item.candidate;
+  }
+  return weighted[weighted.length - 1]?.candidate || candidates[0];
+}
+
+function randomHomeDestinationNear(origin) {
+  const originLat = Number.isFinite(origin?.lat) ? origin.lat : state.center.mapCenter[0];
+  const originLng = Number.isFinite(origin?.lng) ? origin.lng : state.center.mapCenter[1];
+  const roll = Math.random();
+  const distanceKm = roll < 0.82
+    ? randomFloat(0.5, 15)
+    : roll < 0.96
+      ? randomFloat(15, 50)
+      : randomFloat(50, 200);
+  const bearing = randomFloat(0, Math.PI * 2);
+  const point = destinationPointFrom(originLat, originLng, distanceKm, bearing);
+  return {
+    id: makeId(`home-${state.absoluteMinute}-${Math.random()}`),
+    label: `Wohnadresse ca. ${Math.round(distanceKm)} km entfernt`,
+    address: "Wohnadresse",
+    lat: point.lat,
+    lng: point.lng,
+    categories: ["home"]
+  };
+}
+
+function destinationPointFrom(lat, lng, distanceKm, bearing) {
+  const radiusKm = 6371;
+  const latRad = lat * Math.PI / 180;
+  const lngRad = lng * Math.PI / 180;
+  const angular = distanceKm / radiusKm;
+  const targetLat = Math.asin(Math.sin(latRad) * Math.cos(angular) + Math.cos(latRad) * Math.sin(angular) * Math.cos(bearing));
+  const targetLng = lngRad + Math.atan2(
+    Math.sin(bearing) * Math.sin(angular) * Math.cos(latRad),
+    Math.cos(angular) - Math.sin(latRad) * Math.sin(targetLat)
+  );
+  return { lat: targetLat * 180 / Math.PI, lng: ((targetLng * 180 / Math.PI + 540) % 360) - 180 };
+}
+
 function matchingPoiCandidates(template) {
   const poiIds = listValue(template.poiIds).map((item) => item.toLowerCase());
   const categories = listValue(template.poiCategories).map((item) => item.toLowerCase());
@@ -1093,6 +1215,27 @@ async function reverseGeocodeCall(call) {
     if (state.pendingCalls?.some((item) => item.id === call.id)) renderPendingCallActions();
   } catch {
     // Offline/fallback bleibt bei der nächsten bekannten Adresse.
+  }
+}
+
+async function reverseGeocodeCallDestination(call) {
+  const destination = call?.fixedDestination;
+  if (!destination || !Number.isFinite(destination.lat) || !Number.isFinite(destination.lng) || !window.fetch) return;
+  if (!String(destination.label || "").startsWith("Wohnadresse")) return;
+  try {
+    const response = await fetch(reverseGeocodeUrl(destination.lat, destination.lng), { headers: { accept: "application/json" } });
+    if (!response.ok) return;
+    const label = formatGeocodeAddress(await response.json());
+    if (!label) return;
+    const oldLabel = destination.label;
+    destination.label = label;
+    destination.address = label;
+    call.callerText = String(call.callerText || "").replace(oldLabel, label);
+    if (state.pendingCall?.id === call.id) renderCallDisposition();
+    if (state.pendingCalls?.some((item) => item.id === call.id)) renderPendingCallActions();
+    if (el.incidentDialog?.open && currentIncidentDialogSource()?.id === call.id) renderIncidentTransportTarget(call);
+  } catch {
+    // Zieladresse bleibt als generische Wohnadresse erhalten.
   }
 }
 
@@ -1349,6 +1492,7 @@ function openIncidentDialog(source = null) {
     : false;
   el.incidentNote.value = call.note || "";
   renderIncidentCallText(call);
+  renderIncidentTransportTarget(call);
   if (el.incidentPatientConditions) {
     el.incidentPatientConditions.hidden = true;
     el.incidentPatientConditions.innerHTML = "";
@@ -1366,6 +1510,73 @@ function renderIncidentCallText(source) {
   el.incidentCallTextPanel.hidden = !text;
   el.incidentCallTextPanel.open = false;
   el.incidentCallText.textContent = text;
+}
+
+function renderIncidentTransportTarget(source) {
+  if (!el.incidentTargetInfo) return;
+  const destination = source?.fixedDestination || source?.patient?.fixedDestination || null;
+  if (!destination || !Number.isFinite(destination.lat) || !Number.isFinite(destination.lng)) {
+    el.incidentTargetInfo.hidden = true;
+    el.incidentTargetInfo.innerHTML = "";
+    return;
+  }
+  const status = incidentTargetTravelStatus(source, destination);
+  el.incidentTargetInfo.hidden = false;
+  el.incidentTargetInfo.innerHTML = `
+    <strong>Ziel:</strong> ${escapeHtml(destination.label || destination.address || "Zieladresse")}
+    <span>${targetTravelMarkup(status)}</span>
+  `;
+  requestIncidentTargetTravelTime(source, destination);
+}
+
+function incidentTargetTravelStatus(source, destination) {
+  state.dialogDestinationTravelTimes ||= new Map();
+  state.dialogDestinationTravelTimeRequests ||= new Set();
+  const key = incidentTargetTravelKey(source, destination);
+  if (state.dialogDestinationTravelTimes.has(key)) return state.dialogDestinationTravelTimes.get(key);
+  if (state.dialogDestinationTravelTimeRequests.has(key)) return { state: "loading" };
+  return { state: "idle" };
+}
+
+function targetTravelMarkup(status) {
+  if (status?.state === "ready") {
+    const minutes = Math.max(1, Math.round(status.durationMs / 60000));
+    const source = status.source === "fallback" ? "Fallback" : "OSRM";
+    return ` | Einsatzort -> Ziel ca. ${minutes} min (${source})`;
+  }
+  if (status?.state === "loading") return " | Fahrtzeit wird berechnet...";
+  return "";
+}
+
+function incidentTargetTravelKey(source, destination) {
+  return [
+    Number(source?.lat).toFixed(5),
+    Number(source?.lng).toFixed(5),
+    Number(destination.lat).toFixed(5),
+    Number(destination.lng).toFixed(5)
+  ].join("|");
+}
+
+async function requestIncidentTargetTravelTime(source, destination) {
+  if (!source || !destination || state.dialogDestinationTravelTimeRequests?.has(incidentTargetTravelKey(source, destination))) return;
+  state.dialogDestinationTravelTimes ||= new Map();
+  state.dialogDestinationTravelTimeRequests ||= new Set();
+  const key = incidentTargetTravelKey(source, destination);
+  if (state.dialogDestinationTravelTimes.has(key)) return;
+  state.dialogDestinationTravelTimeRequests.add(key);
+  try {
+    const route = await buildRoute({ type: "KTW", lat: source.lat, lng: source.lng }, destination);
+    state.dialogDestinationTravelTimes.set(key, {
+      state: "ready",
+      durationMs: Math.max(1, route.baseDurationMs || 0),
+      source: route.source
+    });
+  } catch {
+    state.dialogDestinationTravelTimes.set(key, { state: "error" });
+  } finally {
+    state.dialogDestinationTravelTimeRequests.delete(key);
+  }
+  if (el.incidentDialog?.open && currentIncidentDialogSource()?.id === source.id) renderIncidentTransportTarget(source);
 }
 
 function renderDispositionSuggestion() {

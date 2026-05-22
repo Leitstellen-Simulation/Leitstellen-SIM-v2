@@ -32,6 +32,7 @@
               <option value="scheduled">Planbar</option>
             </select>
           </label>
+          <label>Wahrscheinlichkeitsfaktor <input id="ie-weight" type="number" min="0" step="0.1" value="1" placeholder="z.B. 1.0 oder 1,0"><small class="inline-hint">Faktor, kein Prozentwert: 1 = Standard, 2 = doppelt so häufig, 0.5/0,5 = halb so häufig.</small></label>
           <label>Zeitfenster <input id="ie-time-windows" placeholder="z.B. 8-18; 19:30-23"></label>
           <label>Notruftext <textarea id="ie-caller-text" rows="4" placeholder="Mehrere Texte mit | trennen, Namen mit *Vorname*, *Nachname* oder *Name*"></textarea><small class="inline-hint">*Nachname* erzeugt automatisch Frau/Herr + Nachname.</small></label>
           <label>Rückmeldung / Lagemeldung <textarea id="ie-report" rows="3"></textarea></label>
@@ -60,9 +61,10 @@
               <select id="ie-destination-mode">
                 <option value="none">Krankenhaus / normale Zielauswahl</option>
                 <option value="poi">POI-Ziel</option>
+                <option value="home">Heimfahrt / Wohnadresse</option>
               </select>
             </label>
-            <label id="ie-destination-poi-probability-row">POI-Ziel-Wahrscheinlichkeit <input id="ie-destination-poi-probability" type="number" min="0" max="100" value="0"><small class="inline-hint">Bei Zielmodus POI-Ziel wird immer ein POI genutzt.</small></label>
+            <label id="ie-destination-poi-probability-row">POI-Ziel-Wahrscheinlichkeit <input id="ie-destination-poi-probability" type="text" inputmode="decimal" value="0" placeholder="z.B. 50% oder 50"><small class="inline-hint">Absolute Prozentzahl: 50% oder 50. Bei Zielmodus POI-Ziel wird immer ein POI genutzt.</small></label>
             <div class="multi-select-box">
               <strong>Ziel-POI-Kategorien</strong>
               <input id="ie-destination-poi-category-search" placeholder="Kategorie suchen">
@@ -80,14 +82,14 @@
           <label class="check-row"><input id="ie-pol" type="checkbox"> POL vor Transport erforderlich</label>
           <section class="unit-editor">
             <h3>Patient</h3>
-            <label>Fahrzeugoptionen <input id="ie-patient-options" placeholder="0.75:RTW+NEF;0.25:RTW"></label>
+            <label>Fahrzeugoptionen <input id="ie-patient-options" placeholder="z.B. 0.75:RTW+NEF;0,25:RTW"><small class="inline-hint">Dezimalwahrscheinlichkeiten pro Option, Summe ca. 1. Punkt oder Komma geht.</small></label>
             <div>
               <strong>Fachrichtungen</strong>
               <div id="ie-departments" class="check-grid"></div>
             </div>
-            <label>SoSi-Transport-Wahrscheinlichkeit <input id="ie-patient-signal" type="number" min="0" max="100" value="0"></label>
+            <label>SoSi-Transport-Wahrscheinlichkeit <input id="ie-patient-signal" type="text" inputmode="decimal" value="0" placeholder="z.B. 50% oder 50"><small class="inline-hint">Absolute Prozentzahl: 0 bis 100, z.B. 50% oder 50.</small></label>
             <label>Einzelrückmeldung / Patientenzustand <textarea id="ie-patient-condition-report" rows="2" placeholder="z.B. kritisch, Rauchgasexposition, Ziel: Innere"></textarea></label>
-            <label>Ambulant-Wahrscheinlichkeit <input id="ie-patient-no-transport" type="number" min="0" max="100" value="0"></label>
+            <label>Ambulant-Wahrscheinlichkeit <input id="ie-patient-no-transport" type="text" inputmode="decimal" value="0" placeholder="z.B. 20% oder 20"><small class="inline-hint">Absolute Prozentzahl: 0 bis 100, z.B. 20% oder 20.</small></label>
             <label>Freimeldungstext ambulant <input id="ie-patient-no-transport-text" placeholder="Ambulante Versorgung ausreichend, kein Transport."></label>
             <label class="check-row"><input id="ie-patient-doctor-required" type="checkbox"> Zwingende Notarztbegleitung</label>
             <label class="check-row"><input id="ie-patient-fw" type="checkbox"> Patient braucht FW</label>
@@ -113,11 +115,20 @@
           <h2>KI-Generator</h2>
         </div>
         <section class="ai-incident-generator">
+          <h3>Notfalleinsatz</h3>
           <label>Beschreibung
-            <textarea id="ie-ai-prompt" rows="6" placeholder="z.B. planbare Dialysefahrt morgens aus Wohnadresse, KTW, kein Sondersignal"></textarea>
+            <textarea id="ie-ai-emergency-prompt" rows="5" placeholder="z.B. Brustschmerz, RTW, eventuell NEF, Ziel Kardiologie"></textarea>
           </label>
-          <button id="ie-ai-generate" class="primary-action" type="button">Generieren</button>
-          <small id="ie-ai-status" class="inline-hint">DeepSeek V4 Pro über OpenRouter. Key bleibt lokal.</small>
+          <button id="ie-ai-emergency-generate" class="primary-action" type="button">Notfall generieren</button>
+          <small id="ie-ai-emergency-status" class="inline-hint">Notfall-Logik: Klinikziel erst nach Rückmeldung.</small>
+        </section>
+        <section class="ai-incident-generator">
+          <h3>Krankentransport</h3>
+          <label>Beschreibung
+            <textarea id="ie-ai-transport-prompt" rows="5" placeholder="z.B. Heimfahrt aus Krankenhaus nach Wohnadresse, KTW, kein Sondersignal"></textarea>
+          </label>
+          <button id="ie-ai-transport-generate" class="primary-action" type="button">KTP generieren</button>
+          <small id="ie-ai-transport-status" class="inline-hint">KTP-Logik: Direktziel für Heimfahrt/POI, Fachrichtung per Zielauswahl.</small>
         </section>
       </aside>
     </main>

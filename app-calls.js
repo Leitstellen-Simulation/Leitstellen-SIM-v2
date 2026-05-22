@@ -59,7 +59,7 @@ function receiveCall(forcedType = null) {
     templateIndex = (templateIndex + randomInt(1, templates.length - 1)) % templates.length;
   }
   state.lastCallTemplateIndex = templateIndex;
-  const template = resolveTemplateLocation(normalizeIncidentTemplate(templates[templateIndex]));
+  const template = resolveTemplateDestination(resolveTemplateLocation(normalizeIncidentTemplate(templates[templateIndex])));
   const call = {
     ...template,
     id: makeId(),
@@ -74,6 +74,7 @@ function receiveCall(forcedType = null) {
   updateCallAddressFromNearestSource(call);
   queueIncomingCall(call);
   reverseGeocodeCall(call);
+  reverseGeocodeCallDestination(call);
 }
 
 function queueIncomingCall(call, options = {}) {
@@ -278,7 +279,24 @@ function weightedCallTemplateIndex(forcedType = null) {
     .filter((item) => item.template.type !== "scheduled");
   const pool = candidates.length ? candidates : fallback;
   if (!pool.length) return -1;
-  return pool[Math.floor(Math.random() * pool.length)].index;
+  return weightedTemplatePoolIndex(pool);
+}
+
+function weightedTemplatePoolIndex(pool) {
+  const weighted = pool.map((item) => ({ ...item, weight: incidentTemplateWeight(item.template) }));
+  const total = weighted.reduce((sum, item) => sum + item.weight, 0);
+  if (total <= 0) return -1;
+  let draw = Math.random() * total;
+  for (const item of weighted) {
+    draw -= item.weight;
+    if (draw <= 0) return item.index;
+  }
+  return weighted[weighted.length - 1].index;
+}
+
+function incidentTemplateWeight(template) {
+  const weight = Number(template?.weight ?? 1);
+  return Number.isFinite(weight) && weight > 0 ? weight : 0;
 }
 
 function availableCallTemplates() {

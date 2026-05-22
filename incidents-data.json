@@ -171,7 +171,7 @@
         "poiCategories": [],
         "poiIds": [],
         "destinationMode": "poi",
-        "destinationPoiProbability": 0,
+        "destinationPoiProbability": 1,
         "destinationPoiCategories": [
           "practice",
           "dentist"
@@ -410,6 +410,10 @@
           "hospital"
         ],
         "poiIds": [],
+        "destinationMode": "home",
+        "destinationPoiProbability": 0,
+        "destinationPoiCategories": [],
+        "destinationPoiIds": [],
         "requiredServices": [],
         "report": "",
         "situationReport": "",
@@ -715,7 +719,7 @@
     "id": "ki-ktp---dialysefahrt-1779280215997",
     "category": "Krankentransport",
     "title": "KTP - Dialysefahrt",
-    "type": "scheduled",
+    "type": "transport",
     "keyword": "KTP - Dialysefahrt",
     "timeWindows": [
       {
@@ -1071,6 +1075,69 @@
             "noTransportProbability": 0,
             "noTransportText": "Tod sicher festgestellt, keine Transportindikation",
             "requiresDoctorAccompaniment": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ki-rd-1-herz-kreislauf---belkeit-1779302832025",
+    "category": "Herz/Kreislauf",
+    "title": "RD 1 Herz/Kreislauf - Übelkeit",
+    "type": "emergency",
+    "weight": 1,
+    "keyword": "RD 1 Herz/Kreislauf - Übelkeit",
+    "timeWindows": [
+      {
+        "start": "8",
+        "end": "18"
+      }
+    ],
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Meine Frau hat plötzlich starke Übelkeit, sie ist ganz blass und schwitzt. | Mir ist total schlecht, ich fühle mich so komisch, als ob ich umkippe.",
+        "locationMode": "random",
+        "poiCategories": [],
+        "poiIds": [],
+        "destinationMode": "none",
+        "destinationPoiProbability": 0,
+        "destinationPoiCategories": [],
+        "destinationPoiIds": [],
+        "requiredServices": [],
+        "report": "Patient wach, ansprechbar, Übelkeit, kein Erbrechen, Haut blass-feucht, Blutdruck und Puls unauffällig. Kein akuter Transportwunsch, verwiesen an ärztlichen Notdienst.",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 0.9,
+                "vehicles": [
+                  "REF"
+                ]
+              },
+              {
+                "probability": 0.1,
+                "vehicles": [
+                  "NEF",
+                  "RTW"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "internal",
+              "cardiology",
+              "icu"
+            ],
+            "transportSignalProbability": 1,
+            "conditionReport": "Patient kreislaufstabil, STEMI",
+            "noTransportProbability": 0,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport, an KVB verwiesen",
+            "requiresDoctorAccompaniment": true,
             "needsFW": false,
             "needsPOL": false
           }

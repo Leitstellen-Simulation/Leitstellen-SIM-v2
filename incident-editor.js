@@ -8,8 +8,8 @@ const state = {
 };
 
 const el = Object.fromEntries([
-  "ai-prompt", "ai-generate", "ai-status",
-  "category", "title", "type", "time-windows", "caller-text", "report", "location-mode", "poi-category-search",
+  "ai-emergency-prompt", "ai-emergency-generate", "ai-emergency-status", "ai-transport-prompt", "ai-transport-generate", "ai-transport-status",
+  "category", "title", "type", "weight", "time-windows", "caller-text", "report", "location-mode", "poi-category-search",
   "poi-categories", "poi-selected", "poi-select-visible", "poi-clear", "poi-category-count", "poi-ids", "fw", "pol", "patient-options", "departments", "patient-signal", "patient-condition-report",
   "destination-mode", "destination-poi-probability-row", "destination-poi-probability", "destination-poi-category-search", "destination-poi-categories", "destination-poi-selected", "destination-poi-select-visible", "destination-poi-clear", "destination-poi-category-count", "destination-poi-ids",
   "patient-no-transport", "patient-no-transport-text", "patient-doctor-required", "patient-fw", "patient-pol", "add-patient",
@@ -26,7 +26,8 @@ async function init() {
   el.add_patient.addEventListener("click", addPatient);
   el.save.addEventListener("click", saveIncident);
   el.new.addEventListener("click", clearForm);
-  el.ai_generate.addEventListener("click", generateAiIncident);
+  el.ai_emergency_generate.addEventListener("click", () => generateAiIncident("emergency"));
+  el.ai_transport_generate.addEventListener("click", () => generateAiIncident("transport"));
   el.poi_category_search.addEventListener("input", () => renderPoiCategorySelect());
   el.poi_select_visible.addEventListener("click", selectVisiblePoiCategories);
   el.poi_clear.addEventListener("click", clearPoiCategories);
@@ -39,34 +40,46 @@ async function init() {
   renderList();
 }
 
-async function generateAiIncident() {
-  const prompt = el.ai_prompt.value.trim();
+async function generateAiIncident(mode = "emergency") {
+  const promptInput = mode === "transport" ? el.ai_transport_prompt : el.ai_emergency_prompt;
+  const button = mode === "transport" ? el.ai_transport_generate : el.ai_emergency_generate;
+  const prompt = promptInput.value.trim();
   if (prompt.length < 8) {
-    setAiStatus("Bitte erst kurz beschreiben, was generiert werden soll.", "error");
+    setAiStatus(mode, "Bitte erst kurz beschreiben, was generiert werden soll.", "error");
     return;
   }
-  el.ai_generate.disabled = true;
-  setAiStatus("KI generiert Einsatz und validiert JSON...", "pending");
+  button.disabled = true;
+  setAiStatus(mode, "KI generiert Einsatz und validiert JSON...", "pending");
   try {
     const response = await fetch("/api/generate-incident", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ prompt })
+      body: JSON.stringify({ prompt, mode })
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || "KI-Generierung fehlgeschlagen.");
     editIncident(data.incident);
     setAiStatus(`KI-Einsatz übernommen (${data.model || "OpenRouter"}). Bitte prüfen und speichern.`, "ok");
   } catch (error) {
-    setAiStatus(error.message || "KI-Generierung fehlgeschlagen.", "error");
+    setAiStatus(mode, error.message || "KI-Generierung fehlgeschlagen.", "error");
   } finally {
-    el.ai_generate.disabled = false;
+    button.disabled = false;
   }
 }
 
-function setAiStatus(message, tone = "neutral") {
-  el.ai_status.textContent = message;
-  el.ai_status.className = `inline-hint ai-status ai-status-${tone}`;
+function setAiStatus(mode, message, tone = "neutral") {
+  if (["neutral", "ok", "error", "pending"].includes(message) && tone === "neutral") {
+    const legacyMessage = mode;
+    const legacyTone = message;
+    [el.ai_emergency_status, el.ai_transport_status].forEach((status) => {
+      status.textContent = legacyMessage;
+      status.className = `inline-hint ai-status ai-status-${legacyTone}`;
+    });
+    return;
+  }
+  const status = mode === "transport" ? el.ai_transport_status : el.ai_emergency_status;
+  status.textContent = message;
+  status.className = `inline-hint ai-status ai-status-${tone}`;
 }
 
 async function loadIncidents() {
@@ -128,6 +141,7 @@ async function saveIncident() {
     category: el.category.value,
     title,
     type: el.type.value,
+    weight: parseWeight(el.weight.value),
     keyword: title,
     timeWindows: parseTimeWindows(el.time_windows.value),
     variants: [{
@@ -165,6 +179,7 @@ function editIncident(incident) {
   el.category.value = incident.category || "Sonstiges";
   el.title.value = incident.title || "";
   el.type.value = incident.type || "emergency";
+  el.weight.value = formatWeight(incident.weight);
   el.time_windows.value = formatTimeWindows(incident.timeWindows || variant.timeWindows || []);
   el.caller_text.value = variant.callerText || "";
   el.report.value = variant.situationReport || variant.report || "";
@@ -188,6 +203,7 @@ function clearForm() {
   state.editingId = null;
   state.editingPatientId = null;
   el.title.value = "";
+  el.weight.value = 1;
   el.time_windows.value = "";
   el.caller_text.value = "";
   el.report.value = "";
@@ -425,10 +441,15 @@ function clearDestinationPoiCategories() {
 
 function updateDestinationPoiControls() {
   const isFixedPoiTarget = el.destination_mode.value === "poi";
-  el.destination_poi_probability.disabled = isFixedPoiTarget;
-  el.destination_poi_probability.value = isFixedPoiTarget ? 100 : (el.destination_poi_probability.value || 0);
-  el.destination_poi_probability_row.classList.toggle("disabled-field", isFixedPoiTarget);
-  el.destination_poi_probability.title = isFixedPoiTarget ? "Bei POI-Ziel wird immer ein Ziel-POI genutzt." : "";
+  const isHomeTarget = el.destination_mode.value === "home";
+  el.destination_poi_probability.disabled = isFixedPoiTarget || isHomeTarget;
+  el.destination_poi_probability.value = isFixedPoiTarget ? 100 : (isHomeTarget ? 0 : (el.destination_poi_probability.value || 0));
+  el.destination_poi_probability_row.classList.toggle("disabled-field", isFixedPoiTarget || isHomeTarget);
+  el.destination_poi_probability.title = isFixedPoiTarget
+    ? "Bei POI-Ziel wird immer ein Ziel-POI genutzt."
+    : isHomeTarget
+      ? "Bei Heimfahrt wird eine Wohnadresse als Ziel erzeugt."
+      : "";
 }
 
 function departmentLabels(keys) {
@@ -443,7 +464,8 @@ function renderList() {
     const row = document.createElement("article");
     row.className = "incident-card";
     const timeWindows = formatTimeWindows(incident.timeWindows || []);
-    row.innerHTML = `<h3>${escapeHtml(incident.title || incident.keyword)}</h3><p>${escapeHtml(incident.category || incident.type)}${timeWindows ? ` | ${escapeHtml(timeWindows)}` : ""}</p>`;
+    const weight = formatWeight(incident.weight);
+    row.innerHTML = `<h3>${escapeHtml(incident.title || incident.keyword)}</h3><p>${escapeHtml(incident.category || incident.type)} | Faktor ${escapeHtml(weight)}${timeWindows ? ` | ${escapeHtml(timeWindows)}` : ""}</p>`;
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = "Bearbeiten";
@@ -505,7 +527,18 @@ function formatTimeWindows(windows = []) {
 }
 
 function clampPercent(value) {
-  return Math.max(0, Math.min(1, (Number(value) || 0) / 100));
+  const percent = Number(String(value ?? "").replace("%", "").replace(",", "."));
+  return Math.max(0, Math.min(1, (Number.isFinite(percent) ? percent : 0) / 100));
+}
+
+function parseWeight(value) {
+  const weight = Number(String(value ?? "").replace(",", "."));
+  return Number.isFinite(weight) && weight >= 0 ? weight : 1;
+}
+
+function formatWeight(value) {
+  const weight = parseWeight(value ?? 1);
+  return Number.isInteger(weight) ? String(weight) : String(Number(weight.toFixed(2)));
 }
 
 function normalizeSearch(value) {
