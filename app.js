@@ -886,6 +886,7 @@ function startClock() {
     processCallRates();
     rollForeignVehicleAvailability();
     renderClock();
+    if (typeof updateDynamicPatientStates === "function") updateDynamicPatientStates();
     if (state.incidents.some((incident) => incident.status !== "geschlossen")) {
       renderIncidents();
     }
@@ -1331,6 +1332,14 @@ async function loadIncidentCatalog() {
     // Fallback below keeps the standalone JSON file usable when the API is unavailable.
   }
   try {
+    const response = await fetch("incidents-dynamic.json");
+    if (!response.ok) throw new Error("dynamic incident file unavailable");
+    const catalog = await response.json();
+    if (Array.isArray(catalog) && catalog.length) return catalog;
+  } catch {
+    // Legacy fallback below.
+  }
+  try {
     const response = await fetch("incidents-data.json");
     if (!response.ok) throw new Error("incident file unavailable");
     const catalog = await response.json();
@@ -1364,6 +1373,9 @@ async function loadSelectedMap(mapId) {
 }
 
 function normalizeIncidentTemplate(template) {
+  if (isDynamicIncidentTemplate(template)) {
+    return normalizeDynamicIncidentTemplate(template);
+  }
   if (!template.variants) {
     return applyDynamicIncidentPlaceholders({
       ...template,
@@ -1387,6 +1399,65 @@ function normalizeIncidentTemplate(template) {
   normalized.callerText = randomDelimitedText(normalized.callerText);
   normalized.callerName = randomDelimitedText(normalized.callerName) || "Anrufer";
   return applyDynamicIncidentPlaceholders(normalized);
+}
+
+function isDynamicIncidentTemplate(template) {
+  return Number(template?.schemaVersion) >= 2 || Boolean(template?.call);
+}
+
+function normalizeDynamicIncidentTemplate(template) {
+  const call = template.call || {};
+  const variant = weightedChoice(template.variants, "weight") || {};
+  const patients = Array.isArray(variant.patients) && variant.patients.length
+    ? variant.patients.map(materializeDynamicPatient)
+    : [];
+  const normalized = {
+    ...template,
+    ...call,
+    id: undefined,
+    catalogId: template.id,
+    variantId: variant.id || makeId(),
+    variantLabel: variant.label || variant.title || "",
+    keyword: template.keyword || template.title || variant.keyword || variant.title || template.category || "Eigener Einsatz",
+    type: template.type || variant.type || "emergency",
+    priority: variant.priority || template.priority || "normal",
+    required: variant.required || template.required || ["RTW"],
+    requiredServices: variant.requiredServices || template.requiredServices || [],
+    report: variant.report || "",
+    situationReport: variant.situationReport || "",
+    patients,
+    patientCount: patients.length || Number(variant.patientCount) || Number(template.patientCount) || 1,
+    signal: Boolean(variant.signal ?? template.signal ?? false)
+  };
+  normalized.callerText = randomDelimitedText(call.callerText ?? template.callerText);
+  normalized.callerName = randomDelimitedText(call.callerName ?? template.callerName) || "Anrufer";
+  return applyDynamicIncidentPlaceholders(normalized);
+}
+
+function materializeDynamicPatient(patient, index) {
+  const materialized = { ...patient };
+  delete materialized.outcomes;
+  materialized.id ||= `pat-${index + 1}`;
+  materialized.label ||= `Pat ${index + 1}`;
+  materialized.acuity ||= "stable";
+  return materialized;
+}
+
+function weightedChoice(items, weightKey = "weight") {
+  const pool = Array.isArray(items) ? items.filter(Boolean) : [];
+  if (!pool.length) return null;
+  const weighted = pool.map((item) => {
+    const weight = Number(item?.[weightKey] ?? 1);
+    return { item, weight: Number.isFinite(weight) && weight > 0 ? weight : 0 };
+  }).filter((entry) => entry.weight > 0);
+  if (!weighted.length) return pool[randomInt(0, pool.length - 1)];
+  const total = weighted.reduce((sum, entry) => sum + entry.weight, 0);
+  let draw = Math.random() * total;
+  for (const entry of weighted) {
+    draw -= entry.weight;
+    if (draw <= 0) return entry.item;
+  }
+  return weighted[weighted.length - 1].item;
 }
 
 function applyDynamicIncidentPlaceholders(template) {
@@ -1917,11 +1988,17 @@ function normalizePatients(call, fallbackDepartmentKey) {
   if (Array.isArray(call.patients) && call.patients.length) {
     return call.patients.map((patient, index) => {
       const required = resolvePatientRequirement(patient.required || patient.options || [{ vehicles: patient.vehicles || ["RTW"], probability: 1 }]);
+      const acuity = normalizePatientAcuity(patient.acuity || patient.patientAcuity || (call.type === "scheduled" ? "planned-transport" : "stable"));
+      const effectiveRequired = acuity === "reanimation" && !required.some(isDoctorRequirement)
+        ? [...required, "NEF"]
+        : required;
       const refOnly = required.length > 0 && required.every((type) => type === "REF");
       return {
         id: patient.id || `pat-${index + 1}`,
         label: patient.label || `Pat ${index + 1}`,
-        required,
+        required: effectiveRequired,
+        acuity,
+        reanimationCase: Boolean(patient.reanimationCase),
         requiredDepartmentKey: (patient.requiredDepartmentKeys || [patient.requiredDepartmentKey || fallbackDepartmentKey])[0],
         requiredDepartmentKeys: patient.requiredDepartmentKeys || [patient.requiredDepartmentKey || fallbackDepartmentKey],
         requiredDepartment: departmentLabels(patient.requiredDepartmentKeys || [patient.requiredDepartmentKey || fallbackDepartmentKey]),
@@ -1939,11 +2016,17 @@ function normalizePatients(call, fallbackDepartmentKey) {
   }
   const count = Math.max(1, Number(call.patientCount) || 1);
   const baseRequired = normalizeRequiredVehicles(call.required?.length ? call.required : ["RTW"]);
+  const baseAcuity = normalizePatientAcuity(call.acuity || (call.type === "scheduled" ? "planned-transport" : "stable"));
+  const effectiveBaseRequired = baseAcuity === "reanimation" && !baseRequired.some(isDoctorRequirement)
+    ? [...baseRequired, "NEF"]
+    : baseRequired;
   const baseRefOnly = baseRequired.length > 0 && baseRequired.every((type) => type === "REF");
   return Array.from({ length: count }, (_, index) => ({
     id: `pat-${index + 1}`,
     label: `Pat ${index + 1}`,
-    required: index === 0 ? [...baseRequired] : ["RTW"],
+    required: index === 0 ? [...effectiveBaseRequired] : ["RTW"],
+    acuity: baseAcuity,
+    reanimationCase: false,
     requiredDepartmentKey: fallbackDepartmentKey,
     requiredDepartmentKeys: [fallbackDepartmentKey],
     requiredDepartment: departmentLabels([fallbackDepartmentKey]),
@@ -1956,6 +2039,15 @@ function normalizePatients(call, fallbackDepartmentKey) {
     transportNeeded: baseRefOnly ? false : callTransportNeeded(call),
     assignedVehicles: []
   }));
+}
+
+function normalizePatientAcuity(value) {
+  const text = String(value || "").toLowerCase();
+  if (["planned", "planned-transport", "planbar", "ktp"].includes(text)) return "planned-transport";
+  if (["potential-critical", "potentially-critical", "potentiell kritisch", "potenziell kritisch"].includes(text)) return "potential-critical";
+  if (["critical", "kritisch"].includes(text)) return "critical";
+  if (["reanimation", "cpr", "rea"].includes(text)) return "reanimation";
+  return "stable";
 }
 
 function callTransportNeeded(call) {

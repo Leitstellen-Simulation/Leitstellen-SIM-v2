@@ -10,9 +10,11 @@ loadLocalEnvFile();
 const dataRoot = process.env.DISPATCH_DATA_DIR ? resolve(process.env.DISPATCH_DATA_DIR) : root;
 const usesExternalDataDir = dataRoot !== root;
 const defaultMapsDir = join(root, "maps");
-const defaultIncidentsFile = join(root, "incidents-data.json");
+const incidentCatalogFileName = process.env.DISPATCH_INCIDENTS_FILE || "incidents-dynamic.json";
+const defaultIncidentsFile = join(root, incidentCatalogFileName);
+const legacyIncidentsFile = join(root, "incidents-data.json");
 const mapsDir = join(dataRoot, "maps");
-const incidentsFile = join(dataRoot, "incidents-data.json");
+const incidentsFile = join(dataRoot, incidentCatalogFileName);
 const maxBodyBytes = 2_000_000;
 const adminPassword = process.env.DISPATCH_ADMIN_PASSWORD || "XXX112XXX";
 const openRouterApiKey = process.env.OPENROUTER_API_KEY || "OPENROUTER_API_KEY_HIER_EINTRAGEN";
@@ -93,6 +95,8 @@ async function ensureWritableDataFiles() {
   await seedDefaultMaps();
   if (!existsSync(incidentsFile) && existsSync(defaultIncidentsFile)) {
     await copyDefaultFile(defaultIncidentsFile, incidentsFile);
+  } else if (!existsSync(incidentsFile) && existsSync(legacyIncidentsFile)) {
+    await copyDefaultFile(legacyIncidentsFile, incidentsFile);
   }
 }
 
@@ -466,8 +470,15 @@ async function handleMapsApi(request, response, url) {
 
 async function handleIncidentsApi(request, response) {
   if (request.method === "GET") {
-    if (!existsSync(incidentsFile)) return sendJson(response, []);
-    const incidents = await readJsonFile(incidentsFile);
+    const sourceFile = existsSync(incidentsFile)
+      ? incidentsFile
+      : existsSync(defaultIncidentsFile)
+        ? defaultIncidentsFile
+        : existsSync(legacyIncidentsFile)
+          ? legacyIncidentsFile
+          : null;
+    if (!sourceFile) return sendJson(response, []);
+    const incidents = await readJsonFile(sourceFile);
     sendJson(response, Array.isArray(incidents) ? incidents : []);
     return;
   }
@@ -508,15 +519,16 @@ async function handleGenerateIncidentApi(request, response) {
   if (!body) return;
   const userPrompt = String(body.prompt || "").trim();
   const mode = body.mode === "transport" ? "transport" : "emergency";
+  const variationCount = clampInteger(body.variationCount, 1, 6, 1);
   if (userPrompt.length < 8) {
     sendJson(response, { error: "Bitte eine kurze Beschreibung fuer den KI-Einsatz eingeben." }, 400);
     return;
   }
 
   try {
-    const generated = await generateIncidentWithOpenRouter(userPrompt, mode);
-    const incident = normalizeGeneratedIncident(generated, userPrompt, mode);
-    sendJson(response, { incident, model: openRouterModel });
+    const generated = await generateIncidentWithOpenRouter(userPrompt, mode, variationCount);
+    const incidents = normalizeGeneratedIncidents(generated, userPrompt, mode, variationCount);
+    sendJson(response, { incident: incidents[0], incidents, model: openRouterModel });
   } catch (error) {
     sendJson(response, { error: error.message || "KI-Generierung fehlgeschlagen" }, 502);
   }
@@ -526,8 +538,8 @@ function isOpenRouterConfigured() {
   return Boolean(openRouterApiKey && openRouterApiKey !== "OPENROUTER_API_KEY_HIER_EINTRAGEN");
 }
 
-async function generateIncidentWithOpenRouter(userPrompt, mode = "emergency") {
-  const first = await requestOpenRouterIncident(userPrompt, false, mode);
+async function generateIncidentWithOpenRouter(userPrompt, mode = "emergency", variationCount = 1) {
+  const first = await requestOpenRouterIncident(userPrompt, false, mode, variationCount);
   if (first.content) {
     try {
       return parseGeneratedIncidentJson(first.content);
@@ -537,7 +549,7 @@ async function generateIncidentWithOpenRouter(userPrompt, mode = "emergency") {
   } else {
     logOpenRouterJsonFailure("empty-first", first);
   }
-  const retry = await requestOpenRouterIncident(userPrompt, true, mode);
+  const retry = await requestOpenRouterIncident(userPrompt, true, mode, variationCount);
   if (retry.content) {
     try {
       return parseGeneratedIncidentJson(retry.content);
@@ -550,14 +562,14 @@ async function generateIncidentWithOpenRouter(userPrompt, mode = "emergency") {
   throw new Error("OpenRouter hat keine JSON-Antwort geliefert.");
 }
 
-async function requestOpenRouterIncident(userPrompt, retry = false, mode = "emergency") {
+async function requestOpenRouterIncident(userPrompt, retry = false, mode = "emergency", variationCount = 1) {
   const messages = retry
     ? [
-        { role: "system", content: `${incidentGenerationSystemPrompt(mode)}\n\nWICHTIG: Gib jetzt nur ein einziges JSON-Objekt aus. Kein Denken, keine Erklaerung, kein leerer Inhalt.` },
-        { role: "user", content: `${userPrompt}\n\nAntworte ausschliesslich als JSON object.` }
+        { role: "system", content: `${incidentGenerationSystemPrompt(mode, variationCount)}\n\nWICHTIG: Gib jetzt nur ein einziges JSON-Objekt aus. Kein Denken, keine Erklaerung, kein leerer Inhalt.` },
+        { role: "user", content: `${userPrompt}\n\nAntworte ausschliesslich als JSON object mit genau ${variationCount} Variante(n).` }
       ]
     : [
-        { role: "system", content: incidentGenerationSystemPrompt(mode) },
+        { role: "system", content: incidentGenerationSystemPrompt(mode, variationCount) },
         { role: "user", content: userPrompt }
       ];
   const openRouterResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -571,7 +583,7 @@ async function requestOpenRouterIncident(userPrompt, retry = false, mode = "emer
     body: JSON.stringify({
       model: openRouterModel,
       temperature: retry ? 0.2 : 0.55,
-      max_tokens: retry ? 1400 : 1800,
+      max_tokens: retry ? 1600 + (variationCount * 450) : 1800 + (variationCount * 550),
       response_format: { type: "json_object" },
       reasoning: {
         effort: "none",
@@ -632,7 +644,7 @@ function truncateForLog(value, maxLength = 1800) {
   return `${text.slice(0, maxLength)}... [gekuerzt, ${text.length} Zeichen]`;
 }
 
-function incidentGenerationSystemPrompt(mode = "emergency") {
+function incidentGenerationSystemPrompt(mode = "emergency", variationCount = 1) {
   const modeRules = mode === "transport"
     ? `Modus: Krankentransport.
 - type muss transport sein, nicht scheduled. scheduled ist nur fuer interne Hintergrundgeneratoren.
@@ -645,6 +657,12 @@ function incidentGenerationSystemPrompt(mode = "emergency") {
 - type muss emergency sein.
 - destinationMode bleibt "none"; bei Notfaellen wird das Krankenhaus erst nach Rueckmeldung zugewiesen.
 - Verwende RTW/NEF/RTH nur passend zur Lage, REF nur bei eindeutig ambulanten/niedrigprioren Lagen.`;
+  const variationRules = variationCount > 1
+    ? `Erzeuge genau ${variationCount} Varianten im variants-Array.
+- Alle Varianten muessen denselben callerName, callerText, locationMode, poiCategories, destinationMode, destinationPoiProbability und destinationPoiCategories nutzen.
+- Variieren sollen nur report, situationReport und patients. Die medizinische Bandbreite soll realistisch sein, z.B. bei Brustschmerz von muskuloskelettal/Intercostalneuralgie bis ACS/Myokardinfarkt.
+- Keine getrennten Anruftexte pro Variante, keine unterschiedlichen POI-/Zielmodi pro Variante.`
+    : `Erzeuge genau 1 Variante im variants-Array.`;
   return `Du generierst Einsatzvorlagen fuer eine deutsche Rettungsdienst-Leitstellen-Simulation.
 Antworte ausschliesslich als valides JSON-Objekt ohne Markdown.
 Das Wort JSON ist absichtlich genannt: Die Antwort muss ein JSON object sein.
@@ -674,6 +692,7 @@ JSON-Schema:
       "requiredDepartmentKeys": ["internal|cardiology|neurology|trauma|pediatrics|obstetrics|psychiatry|stroke|icu|none"],
       "transportSignalProbability": 0,
       "conditionReport": "individuelle Patientenrueckmeldung",
+      "acuity": "planned-transport|stable|potential-critical|critical|reanimation",
       "noTransportProbability": 0,
       "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
       "requiresDoctorAccompaniment": false,
@@ -685,12 +704,14 @@ JSON-Schema:
 
 Regeln:
 ${modeRules}
+${variationRules}
 - Erlaubte Fahrzeugtypen: KTW, RTW, NEF, REF, RTH.
 - Gib keinen Wahrscheinlichkeitsfaktor/weight aus; dieser wird lokal immer automatisch auf 1 gesetzt.
 - options-Wahrscheinlichkeiten pro Patient muessen zusammen etwa 1 ergeben.
 - KTP ueber 19222 oder mit Anrufer ist type transport, auch wenn die Fahrt zeitlich geplant ist. type scheduled nur fuer automatisch im Hintergrund entstehende Planfahrten ohne Telefonanruf und ohne initial zugewiesenes Fahrzeug.
 - RTW-Notfaelle ca. 1 Patient, requiredDepartmentKeys passend zur Lage.
 - requiredDepartmentKeys ist eine Mehrfachauswahl. Setze bei Bedarf mehrere Fachrichtungen, z.B. ["trauma","icu"] bei Polytrauma, ["neurology","stroke"] bei Schlaganfall, ["internal","cardiology"] bei ACS. Nutze ["none"] nur, wenn kein Klinikziel gebraucht wird.
+- acuity beschreibt den dynamischen Zustand: planned-transport fuer planbare KTP, stable fuer stabile Patienten, potential-critical fuer moegliche Verschlechterung, critical fuer kritisch, reanimation fuer laufende Reanimation. Reanimation erfordert immer NEF.
 - NEF/RTH nur bei kritisch, Bewusstlosigkeit, Reanimation, schwerem Trauma, Geburt/Kind kritisch oder Notarztbegleitung.
 - destinationMode poi nur fuer Fahrten zu Arztpraxis, Zahnarztpraxis, Dialyse, Altenheim oder Krankenhaus als festes Ziel. Heimfahrt nach Hause ist destinationMode home.
 - locationMode poi nur wenn der Einsatz sinnvoll an einer echten POI-Kategorie startet. Wohnadresse/Privatadresse ist locationMode random.
@@ -710,7 +731,7 @@ function parseGeneratedIncidentJson(content) {
   }
 }
 
-function normalizeGeneratedIncident(input, fallbackTitle, mode = "emergency") {
+function normalizeGeneratedIncidents(input, fallbackTitle, mode = "emergency", variationCount = 1) {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("KI-JSON muss ein Objekt sein.");
   if (input.incident && typeof input.incident === "object" && !Array.isArray(input.incident)) {
     input = input.incident;
@@ -718,49 +739,75 @@ function normalizeGeneratedIncident(input, fallbackTitle, mode = "emergency") {
   const sourceVariant = Array.isArray(input.variants) && input.variants[0] && typeof input.variants[0] === "object"
     ? input.variants[0]
     : input;
+  const sourceVariants = Array.isArray(input.variants) && input.variants.length
+    ? input.variants.filter((variant) => variant && typeof variant === "object")
+    : [sourceVariant];
   const title = stringValue(input.title || input.keyword || sourceVariant.keyword || fallbackTitle, 80) || "KI Einsatz";
   const rawType = mode === "transport"
     ? "transport"
     : "emergency";
   const type = normalizeGeneratedIncidentType(rawType, sourceVariant);
   const category = enumValue(input.category, ["Herz/Kreislauf", "Atmung", "Trauma", "Neuro/Psych", "Sonstiges", "Krankentransport"], type === "transport" || type === "scheduled" ? "Krankentransport" : "Sonstiges");
-  const patients = normalizeGeneratedPatients(sourceVariant.patients);
   const poiCategories = allowedList(sourceVariant.poiCategories, allowedOriginPoiCategories());
   const destinationPoiCategories = allowedList(sourceVariant.destinationPoiCategories, allowedDestinationPoiCategories());
   const locationMode = enumValue(sourceVariant.locationMode, ["random", "hospital", "poi"], "random");
   const destinationMode = enumValue(sourceVariant.destinationMode, ["none", "poi", "home"], "none");
   const effectiveLocationMode = locationMode === "poi" && !poiCategories.length ? "random" : locationMode;
-  const needsClinicSelection = patients.some((patient) => (patient.requiredDepartmentKeys || []).some((key) => key !== "none"));
-  const effectiveDestinationMode = needsClinicSelection
-    ? "none"
-    : destinationMode === "poi" && !destinationPoiCategories.length
-      ? "none"
-      : destinationMode;
-  const variant = {
+  const common = {
     callerName: stringValue(sourceVariant.callerName, 60) || "Anrufer",
     callerText: stringValue(sourceVariant.callerText, 900) || "Hallo, ich brauche bitte Hilfe.",
     locationMode: effectiveLocationMode,
     poiCategories,
     poiIds: [],
-    destinationMode: effectiveDestinationMode,
-    destinationPoiProbability: effectiveDestinationMode === "poi" ? 1 : probabilityValue(sourceVariant.destinationPoiProbability),
     destinationPoiCategories,
     destinationPoiIds: [],
-    requiredServices: allowedList(sourceVariant.requiredServices, ["FW", "POL"]),
-    report: patients.length > 1 ? "" : stringValue(sourceVariant.report, 500),
-    situationReport: patients.length > 1 ? stringValue(sourceVariant.situationReport || sourceVariant.report, 600) : "",
-    patients
+    timeWindows: normalizeGeneratedTimeWindows(input.timeWindows || sourceVariant.timeWindows)
   };
-  return {
-    id: safeId(`ki-${title}-${Date.now()}`),
-    category,
-    title,
-    type,
-    weight: 1,
-    keyword: title,
-    timeWindows: normalizeGeneratedTimeWindows(input.timeWindows || sourceVariant.timeWindows),
-    variants: [variant]
-  };
+  const requestedCount = Math.max(1, Math.min(6, Number(variationCount) || 1));
+  const variantsToUse = sourceVariants.slice(0, requestedCount);
+  while (variantsToUse.length < requestedCount) variantsToUse.push(sourceVariant);
+  const normalizedVariantPatients = variantsToUse.map((rawVariant) => normalizeGeneratedPatients(rawVariant.patients));
+  const anyNeedsClinicSelection = normalizedVariantPatients
+    .some((patients) => patients.some((patient) => (patient.requiredDepartmentKeys || []).some((key) => key !== "none")));
+  const timestamp = Date.now();
+  return variantsToUse.map((rawVariant, index) => {
+    const patients = normalizedVariantPatients[index];
+    const effectiveDestinationMode = anyNeedsClinicSelection
+      ? "none"
+      : destinationMode === "poi" && !destinationPoiCategories.length
+        ? "none"
+        : destinationMode;
+    const variationTitle = requestedCount > 1 ? `${title} (Variation ${index + 1})` : title;
+    const variant = {
+      callerName: common.callerName,
+      callerText: common.callerText,
+      locationMode: common.locationMode,
+      poiCategories: common.poiCategories,
+      poiIds: common.poiIds,
+      destinationMode: effectiveDestinationMode,
+      destinationPoiProbability: effectiveDestinationMode === "poi" ? 1 : probabilityValue(sourceVariant.destinationPoiProbability),
+      destinationPoiCategories: common.destinationPoiCategories,
+      destinationPoiIds: common.destinationPoiIds,
+      requiredServices: allowedList(rawVariant.requiredServices || sourceVariant.requiredServices, ["FW", "POL"]),
+      report: patients.length > 1 ? "" : stringValue(rawVariant.report, 500),
+      situationReport: patients.length > 1 ? stringValue(rawVariant.situationReport || rawVariant.report, 600) : "",
+      patients
+    };
+    return {
+      id: safeId(`ki-${variationTitle}-${timestamp}-${index + 1}`),
+      category,
+      title: variationTitle,
+      type,
+      weight: 1,
+      keyword: variationTitle,
+      timeWindows: common.timeWindows,
+      variants: [variant]
+    };
+  });
+}
+
+function normalizeGeneratedIncident(input, fallbackTitle, mode = "emergency") {
+  return normalizeGeneratedIncidents(input, fallbackTitle, mode, 1)[0];
 }
 
 function normalizeGeneratedIncidentType(rawType, variant) {
@@ -778,6 +825,7 @@ function normalizeGeneratedPatients(value) {
     requiredDepartmentKeys: allowedList(patient?.requiredDepartmentKeys || patient?.requiredDepartmentKey, allowedDepartmentKeys(), ["internal"]),
     transportSignalProbability: probabilityValue(patient?.transportSignalProbability),
     conditionReport: stringValue(patient?.conditionReport, 400),
+    acuity: enumValue(patient?.acuity, ["planned-transport", "stable", "potential-critical", "critical", "reanimation"], "stable"),
     noTransportProbability: probabilityValue(patient?.noTransportProbability),
     noTransportText: stringValue(patient?.noTransportText, 220) || "Ambulante Versorgung ausreichend, kein Transport.",
     requiresDoctorAccompaniment: Boolean(patient?.requiresDoctorAccompaniment),
@@ -844,6 +892,12 @@ function probabilityValue(value, fallback = 0) {
   if (!Number.isFinite(number)) return fallback;
   const normalized = number > 1 ? number / 100 : number;
   return Math.max(0, Math.min(1, normalized));
+}
+
+function clampInteger(value, min, max, fallback) {
+  const number = Math.round(Number(value));
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(min, Math.min(max, number));
 }
 
 function allowedList(value, allowed, fallback = []) {

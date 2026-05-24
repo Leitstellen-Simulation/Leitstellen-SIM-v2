@@ -1072,7 +1072,14 @@ function renderPatientAssignments(incident) {
         : (patient.assignedVehicles || []).map(unitName).join(", ") || "noch unversorgt";
     const need = (patient.required || []).join(" + ") || "ambulant";
     const progress = Math.round(patientTreatmentProgress(patient, incident) * 100);
-    row.innerHTML = `<td>${escapeHtml(patient.label)}</td><td>${escapeHtml(units)}<div class="mini-progress"><b style="width:${progress}%"></b></div></td><td>${escapeHtml(need)}</td><td>${escapeHtml(patient.requiredDepartment)}</td>`;
+    const condition = typeof patientConditionPercent === "function"
+      ? Math.round(patientConditionPercent(patient, incident) * 100)
+      : null;
+    const reanimation = patient.acuity === "reanimation" && Number.isFinite(patient.reanimationSurvivalChance)
+      ? ` | Rea ${Math.round(patient.reanimationSurvivalChance * 100)}%`
+      : "";
+    const conditionText = condition === null ? "" : ` | Zustand ${condition}%${reanimation}`;
+    row.innerHTML = `<td>${escapeHtml(patient.label)}</td><td>${escapeHtml(units)}${escapeHtml(conditionText)}<div class="mini-progress"><b style="width:${progress}%"></b></div></td><td>${escapeHtml(need)}</td><td>${escapeHtml(patient.requiredDepartment)}</td>`;
     body.append(row);
   });
   table.append(body);

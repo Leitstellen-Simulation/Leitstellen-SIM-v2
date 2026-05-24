@@ -1144,5 +1144,697 @@
         ]
       }
     ]
+  },
+  {
+    "id": "ki-rd-1-herz-kreislauf---unklarer-brustschmerz-1779545696750",
+    "category": "Herz/Kreislauf",
+    "title": "RD 1 Herz/Kreislauf - unklarer Brustschmerz",
+    "type": "emergency",
+    "weight": 1,
+    "keyword": "RD 1 Herz/Kreislauf - unklarer Brustschmerz",
+    "timeWindows": [],
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Mein Mann hat starke Schmerzen in der Brust, er ist ganz blass und schwitzt. | Ich habe so ein Druckgefühl auf der Brust und mir ist übel. | Mein Vater klagt über brennende Schmerzen hinter dem Brustbein.",
+        "locationMode": "random",
+        "poiCategories": [],
+        "poiIds": [],
+        "destinationMode": "none",
+        "destinationPoiProbability": 0,
+        "destinationPoiCategories": [],
+        "destinationPoiIds": [],
+        "requiredServices": [],
+        "report": "Patient wach, ansprechbar, kaltschweißig. Retrosternale Schmerzen, EKG zeigt keine signifikanten Hebungen.",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 0.7,
+                "vehicles": [
+                  "RTW"
+                ]
+              },
+              {
+                "probability": 0.3,
+                "vehicles": [
+                  "RTW",
+                  "NEF"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "internal",
+              "cardiology"
+            ],
+            "transportSignalProbability": 0.1,
+            "conditionReport": "Patient kreislaufstabil, V. a. akutes Koronarsyndrom.",
+            "noTransportProbability": 0,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ki-rd-2-trauma---sportverletzung-v-a-patellaluxation-1779545800533",
+    "category": "Trauma",
+    "title": "RD 2 Trauma - Sportverletzung, V.a. Patellaluxation",
+    "type": "emergency",
+    "weight": 1,
+    "keyword": "RD 2 Trauma - Sportverletzung, V.a. Patellaluxation",
+    "timeWindows": [
+      {
+        "start": "8",
+        "end": "22"
+      }
+    ],
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Hilfe, hier im Sportzentrum hat sich jemand am Knie verletzt! Die Kniescheibe steht irgendwie komisch zur Seite, das sieht nicht gut aus. | Hallo, ich bin hier beim Basketballtraining und ein Spieler ist umgeknickt. Er hat starke Schmerzen im Knie und die Kniescheibe ist rausgesprungen.",
+        "locationMode": "poi",
+        "poiCategories": [
+          "sports-centre"
+        ],
+        "poiIds": [],
+        "destinationMode": "none",
+        "destinationPoiProbability": 0,
+        "destinationPoiCategories": [],
+        "destinationPoiIds": [],
+        "requiredServices": [],
+        "report": "Patellaluxation links, erfolgreich reponiert. Extremität ist warm, distal Pulse tastbar. Patient kreislaufstabil, Schmerzen nach Reposition deutlich gebessert.",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 0.6,
+                "vehicles": [
+                  "RTW"
+                ]
+              },
+              {
+                "probability": 0.4,
+                "vehicles": [
+                  "RTW",
+                  "NEF"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "trauma"
+            ],
+            "transportSignalProbability": 0.05,
+            "conditionReport": "Patient wach, orientiert, starke Schmerzen. Patella nach lateral luxiert, Knie geschwollen. Keine weiteren Verletzungen.",
+            "noTransportProbability": 0.15,
+            "noTransportText": "Ambulant reponiert, habituelle Patella-Lux",
+            "requiresDoctorAccompaniment": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ki-rd-2-trauma---verbr-hung-kleinkind-1779545934363",
+    "category": "Trauma",
+    "title": "RD 2 Trauma - Verbrühung Kleinkind",
+    "type": "emergency",
+    "weight": 1,
+    "keyword": "RD 2 Trauma - Verbrühung Kleinkind",
+    "timeWindows": [
+      {
+        "start": "8",
+        "end": "15"
+      }
+    ],
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Hier ist der Kindergarten Sonnenschein. Ein Kind hat sich mit heißem Tee verbrüht. Es ist bei Bewusstsein, aber es weint stark. Die Haut am Arm und Oberkörper ist rot und es bilden sich Blasen.| Ein Kleinkind hat sich verbrüht, bitte schnell kommen!",
+        "locationMode": "poi",
+        "poiCategories": [
+          "kindergarten"
+        ],
+        "poiIds": [],
+        "destinationMode": "none",
+        "destinationPoiProbability": 0,
+        "destinationPoiCategories": [],
+        "destinationPoiIds": [],
+        "requiredServices": [],
+        "report": "Kleinkind, ca. 3 Jahre, Verbrühung 12% KOF (Arme, oberer Rücken, Brust). Keine Beteiligung von Gesicht oder Genitalien. Kind weint, kreislaufstabil.",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 0.7,
+                "vehicles": [
+                  "RTW",
+                  "NEF"
+                ]
+              },
+              {
+                "probability": 0.3,
+                "vehicles": [
+                  "RTH"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "trauma",
+              "pediatrics",
+              "icu"
+            ],
+            "transportSignalProbability": 0.8,
+            "conditionReport": "Kind wach, schreit vor Schmerz. Verbrühung 2. Grades an Armen und Stamm, ca. 12% KOF. Vitalparameter stabil, aber Schmerzspitzen. Kühlung mit feuchten Kompressen begonnen.",
+            "noTransportProbability": 0,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": true,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ki-ktp---verschlechterter-allgemeinzustand-1779546008752",
+    "category": "Krankentransport",
+    "title": "KTP - Verschlechterter Allgemeinzustand",
+    "type": "transport",
+    "weight": 1,
+    "keyword": "KTP - Verschlechterter Allgemeinzustand",
+    "timeWindows": [],
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Meinem *Vorname* geht es heute gar nicht gut. Er ist so schlapp und liegt nur noch im Bett. Der Hausarzt war schon da und meint, er muss ins Krankenhaus zur Abklärung.|Hallo, ich brauche einen Krankentransport für meine Mutter. Sie fühlt sich sehr schlecht und wir sollen in die Klinik.",
+        "locationMode": "random",
+        "poiCategories": [],
+        "poiIds": [],
+        "destinationMode": "none",
+        "destinationPoiProbability": 0,
+        "destinationPoiCategories": [],
+        "destinationPoiIds": [],
+        "requiredServices": [],
+        "report": "Patient ist wach, ansprechbar und orientiert, wirkt aber stark geschwächt und blass. Keine akute Lebensgefahr, aber deutlich reduzierter Allgemeinzustand.",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 1,
+                "vehicles": [
+                  "KTW"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "internal"
+            ],
+            "transportSignalProbability": 0,
+            "conditionReport": "Patient kreislaufstabil, aber sehr matt. Keine Schmerzen oder Atemnot.",
+            "noTransportProbability": 0,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ki-rd-2-herz-kreislauf---brustschmerz-1779546065512",
+    "category": "Herz/Kreislauf",
+    "title": "RD 2 Herz/Kreislauf - Brustschmerz",
+    "type": "emergency",
+    "weight": 1,
+    "keyword": "RD 2 Herz/Kreislauf - Brustschmerz",
+    "timeWindows": [],
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Mein Mann hat starke Schmerzen in der Brust, er kann kaum atmen. Bitte schicken Sie schnell einen Krankenwagen! | Ich habe plötzlich einen stechenden Schmerz in der Brust. | Meine Frau, klagt über Brustschmerzen, die in den Rücken ausstrahlen.",
+        "locationMode": "random",
+        "poiCategories": [],
+        "poiIds": [],
+        "destinationMode": "none",
+        "destinationPoiProbability": 0,
+        "destinationPoiCategories": [],
+        "destinationPoiIds": [],
+        "requiredServices": [],
+        "report": "Patient wach, ansprechbar, atmet. Stechender Brustschmerz, Verdacht auf Intercostalneuralgie. Keine ACS-typischen EKG-Veränderungen.",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 0.6,
+                "vehicles": [
+                  "RTW"
+                ]
+              },
+              {
+                "probability": 0.4,
+                "vehicles": [
+                  "KTW"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "internal"
+            ],
+            "transportSignalProbability": 0,
+            "conditionReport": "Patient kreislaufstabil, Schmerzintensität 7/10. Atmung oberflächlich, SpO2 97%.",
+            "noTransportProbability": 0.2,
+            "noTransportText": "Nach Analgesie und Ausschluss kardialer Ursache keine Transportnotwendigkeit.",
+            "requiresDoctorAccompaniment": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ki-rd-2-herz-kreislauf---herzstolpern-1779546198759",
+    "category": "Herz/Kreislauf",
+    "title": "RD 2 Herz/Kreislauf - Herzstolpern",
+    "type": "emergency",
+    "weight": 1,
+    "keyword": "RD 2 Herz/Kreislauf - Herzstolpern",
+    "timeWindows": [],
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Hallo, ich habe seit heute Morgen so ein komisches Stolpern in der Brust. Nein, Schmerzen habe ich keine. Mir ist nur etwas flau.",
+        "locationMode": "random",
+        "poiCategories": [],
+        "poiIds": [],
+        "destinationMode": "none",
+        "destinationPoiProbability": 0,
+        "destinationPoiCategories": [],
+        "destinationPoiIds": [],
+        "requiredServices": [],
+        "report": "Patient wach, ansprechbar, orientiert. Kreislauf stabil. EKG zeigt vereinzelte Extrasystolen, kein STEMI. Keine Schmerzen, keine Dyspnoe.",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 0.7,
+                "vehicles": [
+                  "REF"
+                ]
+              },
+              {
+                "probability": 0.3,
+                "vehicles": [
+                  "RTW"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "internal",
+              "cardiology"
+            ],
+            "transportSignalProbability": 0,
+            "conditionReport": "Patient kreislaufstabil, beschreibt Palpitationen. EKG unauffällig bis auf einzelne VES.",
+            "noTransportProbability": 0.8,
+            "noTransportText": "Nach EKG-Kontrolle und Beruhigung keine Transportnotwendigkeit. Ambulante Kontrolle beim Hausarzt empfohlen.",
+            "requiresDoctorAccompaniment": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "rd-2-herz-kreislauf-herzstolpern-variation-2",
+    "category": "Herz/Kreislauf",
+    "title": "RD 2 Herz/Kreislauf - Herzstolpern (Variation 2)",
+    "type": "emergency",
+    "weight": 1,
+    "keyword": "RD 2 Herz/Kreislauf - Herzstolpern (Variation 2)",
+    "timeWindows": [],
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Hallo, ich habe seit heute Morgen so ein komisches Stolpern in der Brust. Nein, Schmerzen habe ich keine. Mir ist nur etwas flau.",
+        "locationMode": "random",
+        "poiCategories": [],
+        "poiIds": [],
+        "destinationMode": "none",
+        "destinationPoiProbability": 0,
+        "destinationPoiCategories": [],
+        "destinationPoiIds": [],
+        "requiredServices": [],
+        "report": "Patientin mit VT, instabil, im Schock, nach Kardioversion stabil.",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1779546351844",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 0.9,
+                "vehicles": [
+                  "RTW",
+                  "NEF"
+                ]
+              },
+              {
+                "probability": 0.1,
+                "vehicles": [
+                  "RTW"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "internal",
+              "cardiology",
+              "icu"
+            ],
+            "transportSignalProbability": 0.4,
+            "conditionReport": "",
+            "noTransportProbability": 0.05,
+            "noTransportText": "Bekannte HRST, verweigert nach Kardioversion",
+            "requiresDoctorAccompaniment": true,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ki-rd-1-herz-kreislauf---schmerzen-im-bein-variation-1--1779547005102-1",
+    "category": "Herz/Kreislauf",
+    "title": "RD 1 Herz/Kreislauf - Schmerzen im Bein (Variation 1)",
+    "type": "emergency",
+    "weight": 1,
+    "keyword": "RD 1 Herz/Kreislauf - Schmerzen im Bein (Variation 1)",
+    "timeWindows": [],
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Mein linkes Bein ist seit gestern dick und schmerzt. Ich kann kaum auftreten. | Ich habe plötzlich starke Schmerzen in der Wade bekommen und jetzt ist das ganze Bein geschwollen. | Mein Bein ist ganz heiß und rot, ich habe Angst, dass das eine Thrombose ist.",
+        "locationMode": "random",
+        "poiCategories": [],
+        "poiIds": [],
+        "destinationMode": "none",
+        "destinationPoiProbability": 0,
+        "destinationPoiCategories": [],
+        "destinationPoiIds": [],
+        "requiredServices": [],
+        "report": "Patient mit geschwollenem, überwärmtem linken Unterschenkel, Schmerzangabe 7/10, V. a. TVT. Transport in geeignete Klinik.",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 0.5,
+                "vehicles": [
+                  "RTW"
+                ]
+              },
+              {
+                "probability": 0.5,
+                "vehicles": [
+                  "KTW"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "internal"
+            ],
+            "transportSignalProbability": 0,
+            "conditionReport": "Patient wach, orientiert, kreislaufstabil, Umfangsvermehrung linke Wade, Schmerzen bei Palpation.",
+            "noTransportProbability": 0,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ki-rd-1-herz-kreislauf---schmerzen-im-bein-variation-2--1779547005102-2",
+    "category": "Herz/Kreislauf",
+    "title": "RD 1 Herz/Kreislauf - Schmerzen im Bein (Variation 2)",
+    "type": "emergency",
+    "weight": 1,
+    "keyword": "RD 1 Herz/Kreislauf - Schmerzen im Bein (Variation 2)",
+    "timeWindows": [],
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Mein linkes Bein ist seit gestern dick und schmerzt. Ich kann kaum auftreten. | Ich habe plötzlich starke Schmerzen in der Wade bekommen und jetzt ist das ganze Bein geschwollen. | Mein Bein ist ganz heiß und rot, ich habe Angst, dass das eine Thrombose ist.",
+        "locationMode": "random",
+        "poiCategories": [],
+        "poiIds": [],
+        "destinationMode": "none",
+        "destinationPoiProbability": 0,
+        "destinationPoiCategories": [],
+        "destinationPoiIds": [],
+        "requiredServices": [],
+        "report": "Patientin mit akuter Atemnot und Thoraxschmerz nach vorangegangenen Beinschmerzen, V. a. Lungenarterienembolie.",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 1,
+                "vehicles": [
+                  "NEF",
+                  "RTW"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "internal",
+              "cardiology",
+              "icu"
+            ],
+            "transportSignalProbability": 0.8,
+            "conditionReport": "Patientin tachypnoisch, Sauerstoffsättigung 88%, atemabhängige Thoraxschmerzen, kreislaufstabil.",
+            "noTransportProbability": 0,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": true,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ki-rd-1-herz-kreislauf---schmerzen-im-bein-variation-3--1779547005102-3",
+    "category": "Herz/Kreislauf",
+    "title": "RD 1 Herz/Kreislauf - Schmerzen im Bein (Variation 3)",
+    "type": "emergency",
+    "weight": 1,
+    "keyword": "RD 1 Herz/Kreislauf - Schmerzen im Bein (Variation 3)",
+    "timeWindows": [],
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Mein linkes Bein ist seit gestern dick und schmerzt. Ich kann kaum auftreten. | Ich habe plötzlich starke Schmerzen in der Wade bekommen und jetzt ist das ganze Bein geschwollen. | Mein Bein ist ganz heiß und rot, ich habe Angst, dass das eine Thrombose ist.",
+        "locationMode": "random",
+        "poiCategories": [],
+        "poiIds": [],
+        "destinationMode": "none",
+        "destinationPoiProbability": 0,
+        "destinationPoiCategories": [],
+        "destinationPoiIds": [],
+        "requiredServices": [],
+        "report": "Unklarer Beinschmerz ohne Schwellung oder Rötung, Patient wünscht Abklärung. Transport mit RTW.",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 0.8,
+                "vehicles": [
+                  "KTW"
+                ]
+              },
+              {
+                "probability": 0.1,
+                "vehicles": [
+                  "RTW"
+                ]
+              },
+              {
+                "probability": 0.1,
+                "vehicles": [
+                  "REF"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "trauma"
+            ],
+            "transportSignalProbability": 0,
+            "conditionReport": "Patient kreislaufstabil, kein Anhalt für TVT, Druckschmerz über der Wade, ggf. muskulär.",
+            "noTransportProbability": 0.35,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ki-rd-1-herz-kreislauf---kollaps-w-hrend-sitzung-variation-1--1779547275005-1",
+    "category": "Herz/Kreislauf",
+    "title": "RD 1 Herz/Kreislauf - Kollaps während Sitzung (Variation 1)",
+    "type": "emergency",
+    "weight": 1,
+    "keyword": "RD 1 Herz/Kreislauf - Kollaps während Sitzung (Variation 1)",
+    "timeWindows": [
+      {
+        "start": "8",
+        "end": "21"
+      }
+    ],
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Hilfe! Hier im Rathaus, während der Sitzung, ist jemand einfach umgekippt. Er atmet noch, ist aber nicht ansprechbar. Kommen Sie schnell! | Schnell, ein Mann ist zusammengebrochen! Er ist blass und reagiert kaum. Wir sind im großen Sitzungssaal.",
+        "locationMode": "poi",
+        "poiCategories": [
+          "townhall"
+        ],
+        "poiIds": [],
+        "destinationMode": "none",
+        "destinationPoiProbability": 0,
+        "destinationPoiCategories": [],
+        "destinationPoiIds": [],
+        "requiredServices": [],
+        "report": "Patient ist wach, ansprechbar, Kreislauf stabil. Synkope unklarer Genese, kein Trauma.",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 0.5,
+                "vehicles": [
+                  "RTW"
+                ]
+              },
+              {
+                "probability": 0.5,
+                "vehicles": [
+                  "REF"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "internal",
+              "cardiology"
+            ],
+            "transportSignalProbability": 0,
+            "conditionReport": "Patient wach, orientiert, Blutdruck 110/70, Herzfrequenz 88, keine Schmerzen. Kurze Bewusstlosigkeit beobachtet.",
+            "noTransportProbability": 0.35,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ki-rd-1-herz-kreislauf---kollaps-w-hrend-sitzung-variation-2--1779547275005-2",
+    "category": "Herz/Kreislauf",
+    "title": "RD 1 Herz/Kreislauf - Kollaps während Sitzung (Variation 2)",
+    "type": "emergency",
+    "weight": 1,
+    "keyword": "RD 1 Herz/Kreislauf - Kollaps während Sitzung (Variation 2)",
+    "timeWindows": [
+      {
+        "start": "8",
+        "end": "21"
+      }
+    ],
+    "variants": [
+      {
+        "callerName": "Anrufer",
+        "callerText": "Hilfe! Hier im Rathaus, während der Sitzung, ist jemand einfach umgekippt. Er atmet noch, ist aber nicht ansprechbar. Kommen Sie schnell! | Schnell, ein Mann ist zusammengebrochen! Er ist blass und reagiert kaum. Wir sind im großen Sitzungssaal.",
+        "locationMode": "poi",
+        "poiCategories": [
+          "townhall"
+        ],
+        "poiIds": [],
+        "destinationMode": "none",
+        "destinationPoiProbability": 0,
+        "destinationPoiCategories": [],
+        "destinationPoiIds": [],
+        "requiredServices": [],
+        "report": "Patient leblos, sofortige Reanimation durch Ersthelfer begonnen. Rhythmusanalyse: Kammerflimmern, Defibrillation erfolgt. ROSC.",
+        "situationReport": "",
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 1,
+                "vehicles": [
+                  "RTW",
+                  "NEF"
+                ]
+              }
+            ],
+            "requiredDepartmentKeys": [
+              "cardiology",
+              "icu"
+            ],
+            "transportSignalProbability": 1,
+            "conditionReport": "Patient intubiert, beatmet, ROSC nach 10 Minuten. Blutdruck 90/60 unter Katecholaminen, Puls 110. EKG: Vorderwandinfarkt.",
+            "noTransportProbability": 0,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": true,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
   }
 ]

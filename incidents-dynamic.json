@@ -1,0 +1,521 @@
+[
+  {
+    "schemaVersion": 2,
+    "id": "ki-rd-1-neuro-psych-zittern-fraglicher-krampfanfall-variation-1-1779636176972-1",
+    "category": "Neuro/Psych",
+    "title": "RD 1 Neuro/Psych - Zittern, fraglicher Krampfanfall (Variation 1)",
+    "keyword": "RD 1 Neuro/Psych - Zittern, fraglicher Krampfanfall (Variation 1)",
+    "type": "emergency",
+    "weight": 1,
+    "timeWindows": [
+      {
+        "start": "8",
+        "end": "18"
+      }
+    ],
+    "call": {
+      "callerName": "Anrufer",
+      "callerText": "Hilfe, mein Kollege zittert am ganzen Körper und ist kaum ansprechbar!|Meine Frau zuckt und verdreht die Augen, sie reagiert nicht!|Hier auf der Straße liegt jemand und krampft!",
+      "locationMode": "random",
+      "poiCategories": [
+        "public",
+        "mall",
+        "railway-station"
+      ],
+      "poiIds": [],
+      "destinationMode": "none",
+      "destinationPoiProbability": 0,
+      "destinationPoiCategories": [],
+      "destinationPoiIds": []
+    },
+    "variants": [
+      {
+        "id": "var-1-fnuhe",
+        "label": "Epi",
+        "weight": 0.35,
+        "report": "Patient nach Zeugenangaben generalisierter Krampfanfall, jetzt wach, orientiert, keine weiteren Krämpfe, stabile Vitalparameter.",
+        "situationReport": "",
+        "requiredServices": [],
+        "signal": false,
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 0.8,
+                "vehicles": [
+                  "RTW"
+                ]
+              },
+              {
+                "probability": 0.2,
+                "vehicles": [
+                  "RTW",
+                  "NEF"
+                ]
+              }
+            ],
+            "acuity": "stable",
+            "requiredDepartmentKeys": [
+              "neurology"
+            ],
+            "conditionReport": "Patient wach, orientiert, keine neurologischen Ausfälle, kein erneuter Krampfanfall, Transport in neurologische Klinik.",
+            "transportSignalProbability": 0,
+            "noTransportProbability": 0,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
+            "reanimationCase": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      },
+      {
+        "id": "var-2-1lbp0",
+        "label": "Dissoziativ",
+        "weight": 0.35,
+        "report": "Patient schüttelt unkontrolliert, wechselnde Bewegungsmuster, schließt Augen bei Ansprache, kein Zungenbiss, kein Einnässen, Verdacht auf dissoziativen Anfall.",
+        "situationReport": "",
+        "requiredServices": [],
+        "signal": false,
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 0.5,
+                "vehicles": [
+                  "RTW"
+                ]
+              },
+              {
+                "probability": 0.5,
+                "vehicles": [
+                  "RTW",
+                  "NEF"
+                ]
+              }
+            ],
+            "acuity": "stable",
+            "requiredDepartmentKeys": [
+              "neurology",
+              "psychiatry"
+            ],
+            "conditionReport": "Anhaltende dissoziative Bewegungen, Patient reagiert nicht adäquat, aber Vitalparameter stabil, Transport in Klinik mit Neurologie und Psychiatrie.",
+            "transportSignalProbability": 0,
+            "noTransportProbability": 0,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
+            "reanimationCase": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      },
+      {
+        "id": "var-3-7zype",
+        "label": "Hypeventilation",
+        "weight": 0.3,
+        "report": "Patient hyperventiliert, Pfötchenstellung beider Hände, periorales Kribbeln, kein generalisierter Krampf, Hyperventilationstetanie.",
+        "situationReport": "",
+        "requiredServices": [],
+        "signal": false,
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 0.5,
+                "vehicles": [
+                  "REF"
+                ]
+              },
+              {
+                "probability": 0.5,
+                "vehicles": [
+                  "RTW"
+                ]
+              }
+            ],
+            "acuity": "stable",
+            "requiredDepartmentKeys": [
+              "internal"
+            ],
+            "conditionReport": "Nach Beruhigung und Rückatmung deutliche Besserung, keine Krampfaktivität, Transport in internistische Notaufnahme zur Abklärung.",
+            "transportSignalProbability": 0,
+            "noTransportProbability": 0.5,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
+            "reanimationCase": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "schemaVersion": 2,
+    "id": "dyn-brustschmerz",
+    "category": "Herz/Kreislauf",
+    "title": "RD 1 Herz/Kreislauf - Brustschmerz",
+    "keyword": "RD 1 Herz/Kreislauf - Brustschmerz",
+    "type": "emergency",
+    "weight": 1,
+    "call": {
+      "callerName": "Anrufer",
+      "callerText": "Mein *Nachname* hat starke Schmerzen in der Brust. Es ist seit ein paar Minuten da und wir machen uns Sorgen.",
+      "locationMode": "random",
+      "poiCategories": [],
+      "poiIds": [],
+      "destinationMode": "none",
+      "destinationPoiProbability": 0,
+      "destinationPoiCategories": [],
+      "destinationPoiIds": []
+    },
+    "variants": [
+      {
+        "id": "brustschmerz-intercostal",
+        "label": "Intercostalneuralgie",
+        "weight": 0.35,
+        "report": "Wacher, kreislaufstabiler Patient mit atemabhängigen Thoraxschmerzen, kein Hinweis auf ACS. Ambulante Versorgung ausreichend.",
+        "situationReport": "",
+        "requiredServices": [],
+        "signal": false,
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 1,
+                "vehicles": [
+                  "REF"
+                ]
+              }
+            ],
+            "acuity": "stable",
+            "requiredDepartmentKeys": [
+              "none"
+            ],
+            "conditionReport": "atemabhängiger Thoraxschmerz, stabil",
+            "transportSignalProbability": 0,
+            "noTransportProbability": 1,
+            "noTransportText": "Muskuloskelettaler Thoraxschmerz, ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
+            "reanimationCase": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      },
+      {
+        "id": "brustschmerz-acs",
+        "label": "Akutes Koronarsyndrom",
+        "weight": 0.45,
+        "report": "Patient mit retrosternalem Druckgefühl und vegetativer Symptomatik, ACS wahrscheinlich. Benötige Krankenhaus-Zuweisung mit Fachrichtung: Kardiologie.",
+        "situationReport": "",
+        "requiredServices": [],
+        "signal": false,
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 1,
+                "vehicles": [
+                  "RTW"
+                ]
+              }
+            ],
+            "acuity": "potential-critical",
+            "requiredDepartmentKeys": [
+              "internal",
+              "cardiology"
+            ],
+            "conditionReport": "ACS-Verdacht, stabil, Monitoring erforderlich",
+            "transportSignalProbability": 0.35,
+            "noTransportProbability": 0,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
+            "reanimationCase": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      },
+      {
+        "id": "brustschmerz-stemi",
+        "label": "STEMI kritisch",
+        "weight": 0.2,
+        "report": "Kritischer Patient mit STEMI-Verdacht, instabiler Kreislauf. Benötige Krankenhaus-Zuweisung mit Fachrichtung: Kardiologie / Intensiv.",
+        "situationReport": "",
+        "requiredServices": [],
+        "signal": false,
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 1,
+                "vehicles": [
+                  "RTW",
+                  "NEF"
+                ]
+              }
+            ],
+            "acuity": "critical",
+            "requiredDepartmentKeys": [
+              "cardiology",
+              "icu"
+            ],
+            "conditionReport": "STEMI-Verdacht, kritisch, Notarzt erforderlich",
+            "transportSignalProbability": 0.85,
+            "noTransportProbability": 0,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": true,
+            "reanimationCase": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ],
+    "timeWindows": []
+  },
+  {
+    "schemaVersion": 2,
+    "id": "dyn-atemnot",
+    "category": "Atmung",
+    "title": "RD 1 Atmung - Atemnot",
+    "keyword": "RD 1 Atmung - Atemnot",
+    "type": "emergency",
+    "weight": 1,
+    "call": {
+      "callerName": "Anrufer",
+      "callerText": "Hier bekommt jemand schlecht Luft. Die Person sitzt aufrecht und wirkt sehr panisch.",
+      "locationMode": "random",
+      "poiCategories": [],
+      "poiIds": [],
+      "destinationMode": "none",
+      "destinationPoiProbability": 0,
+      "destinationPoiCategories": [],
+      "destinationPoiIds": []
+    },
+    "variants": [
+      {
+        "id": "atemnot-hyperventilation",
+        "label": "Hyperventilation",
+        "weight": 0.25,
+        "report": "Patient wach, hyperventiliert, Sättigung unauffällig. Ambulante Versorgung ausreichend.",
+        "situationReport": "",
+        "requiredServices": [],
+        "signal": false,
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 1,
+                "vehicles": [
+                  "REF"
+                ]
+              }
+            ],
+            "acuity": "stable",
+            "requiredDepartmentKeys": [
+              "none"
+            ],
+            "conditionReport": "Hyperventilation, stabil",
+            "transportSignalProbability": 0,
+            "noTransportProbability": 1,
+            "noTransportText": "Hyperventilation beruhigt, ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
+            "reanimationCase": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      },
+      {
+        "id": "atemnot-copd",
+        "label": "COPD Exazerbation",
+        "weight": 0.5,
+        "report": "Patient mit deutlicher Dyspnoe bei COPD-Exazerbation, unter Therapie gebessert. Benötige Krankenhaus-Zuweisung mit Fachrichtung: Innere.",
+        "situationReport": "",
+        "requiredServices": [],
+        "signal": false,
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 1,
+                "vehicles": [
+                  "RTW"
+                ]
+              }
+            ],
+            "acuity": "potential-critical",
+            "requiredDepartmentKeys": [
+              "internal"
+            ],
+            "conditionReport": "COPD-Exazerbation, transportstabil",
+            "transportSignalProbability": 0.25,
+            "noTransportProbability": 0.05,
+            "noTransportText": "Nach Inhalation deutlich gebessert, ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
+            "reanimationCase": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      },
+      {
+        "id": "atemnot-lungenoedem",
+        "label": "Lungenödem",
+        "weight": 0.25,
+        "report": "Kritischer Patient mit schwerer Dyspnoe und Verdacht auf kardiales Lungenödem. Benötige Krankenhaus-Zuweisung mit Fachrichtung: Innere / Intensiv.",
+        "situationReport": "",
+        "requiredServices": [],
+        "signal": false,
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 1,
+                "vehicles": [
+                  "RTW",
+                  "NEF"
+                ]
+              }
+            ],
+            "acuity": "critical",
+            "requiredDepartmentKeys": [
+              "internal",
+              "icu"
+            ],
+            "conditionReport": "schwere Dyspnoe, kritisch, Notarzt erforderlich",
+            "transportSignalProbability": 0.75,
+            "noTransportProbability": 0,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": true,
+            "reanimationCase": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ],
+    "timeWindows": []
+  },
+  {
+    "schemaVersion": 2,
+    "id": "dyn-ktp-dialyse",
+    "category": "Krankentransport",
+    "title": "KTP - Dialysefahrt",
+    "keyword": "KTP - Dialysefahrt",
+    "type": "transport",
+    "weight": 1,
+    "timeWindows": [
+      {
+        "start": "6",
+        "end": "22"
+      }
+    ],
+    "call": {
+      "callerName": "Anrufer",
+      "callerText": "Wir brauchen einen Krankentransport zur Dialyse. Die Patientin ist *Nachname* und muss zum Dialysezentrum.",
+      "locationMode": "random",
+      "poiCategories": [],
+      "poiIds": [],
+      "destinationMode": "poi",
+      "destinationPoiProbability": 1,
+      "destinationPoiCategories": [
+        "dialysis"
+      ],
+      "destinationPoiIds": []
+    },
+    "variants": [
+      {
+        "id": "dialyse-stabil",
+        "label": "stabiler KTW-Transport",
+        "weight": 0.8,
+        "report": "Dialysepatientin stabil, sitzender Krankentransport ausreichend.",
+        "situationReport": "",
+        "requiredServices": [],
+        "signal": false,
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 1,
+                "vehicles": [
+                  "KTW"
+                ]
+              }
+            ],
+            "acuity": "planned-transport",
+            "requiredDepartmentKeys": [
+              "none"
+            ],
+            "conditionReport": "stabiler Dialysetransport",
+            "transportSignalProbability": 0,
+            "noTransportProbability": 0,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
+            "reanimationCase": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      },
+      {
+        "id": "dialyse-geschwaecht",
+        "label": "geschwächt nach Dialyse",
+        "weight": 0.2,
+        "report": "Patientin deutlich geschwächt, kreislaufstabil, liegender Transport erforderlich.",
+        "situationReport": "",
+        "requiredServices": [],
+        "signal": false,
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 1,
+                "vehicles": [
+                  "KTW"
+                ]
+              }
+            ],
+            "acuity": "planned-transport",
+            "requiredDepartmentKeys": [
+              "none"
+            ],
+            "conditionReport": "geschwächt, liegend zu transportieren",
+            "transportSignalProbability": 0,
+            "noTransportProbability": 0,
+            "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
+            "requiresDoctorAccompaniment": false,
+            "reanimationCase": false,
+            "needsFW": false,
+            "needsPOL": false
+          }
+        ]
+      }
+    ]
+  }
+]

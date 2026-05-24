@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="de">
   <head>
     <meta charset="utf-8">
@@ -6,66 +6,137 @@
     <title>Einsatzeditor</title>
     <link rel="stylesheet" href="styles.css">
   </head>
-  <body class="standalone-editor">
-    <main class="editor-shell incident-editor-shell">
-      <aside class="editor-sidebar panel">
-        <div class="panel-title">
-          <h2>Einsatzeditor</h2>
-          <a href="index.html">Leitstelle</a>
-        </div>
-        <div class="editor-standalone-form">
-          <label>Kategorie
-            <select id="ie-category">
-              <option>Herz/Kreislauf</option>
-              <option>Atmung</option>
-              <option>Trauma</option>
-              <option>Neuro/Psych</option>
-              <option>Sonstiges</option>
-              <option>Krankentransport</option>
-            </select>
-          </label>
-          <label>Einsatzname <input id="ie-title" placeholder="z.B. ACS"></label>
-          <label>Typ
-            <select id="ie-type">
-              <option value="emergency">Notfall</option>
-              <option value="transport">Transport</option>
-              <option value="scheduled">Planbar</option>
-            </select>
-          </label>
-          <label>Wahrscheinlichkeitsfaktor <input id="ie-weight" type="number" min="0" step="0.1" value="1" placeholder="z.B. 1.0 oder 1,0"><small class="inline-hint">Faktor, kein Prozentwert: 1 = Standard, 2 = doppelt so häufig, 0.5/0,5 = halb so häufig.</small></label>
-          <label>Zeitfenster <input id="ie-time-windows" placeholder="z.B. 8-18; 19:30-23"></label>
-          <label>Notruftext <textarea id="ie-caller-text" rows="4" placeholder="Mehrere Texte mit | trennen, Namen mit *Vorname*, *Nachname* oder *Name*"></textarea><small class="inline-hint">*Nachname* erzeugt automatisch Frau/Herr + Nachname.</small></label>
-          <label>Rückmeldung / Lagemeldung <textarea id="ie-report" rows="3"></textarea></label>
-          <label>Einsatzort-Modus
-            <select id="ie-location-mode">
-              <option value="random">zufällig im Einsatzgebiet</option>
-              <option value="hospital">Krankenhaus</option>
-              <option value="poi">POI</option>
-            </select>
-          </label>
-          <div class="multi-select-box">
-            <strong>POI-Kategorien</strong>
-            <input id="ie-poi-category-search" placeholder="Kategorie suchen">
-            <div class="multi-select-actions">
-              <button id="ie-poi-select-visible" type="button">Sichtbare auswählen</button>
-              <button id="ie-poi-clear" type="button">Auswahl löschen</button>
-            </div>
-            <div id="ie-poi-selected" class="selected-chip-list"></div>
-            <div id="ie-poi-categories" class="check-grid poi-category-grid"></div>
-            <small id="ie-poi-category-count" class="inline-hint"></small>
+  <body class="standalone-editor dynamic-incident-editor">
+    <main class="dynamic-editor-shell">
+      <aside class="dynamic-panel dynamic-list-panel">
+        <header class="dynamic-panel-head">
+          <div>
+            <span class="eyebrow">Katalog</span>
+            <h1>Einsatzeditor</h1>
           </div>
-          <label>Konkrete POI-IDs <input id="ie-poi-ids" placeholder="z.B. hospital-kh-st-hedwig"></label>
-          <section class="unit-editor">
-            <h3>Transportziel</h3>
-            <label>Zielmodus
-              <select id="ie-destination-mode">
-                <option value="none">Krankenhaus / normale Zielauswahl</option>
-                <option value="poi">POI-Ziel</option>
-                <option value="home">Heimfahrt / Wohnadresse</option>
-              </select>
+          <a class="quiet-link" href="index.html">Leitstelle</a>
+        </header>
+        <section class="dynamic-ai-sidebar">
+          <div class="section-title">
+            <h3>KI-Generator</h3>
+          </div>
+          <label>Modus
+            <select id="ie-ai-mode">
+              <option value="emergency">Notfalleinsatz</option>
+              <option value="transport">Krankentransport</option>
+            </select>
+          </label>
+          <div class="form-grid two">
+            <label>Variationen <input id="ie-ai-variations" type="number" min="1" max="6" step="1" value="1"></label>
+            <button id="ie-ai-generate" class="primary-action" type="button">Mit KI erzeugen</button>
+          </div>
+          <label>Beschreibung <textarea id="ie-ai-prompt" rows="3" placeholder="z.B. Brustschmerz, mehrere realistische Ausgänge"></textarea></label>
+          <small id="ie-ai-status" class="inline-hint ai-status">Benötigt einen OpenRouter API-Key auf dem Server.</small>
+        </section>
+        <div class="dynamic-toolbar">
+          <input id="ie-search" placeholder="Einsatz suchen">
+          <button id="ie-new" class="primary-action" type="button">Neu</button>
+        </div>
+        <div class="dynamic-filter-row">
+          <select id="ie-type-filter">
+            <option value="">Alle Typen</option>
+            <option value="emergency">Notfall</option>
+            <option value="transport">Transport</option>
+            <option value="scheduled">Planbar</option>
+          </select>
+          <span id="ie-count">0 Einsätze</span>
+        </div>
+        <div id="ie-list" class="dynamic-incident-list"></div>
+      </aside>
+
+      <section class="dynamic-panel dynamic-main-panel">
+        <header class="dynamic-panel-head">
+          <div>
+            <span class="eyebrow">Schema V2</span>
+            <h2 id="ie-editor-title">Neuer Einsatz</h2>
+          </div>
+          <div class="dynamic-actions">
+            <button id="ie-duplicate" type="button">Duplizieren</button>
+            <button id="ie-save" class="primary-action" type="button">Speichern</button>
+          </div>
+        </header>
+
+        <div class="dynamic-scroll">
+          <section class="dynamic-section">
+            <div class="section-title">
+              <h3>Grunddaten</h3>
+            </div>
+            <div class="form-grid three">
+              <label>Einsatzname <input id="ie-title" placeholder="z.B. RD 1 Herz/Kreislauf - Brustschmerz"></label>
+              <label>Kategorie
+                <select id="ie-category">
+                  <option>Herz/Kreislauf</option>
+                  <option>Atmung</option>
+                  <option>Trauma</option>
+                  <option>Neuro/Psych</option>
+                  <option>Sonstiges</option>
+                  <option>Krankentransport</option>
+                </select>
+              </label>
+              <label>Typ
+                <select id="ie-type">
+                  <option value="emergency">Notfall</option>
+                  <option value="transport">Transport</option>
+                  <option value="scheduled">Planbar</option>
+                </select>
+              </label>
+              <label>Wahrscheinlichkeitsfaktor <input id="ie-weight" type="number" min="0" step="0.1" value="1" placeholder="1.0"></label>
+              <label>Zeitfenster <input id="ie-time-windows" placeholder="z.B. 8-18; 19:30-23"></label>
+              <label>ID <input id="ie-id" placeholder="automatisch"></label>
+            </div>
+          </section>
+
+          <section class="dynamic-section">
+            <div class="section-title">
+              <h3>Anruf und Einsatzort</h3>
+            </div>
+            <div class="form-grid two">
+              <label>Anrufer <input id="ie-caller-name" placeholder="Anrufer"></label>
+              <label>Einsatzort-Modus
+                <select id="ie-location-mode">
+                  <option value="random">zufällig im Einsatzgebiet</option>
+                  <option value="hospital">Krankenhaus</option>
+                  <option value="poi">POI</option>
+                </select>
+              </label>
+            </div>
+            <label>Notruftext
+              <textarea id="ie-caller-text" rows="4" placeholder="Mehrere Texte mit | trennen, Namen mit *Vorname*, *Nachname* oder *Name*"></textarea>
             </label>
-            <label id="ie-destination-poi-probability-row">POI-Ziel-Wahrscheinlichkeit <input id="ie-destination-poi-probability" type="text" inputmode="decimal" value="0" placeholder="z.B. 50% oder 50"><small class="inline-hint">Absolute Prozentzahl: 50% oder 50. Bei Zielmodus POI-Ziel wird immer ein POI genutzt.</small></label>
-            <div class="multi-select-box">
+            <div class="multi-select-box compact">
+              <strong>POI-Kategorien Einsatzort</strong>
+              <input id="ie-poi-category-search" placeholder="Kategorie suchen">
+              <div class="multi-select-actions">
+                <button id="ie-poi-select-visible" type="button">Sichtbare auswählen</button>
+                <button id="ie-poi-clear" type="button">Auswahl löschen</button>
+              </div>
+              <div id="ie-poi-selected" class="selected-chip-list"></div>
+              <div id="ie-poi-categories" class="check-grid poi-category-grid"></div>
+              <small id="ie-poi-category-count" class="inline-hint"></small>
+            </div>
+            <label>Konkrete POI-IDs <input id="ie-poi-ids" placeholder="optional, durch Komma getrennt"></label>
+          </section>
+
+          <section class="dynamic-section">
+            <div class="section-title">
+              <h3>Direktes Transportziel</h3>
+            </div>
+            <div class="form-grid two">
+              <label>Zielmodus
+                <select id="ie-destination-mode">
+                  <option value="none">Krankenhaus / normale Zielauswahl</option>
+                  <option value="poi">POI-Ziel</option>
+                  <option value="home">Heimfahrt / Wohnadresse</option>
+                </select>
+              </label>
+              <label id="ie-destination-poi-probability-row">POI-Ziel-Wahrscheinlichkeit <input id="ie-destination-poi-probability" type="text" inputmode="decimal" value="0" placeholder="50% oder 50"></label>
+            </div>
+            <div class="multi-select-box compact">
               <strong>Ziel-POI-Kategorien</strong>
               <input id="ie-destination-poi-category-search" placeholder="Kategorie suchen">
               <div class="multi-select-actions">
@@ -76,60 +147,81 @@
               <div id="ie-destination-poi-categories" class="check-grid poi-category-grid"></div>
               <small id="ie-destination-poi-category-count" class="inline-hint"></small>
             </div>
-            <label>Konkrete Ziel-POI-IDs <input id="ie-destination-poi-ids" placeholder="optional"></label>
+            <label>Konkrete Ziel-POI-IDs <input id="ie-destination-poi-ids" placeholder="optional, durch Komma getrennt"></label>
           </section>
-          <label class="check-row"><input id="ie-fw" type="checkbox"> FW vor Transport erforderlich</label>
-          <label class="check-row"><input id="ie-pol" type="checkbox"> POL vor Transport erforderlich</label>
-          <section class="unit-editor">
-            <h3>Patient</h3>
-            <label>Fahrzeugoptionen <input id="ie-patient-options" placeholder="z.B. 0.75:RTW+NEF;0,25:RTW"><small class="inline-hint">Dezimalwahrscheinlichkeiten pro Option, Summe ca. 1. Punkt oder Komma geht.</small></label>
-            <div>
-              <strong>Fachrichtungen</strong>
-              <div id="ie-departments" class="check-grid"></div>
-            </div>
-            <label>SoSi-Transport-Wahrscheinlichkeit <input id="ie-patient-signal" type="text" inputmode="decimal" value="0" placeholder="z.B. 50% oder 50"><small class="inline-hint">Absolute Prozentzahl: 0 bis 100, z.B. 50% oder 50.</small></label>
-            <label>Einzelrückmeldung / Patientenzustand <textarea id="ie-patient-condition-report" rows="2" placeholder="z.B. kritisch, Rauchgasexposition, Ziel: Innere"></textarea></label>
-            <label>Ambulant-Wahrscheinlichkeit <input id="ie-patient-no-transport" type="text" inputmode="decimal" value="0" placeholder="z.B. 20% oder 20"><small class="inline-hint">Absolute Prozentzahl: 0 bis 100, z.B. 20% oder 20.</small></label>
-            <label>Freimeldungstext ambulant <input id="ie-patient-no-transport-text" placeholder="Ambulante Versorgung ausreichend, kein Transport."></label>
-            <label class="check-row"><input id="ie-patient-doctor-required" type="checkbox"> Zwingende Notarztbegleitung</label>
-            <label class="check-row"><input id="ie-patient-fw" type="checkbox"> Patient braucht FW</label>
-            <label class="check-row"><input id="ie-patient-pol" type="checkbox"> Patient braucht POL</label>
-            <button id="ie-add-patient" type="button">Patient hinzufügen</button>
-            <div id="ie-patient-list" class="unit-list"></div>
-          </section>
-          <div class="editor-actions">
-            <button id="ie-new" type="button">Neu</button>
-            <button id="ie-save" class="primary-action" type="button">Speichern</button>
-          </div>
         </div>
-      </aside>
-      <section class="editor-map-panel panel">
-        <div class="panel-title">
-          <h2>Einsätze</h2>
-          <span id="ie-count">0</span>
-        </div>
-        <div id="ie-list" class="incident-list"></div>
       </section>
-      <aside class="editor-list-sidebar panel ai-generator-sidebar">
-        <div class="panel-title">
-          <h2>KI-Generator</h2>
+
+      <aside class="dynamic-panel dynamic-variant-panel">
+        <header class="dynamic-panel-head">
+          <div>
+            <span class="eyebrow">Varianten</span>
+            <h2>Lage und Patientenzustand</h2>
+          </div>
+          <button id="ie-add-variant" class="primary-action" type="button">Variante</button>
+        </header>
+        <div class="variant-layout">
+          <div id="ie-variant-list" class="variant-list"></div>
+          <section class="variant-editor">
+            <div class="section-title">
+              <h3 id="ie-current-variant-title">Keine Variante</h3>
+              <button id="ie-remove-variant" type="button">Entfernen</button>
+            </div>
+            <div class="form-grid two">
+              <label>Variantenname <input id="ie-variant-label" placeholder="z.B. ACS"></label>
+              <label>Gewichtung <input id="ie-variant-weight" type="number" min="0" step="0.05" value="1"></label>
+            </div>
+            <label>Rückmeldung <textarea id="ie-variant-report" rows="3"></textarea></label>
+            <label>Lagemeldung bei mehreren Patienten <textarea id="ie-variant-situation-report" rows="2"></textarea></label>
+            <div class="toggle-row">
+              <label><input id="ie-variant-fw" type="checkbox"> FW erforderlich</label>
+              <label><input id="ie-variant-pol" type="checkbox"> POL erforderlich</label>
+              <label><input id="ie-variant-signal" type="checkbox"> Anfahrt mit SoSi</label>
+            </div>
+
+            <div class="subhead">
+              <h3>Patienten</h3>
+              <button id="ie-add-patient" type="button">Patient</button>
+            </div>
+            <div id="ie-patient-list" class="patient-list"></div>
+
+            <div class="patient-editor">
+              <div class="form-grid two">
+                <label>Patient <input id="ie-patient-label" placeholder="Pat 1"></label>
+                <label>Fahrzeugoptionen <input id="ie-patient-options" placeholder="1:RTW+NEF;0.3:REF"></label>
+              </div>
+              <label>Patientenzustand
+                <select id="ie-patient-acuity">
+                  <option value="planned-transport">planbarer Krankentransport</option>
+                  <option value="stable">stabil</option>
+                  <option value="potential-critical">potentiell kritisch</option>
+                  <option value="critical">kritisch</option>
+                  <option value="reanimation">Reanimation</option>
+                </select>
+              </label>
+              <label>Zustand / Einzelrückmeldung <textarea id="ie-patient-condition-report" rows="2"></textarea></label>
+              <div class="department-box">
+                <strong>Fachrichtungen</strong>
+                <div id="ie-departments" class="check-grid department-grid"></div>
+              </div>
+              <div class="form-grid two">
+                <label>SoSi-Transport % <input id="ie-patient-signal" type="text" inputmode="decimal" placeholder="50% oder 50"></label>
+                <label>Ambulant % <input id="ie-patient-no-transport" type="text" inputmode="decimal" placeholder="20% oder 20"></label>
+              </div>
+              <label>Freimeldungstext ambulant <input id="ie-patient-no-transport-text" placeholder="Ambulante Versorgung ausreichend, kein Transport."></label>
+              <div class="toggle-row">
+                <label><input id="ie-patient-doctor-required" type="checkbox"> NA zwingend</label>
+                <label><input id="ie-patient-reanimation-case" type="checkbox"> Reanimationseinsatz</label>
+                <label><input id="ie-patient-fw" type="checkbox"> FW</label>
+                <label><input id="ie-patient-pol" type="checkbox"> POL</label>
+              </div>
+              <div class="patient-actions">
+                <button id="ie-save-patient" class="primary-action" type="button">Patient speichern</button>
+                <button id="ie-remove-patient" type="button">Patient entfernen</button>
+              </div>
+            </div>
+          </section>
         </div>
-        <section class="ai-incident-generator">
-          <h3>Notfalleinsatz</h3>
-          <label>Beschreibung
-            <textarea id="ie-ai-emergency-prompt" rows="5" placeholder="z.B. Brustschmerz, RTW, eventuell NEF, Ziel Kardiologie"></textarea>
-          </label>
-          <button id="ie-ai-emergency-generate" class="primary-action" type="button">Notfall generieren</button>
-          <small id="ie-ai-emergency-status" class="inline-hint">Notfall-Logik: Klinikziel erst nach Rückmeldung.</small>
-        </section>
-        <section class="ai-incident-generator">
-          <h3>Krankentransport</h3>
-          <label>Beschreibung
-            <textarea id="ie-ai-transport-prompt" rows="5" placeholder="z.B. Heimfahrt aus Krankenhaus nach Wohnadresse, KTW, kein Sondersignal"></textarea>
-          </label>
-          <button id="ie-ai-transport-generate" class="primary-action" type="button">KTP generieren</button>
-          <small id="ie-ai-transport-status" class="inline-hint">KTP-Logik: Direktziel für Heimfahrt/POI, Fachrichtung per Zielauswahl.</small>
-        </section>
       </aside>
     </main>
     <script src="departments.js"></script>
@@ -137,4 +229,3 @@
     <script src="incident-editor.js"></script>
   </body>
 </html>
-

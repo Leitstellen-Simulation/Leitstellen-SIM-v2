@@ -759,6 +759,126 @@ function refCanFirstRespond(patient) {
   return required.some((type) => ["RTW", "KTW", "NEF", "RTH"].includes(type));
 }
 
+const patientAcuityRules = {
+  "planned-transport": { label: "planbarer Krankentransport", start: [1, 1], decline: 0 },
+  stable: { label: "stabil", start: [0.6, 1], decline: 0.005 },
+  "potential-critical": { label: "potentiell kritisch", start: [0.3, 0.6], decline: 0.0075 },
+  critical: { label: "kritisch", start: [0.1, 0.3], decline: 0.0075 },
+  reanimation: { label: "Reanimation", start: [0, 0], decline: 0 }
+};
+
+function updateDynamicPatientStates() {
+  (state.incidents || []).forEach((incident) => {
+    if (incident.status === "geschlossen") return;
+    (incident.patient?.patients || []).forEach((patient) => {
+      const condition = patientConditionPercent(patient, incident);
+      if (patient.completed || patient.transporting) return;
+      if (patient.acuity === "reanimation") updateReanimationState(patient, incident);
+      if (patientRequiresOnlyRef(patient) && condition < 0.6) escalateRefPatientToRtw(patient, incident);
+    });
+  });
+}
+
+function normalizeAcuityKey(value) {
+  const key = String(value || "stable").toLowerCase();
+  return patientAcuityRules[key] ? key : "stable";
+}
+
+function initializePatientCondition(patient, incident) {
+  if (patient.conditionInitialized) return;
+  const key = normalizeAcuityKey(patient.acuity || (incident?.type === "scheduled" ? "planned-transport" : "stable"));
+  const rule = patientAcuityRules[key];
+  patient.acuity = key;
+  patient.conditionStartedAt = incident?.createdAtMinute ?? state.minute;
+  patient.conditionStartPercent = Number.isFinite(patient.conditionStartPercent)
+    ? patient.conditionStartPercent
+    : randomRange(rule.start[0], rule.start[1]);
+  patient.deteriorationPerMinute = Number.isFinite(patient.deteriorationPerMinute)
+    ? patient.deteriorationPerMinute
+    : rule.decline;
+  if (key === "reanimation") {
+    patient.conditionStartPercent = 0;
+    patient.reanimationSurvivalStart = Number.isFinite(patient.reanimationSurvivalStart)
+      ? patient.reanimationSurvivalStart
+      : randomRange(0.5, 1);
+    patient.reanimationStartedAt = incident?.createdAtMinute ?? state.minute;
+    if (!(patient.required || []).some(isDoctorRequirement)) patient.required = [...(patient.required || []), "NEF"];
+  }
+  patient.conditionInitialized = true;
+}
+
+function patientConditionPercent(patient, incident) {
+  if (!patient) return 1;
+  initializePatientCondition(patient, incident);
+  if (patient.completed || patient.transporting) return patient.conditionCurrentPercent ?? 1;
+  if (patient.acuity === "planned-transport") return 1;
+  if (patient.acuity === "reanimation") return 0;
+  const elapsed = Math.max(0, state.minute - (patient.conditionStartedAt ?? incident?.createdAtMinute ?? state.minute));
+  const rate = dynamicDeteriorationRate(patient, incident);
+  const value = Math.max(0, (patient.conditionStartPercent ?? 1) - (elapsed * rate));
+  patient.conditionCurrentPercent = value;
+  if (value <= 0) startReanimationFromDeterioration(patient, incident);
+  return patient.conditionCurrentPercent ?? value;
+}
+
+function dynamicDeteriorationRate(patient, incident) {
+  const base = Number(patient.deteriorationPerMinute) || 0;
+  if (!base) return 0;
+  const assigned = (patient.assignedVehicles || [])
+    .map((id) => state.vehicles.find((vehicle) => vehicle.id === id))
+    .filter((vehicle) => vehicle?.status === 4);
+  if (!assigned.length) return base;
+  const hasRtw = assigned.some((vehicle) => vehicle.type === "RTW");
+  const needsDoctor = (patientMissingTypes(patient) || []).some(isDoctorRequirement);
+  if (hasRtw && needsDoctor) return base * 0.25;
+  return base * 0.5;
+}
+
+function startReanimationFromDeterioration(patient, incident) {
+  if (patient.acuity === "reanimation" || patient.deceased) return;
+  patient.acuity = "reanimation";
+  patient.conditionCurrentPercent = 0;
+  patient.reanimationStartedAt = state.minute;
+  patient.reanimationSurvivalStart = randomRange(0.5, 1);
+  if (!(patient.required || []).some(isDoctorRequirement)) patient.required = [...(patient.required || []), "NEF"];
+  incident.required = aggregateRequiredVehicles(incident.patient?.patients || [], incident.required);
+  incident.patient.situationReport = "Reanimation eingetreten. Benötige RTW und Notarzt.";
+}
+
+function updateReanimationState(patient, incident) {
+  if (patient.completed || patient.transporting || patient.deceased) return;
+  initializePatientCondition(patient, incident);
+  const elapsed = Math.max(0, state.minute - (patient.reanimationStartedAt ?? state.minute));
+  const survival = Math.max(0, (patient.reanimationSurvivalStart ?? 0.75) - elapsed * 0.1);
+  patient.reanimationSurvivalChance = survival;
+  if (survival > 0) return;
+  if (patientMissingTypes(patient).length === 0) return;
+  patient.deceased = true;
+  patient.completed = true;
+  patient.completedAtMinute = state.minute;
+  patient.outcome = "Reanimation ohne rechtzeitig passendes Rettungsmittel erfolglos, Patient verstorben.";
+  incident.patient.outcome = patient.outcome;
+  closeIncidentIfAllPatientsDone(incident);
+}
+
+function escalateRefPatientToRtw(patient, incident) {
+  patient.required = ["RTW"];
+  patient.transportNeeded = true;
+  patient.noTransportProbability = 0;
+  patient.conditionReport ||= "Zustandsverschlechterung, REF nicht mehr ausreichend.";
+  incident.required = aggregateRequiredVehicles(incident.patient?.patients || [], incident.required);
+}
+
+function effectiveNoTransportProbability(patient) {
+  if (!patient) return 0;
+  if (patientRequiresOnlyRef(patient)) return patientConditionPercent(patient, incidentForPatient(patient)) < 0.6 ? 0 : 1;
+  const base = Number(patient.noTransportProbability) || 0;
+  if (patient.acuity === "potential-critical") return base * 0.5;
+  if (patient.acuity === "critical") return base * 0.05;
+  if (patient.acuity === "reanimation") return 0;
+  return base;
+}
+
 function patientRequiresOnlyRef(patient) {
   const required = patient?.required || [];
   return required.length > 0 && required.every((type) => type === "REF");
@@ -781,7 +901,7 @@ function patientAmbulatorySelected(patient) {
   }
   if (patient.ambulatoryDecisionMade) return Boolean(patient.ambulatorySelected);
   patient.ambulatoryDecisionMade = true;
-  patient.ambulatorySelected = Math.random() < (Number(patient.noTransportProbability) || 0);
+  patient.ambulatorySelected = Math.random() < effectiveNoTransportProbability(patient);
   if (patient.ambulatorySelected) patient.transportNeeded = false;
   return patient.ambulatorySelected;
 }
@@ -1241,6 +1361,9 @@ function ktwForHandoverAtScene(patient) {
 }
 
 function patientReport(incident, assignedPatient = null) {
+  if (assignedPatient?.acuity === "reanimation" && !assignedPatient.reanimationCase) {
+    return "Reanimation, laufende Wiederbelebungsmaßnahmen. Benötige RTW und Notarzt.";
+  }
   if (assignedPatient?.conditionReport) return assignedPatient.conditionReport;
   if (assignedPatient?.report) return assignedPatient.report;
   const patient = incident.patient;
