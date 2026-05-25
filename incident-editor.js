@@ -1,6 +1,7 @@
 const state = {
   incidents: [],
   current: null,
+  dirty: false,
   selectedVariantId: null,
   selectedPatientId: null,
   selectedPoiCategories: new Set(),
@@ -8,7 +9,7 @@ const state = {
 };
 
 const el = Object.fromEntries([
-  "search", "type-filter", "count", "list", "new", "save", "duplicate", "editor-title",
+  "search", "type-filter", "count", "list", "new", "save", "duplicate", "delete", "editor-title",
   "id", "title", "category", "type", "weight", "time-windows",
   "caller-name", "caller-text", "location-mode", "poi-category-search", "poi-categories", "poi-selected",
   "poi-select-visible", "poi-clear", "poi-category-count", "poi-ids",
@@ -17,7 +18,7 @@ const el = Object.fromEntries([
   "destination-poi-select-visible", "destination-poi-clear", "destination-poi-category-count", "destination-poi-ids",
   "ai-mode", "ai-variations", "ai-prompt", "ai-generate", "ai-status",
   "add-variant", "variant-list", "current-variant-title", "remove-variant",
-  "variant-label", "variant-weight", "variant-report", "variant-situation-report", "variant-fw", "variant-pol", "variant-signal",
+  "variant-label", "variant-weight", "variant-report", "variant-situation-report", "variant-fw", "variant-pol", "variant-signal", "variant-no-elrd",
   "add-patient", "patient-list", "patient-label", "patient-options", "patient-condition-report", "departments",
   "patient-acuity", "patient-signal", "patient-no-transport", "patient-no-transport-text", "patient-doctor-required",
   "patient-reanimation-case", "patient-fw", "patient-pol", "save-patient", "remove-patient"
@@ -40,6 +41,7 @@ function bindEvents() {
   el.new.addEventListener("click", newIncident);
   el.save.addEventListener("click", saveIncident);
   el.duplicate.addEventListener("click", duplicateIncident);
+  el.delete.addEventListener("click", deleteCurrentIncident);
   el.destination_mode.addEventListener("change", updateDestinationPoiControls);
   el.poi_category_search.addEventListener("input", () => renderPoiCategorySelect());
   el.poi_select_visible.addEventListener("click", selectVisiblePoiCategories);
@@ -53,6 +55,13 @@ function bindEvents() {
   el.save_patient.addEventListener("click", syncSelectedPatient);
   el.remove_patient.addEventListener("click", removeSelectedPatient);
   el.add_patient.addEventListener("click", addPatient);
+  document.addEventListener("input", markDirtyFromEditor);
+  document.addEventListener("change", markDirtyFromEditor);
+  window.addEventListener("beforeunload", (event) => {
+    if (!state.dirty) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
 }
 
 async function loadIncidents() {
@@ -66,10 +75,12 @@ async function loadIncidents() {
 }
 
 function newIncident() {
+  if (!confirmDiscardUnsavedChanges()) return;
   state.current = createEmptyIncident();
   state.selectedVariantId = state.current.variants[0].id;
   state.selectedPatientId = state.current.variants[0].patients[0].id;
   fillFormFromCurrent();
+  markClean();
   renderEverything();
 }
 
@@ -107,6 +118,7 @@ function createEmptyVariant() {
     situationReport: "",
     requiredServices: [],
     signal: false,
+    noElrd: false,
     patients: [createEmptyPatient()]
   };
 }
@@ -133,6 +145,7 @@ function editIncident(incident) {
   state.selectedVariantId = state.current.variants[0]?.id || null;
   state.selectedPatientId = selectedVariant()?.patients?.[0]?.id || null;
   fillFormFromCurrent();
+  markClean();
   renderEverything();
 }
 
@@ -196,6 +209,7 @@ async function saveIncident() {
     body: JSON.stringify(state.incidents)
   });
   editIncident(incident);
+  markClean();
   setAiStatus("Gespeichert.", "ok");
 }
 
@@ -207,7 +221,60 @@ function duplicateIncident() {
   copy.keyword = copy.title;
   state.current = copy;
   fillFormFromCurrent();
+  markDirty();
   renderEverything();
+}
+
+async function deleteCurrentIncident() {
+  const current = state.current;
+  if (!current?.id) return;
+  const existingIndex = state.incidents.findIndex((incident) => incident.id === current.id);
+  const title = current.title || current.keyword || "diesen Einsatz";
+  if (existingIndex < 0) {
+    if (!confirm("Dieser Einsatz ist noch nicht gespeichert. Verwerfen?")) return;
+    markClean();
+    if (state.incidents.length) editIncident(state.incidents[0]);
+    else newIncident();
+    return;
+  }
+  if (!confirm(`Einsatz "${title}" wirklich löschen?`)) return;
+  state.incidents.splice(existingIndex, 1);
+  await fetch("/api/incidents", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(state.incidents)
+  });
+  setAiStatus("Gelöscht.", "ok");
+  markClean();
+  if (state.incidents.length) editIncident(state.incidents[Math.max(0, existingIndex - 1)]);
+  else newIncident();
+}
+
+function markDirtyFromEditor(event) {
+  if (!event.target?.closest?.(".dynamic-main-panel, .dynamic-variant-panel")) return;
+  markDirty();
+}
+
+function markDirty() {
+  state.dirty = true;
+  updateDirtyIndicator();
+}
+
+function markClean() {
+  state.dirty = false;
+  updateDirtyIndicator();
+}
+
+function updateDirtyIndicator() {
+  if (!el.editor_title) return;
+  const title = state.current?.title || "Neuer Einsatz";
+  el.editor_title.textContent = `${state.dirty ? "* " : ""}${title}`;
+  el.save.classList.toggle("attention-save", Boolean(state.dirty));
+}
+
+function confirmDiscardUnsavedChanges() {
+  if (!state.dirty) return true;
+  return confirm("Es gibt ungespeicherte Änderungen. Wirklich verwerfen?");
 }
 
 function renderEverything() {
@@ -239,7 +306,7 @@ function renderList() {
       <small>${variants} Varianten | ${patients} Patientenprofile | Faktor ${escapeHtml(formatWeight(incident.weight))}</small>
     `;
     row.addEventListener("click", () => {
-      collectFormIntoCurrent();
+      if (!confirmDiscardUnsavedChanges()) return;
       editIncident(incident);
     });
     el.list.append(row);
@@ -276,6 +343,7 @@ function addVariant() {
   state.current.variants.push(variant);
   state.selectedVariantId = variant.id;
   state.selectedPatientId = variant.patients[0].id;
+  markDirty();
   renderEverything();
 }
 
@@ -284,6 +352,7 @@ function removeSelectedVariant() {
   state.current.variants = state.current.variants.filter((variant) => variant.id !== state.selectedVariantId);
   state.selectedVariantId = state.current.variants[0]?.id || null;
   state.selectedPatientId = selectedVariant()?.patients?.[0]?.id || null;
+  markDirty();
   renderEverything();
 }
 
@@ -297,6 +366,7 @@ function fillVariantEditor() {
   el.variant_fw.checked = (variant?.requiredServices || []).includes("FW");
   el.variant_pol.checked = (variant?.requiredServices || []).includes("POL");
   el.variant_signal.checked = Boolean(variant?.signal);
+  el.variant_no_elrd.checked = Boolean(variant?.noElrd);
 }
 
 function syncSelectedVariant() {
@@ -308,6 +378,7 @@ function syncSelectedVariant() {
   variant.situationReport = el.variant_situation_report.value.trim();
   variant.requiredServices = [el.variant_fw.checked ? "FW" : null, el.variant_pol.checked ? "POL" : null].filter(Boolean);
   variant.signal = el.variant_signal.checked;
+  variant.noElrd = el.variant_no_elrd.checked;
 }
 
 function renderPatientList() {
@@ -342,6 +413,7 @@ function addPatient() {
   variant.patients ||= [];
   variant.patients.push(patient);
   state.selectedPatientId = patient.id;
+  markDirty();
   renderEverything();
 }
 
@@ -350,6 +422,7 @@ function removeSelectedPatient() {
   if (!variant?.patients?.length || variant.patients.length <= 1) return;
   variant.patients = variant.patients.filter((patient) => patient.id !== state.selectedPatientId);
   state.selectedPatientId = variant.patients[0]?.id || null;
+  markDirty();
   renderEverything();
 }
 
@@ -390,6 +463,7 @@ function syncSelectedPatient(options = {}) {
 }
 
 async function generateAiIncident() {
+  if (!confirmDiscardUnsavedChanges()) return;
   const prompt = el.ai_prompt.value.trim();
   if (prompt.length < 8) {
     setAiStatus("Bitte erst eine Beschreibung eingeben.", "error");
@@ -410,6 +484,7 @@ async function generateAiIncident() {
     const generated = Array.isArray(data.incidents) && data.incidents.length ? data.incidents : [data.incident].filter(Boolean);
     const dynamic = combineGeneratedIncidents(generated, prompt, mode);
     editIncident(dynamic);
+    markDirty();
     setAiStatus(`${dynamic.variants.length} Variante(n) übernommen. Bitte prüfen und speichern.`, "ok");
   } catch (error) {
     setAiStatus(error.message || "KI-Generierung fehlgeschlagen.", "error");
@@ -527,6 +602,7 @@ function legacyIncidentToDynamic(input) {
       situationReport: variant.situationReport || "",
       requiredServices: variant.requiredServices || [],
       signal: Boolean(variant.signal),
+      noElrd: Boolean(variant.noElrd),
       patients: variant.patients || []
     }))
   });
@@ -541,6 +617,7 @@ function sanitizeVariant(variant, index) {
     situationReport: variant.situationReport || "",
     requiredServices: listValue(variant.requiredServices).filter((item) => ["FW", "POL"].includes(item)),
     signal: Boolean(variant.signal),
+    noElrd: Boolean(variant.noElrd),
     patients: Array.isArray(variant.patients) && variant.patients.length
       ? variant.patients.map((patient, patientIndex) => sanitizePatient(patient, patientIndex))
       : [createEmptyPatient()]
@@ -602,11 +679,13 @@ function selectedPoiCategories() {
 
 function selectVisiblePoiCategories() {
   el.poi_categories.querySelectorAll("input[type='checkbox']").forEach((input) => state.selectedPoiCategories.add(input.value));
+  markDirty();
   renderPoiCategorySelect();
 }
 
 function clearPoiCategories() {
   state.selectedPoiCategories.clear();
+  markDirty();
   renderPoiCategorySelect();
 }
 
@@ -631,11 +710,13 @@ function selectedDestinationPoiCategories() {
 
 function selectVisibleDestinationPoiCategories() {
   el.destination_poi_categories.querySelectorAll("input[type='checkbox']").forEach((input) => state.selectedDestinationPoiCategories.add(input.value));
+  markDirty();
   renderDestinationPoiCategorySelect();
 }
 
 function clearDestinationPoiCategories() {
   state.selectedDestinationPoiCategories.clear();
+  markDirty();
   renderDestinationPoiCategorySelect();
 }
 
@@ -654,6 +735,7 @@ function renderPoiSelect({ queryInput, container, selectedContainer, count, sele
     input.addEventListener("change", () => {
       if (input.checked) selectedSet.add(value);
       else selectedSet.delete(value);
+      markDirty();
       renderPoiCategorySelect();
       renderDestinationPoiCategorySelect();
     });
@@ -673,6 +755,7 @@ function renderPoiSelect({ queryInput, container, selectedContainer, count, sele
     chip.textContent = `${category?.label || value} x`;
     chip.addEventListener("click", () => {
       selectedSet.delete(value);
+      markDirty();
       renderPoiCategorySelect();
       renderDestinationPoiCategorySelect();
     });

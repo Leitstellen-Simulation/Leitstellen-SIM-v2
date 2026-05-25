@@ -136,6 +136,7 @@
             <div class="panel-title">
               <h2>Anrufen</h2>
               <div>
+                <button id="support-group-button" type="button">Alarm UGRD/SEG</button>
                 <button id="answer-button" type="button" disabled hidden>Annehmen</button>
                 <button id="forward-button" type="button" disabled hidden>Weiterleiten</button>
               </div>
@@ -158,6 +159,19 @@
         <div id="admin-status-bar" class="admin-status-bar admin-only" hidden></div>
       </section>
     </main>
+
+    <dialog id="support-group-dialog" class="modal">
+      <form method="dialog" class="modal-card">
+        <header class="modal-header">
+          <h2>UGRD / SEG alarmieren</h2>
+          <button id="close-support-group-dialog" class="icon-button" value="cancel" aria-label="Schließen" type="button">x</button>
+        </header>
+        <div class="modal-body">
+          <p class="inline-hint">Hintergrundfahrzeuge melden sich nach Alarmierung ggf. nach 5-15 Minuten als Status 1 und sind dann normal disponierbar.</p>
+          <div id="support-group-list" class="support-group-list"></div>
+        </div>
+      </form>
+    </dialog>
 
     <dialog id="admin-login-dialog" class="modal small-modal">
       <form id="admin-login-form" class="modal-card">
@@ -302,6 +316,10 @@
               <label>
                 RTH
                 <input id="editor-rth" type="number" min="0" max="20" value="0">
+              </label>
+              <label>
+                ELRD
+                <input id="editor-elrd" type="number" min="0" max="20" value="0">
               </label>
             </div>
             <label>

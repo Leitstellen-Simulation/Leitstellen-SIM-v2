@@ -32,6 +32,26 @@
     "Pichler", "Rieger", "Schreiner", "Spangler", "Stahl", "Weinberger", "Wenisch", "Wittmann", "Zeller", "Dobler"
   ];
 
+  const femaleFirstNames = [
+    "Anna", "Anja", "Bettina", "Birgit", "Carina", "Claudia", "Daniela", "Doris", "Eva", "Elisabeth",
+    "Franziska", "Frieda", "Gabriele", "Greta", "Hannah", "Helene", "Ines", "Isabell", "Ingrid", "Julia",
+    "Jana", "Katharina", "Kerstin", "Laura", "Leonie", "Maria", "Marlene", "Monika", "Nadine", "Nora",
+    "Olivia", "Petra", "Paula", "Ramona", "Rosa", "Sabine", "Sandra", "Sofia", "Theresa", "Tanja",
+    "Ulrike", "Verena", "Valentina", "Waltraud", "Yvonne", "Amelie", "Bianca", "Christina", "Diana",
+    "Elena", "Fabienne", "Gertrud", "Heidi", "Irina", "Josefine", "Karin", "Luisa", "Magdalena",
+    "Nicole", "Patricia", "Rebecca", "Selina", "Ursula", "Vera"
+  ];
+
+  const maleFirstNames = [
+    "Anton", "Andreas", "Bernd", "Benedikt", "Christian", "Clemens", "Daniel", "Dominik", "Erik", "Emil",
+    "Florian", "Felix", "Gerhard", "Gregor", "Hans", "Hannes", "Jonas", "Johann", "Jakob", "Karl",
+    "Konrad", "Lukas", "Lorenz", "Martin", "Matthias", "Maximilian", "Niklas", "Norbert", "Oliver",
+    "Peter", "Paul", "Robert", "Rainer", "Stefan", "Sebastian", "Simon", "Thomas", "Tobias", "Uwe",
+    "Viktor", "Vincent", "Werner", "Yannik", "Armin", "Bruno", "Christoph", "David", "Elias", "Fabian",
+    "Georg", "Heinrich", "Jan", "Josef", "Kilian", "Leonhard", "Michael", "Noah", "Philipp", "Rudolf",
+    "Sven", "Wilhelm", "Xaver"
+  ];
+
   function pick(list) {
     return list[Math.floor(Math.random() * list.length)];
   }
@@ -40,8 +60,20 @@
     return pick(firstNames);
   }
 
+  function randomFemaleFirstName() {
+    return pick(femaleFirstNames);
+  }
+
+  function randomMaleFirstName() {
+    return pick(maleFirstNames);
+  }
+
   function randomTitledLastName() {
     return `${Math.random() < .5 ? "Frau" : "Herr"} ${pick(lastNames)}`;
+  }
+
+  function randomTitledLastNameForGender(gender) {
+    return `${gender === "female" ? "Frau" : "Herr"} ${pick(lastNames)}`;
   }
 
   function randomName() {
@@ -50,8 +82,12 @@
 
   function applyDynamicNamePlaceholders(value) {
     if (value === null || value === undefined) return value;
-    return String(value).replace(/\*(Vorname|Nachname|Name)\*/gi, (_match, token) => {
+    return String(value).replace(/\*(F_Vorname|H_Vorname|F_Nachname|H_Nachname|Vorname|Nachname|Name)\*/gi, (_match, token) => {
       const key = String(token).toLowerCase();
+      if (key === "f_vorname") return randomFemaleFirstName();
+      if (key === "h_vorname") return randomMaleFirstName();
+      if (key === "f_nachname") return randomTitledLastNameForGender("female");
+      if (key === "h_nachname") return randomTitledLastNameForGender("male");
       if (key === "vorname") return randomFirstName();
       if (key === "nachname") return randomTitledLastName();
       return randomName();
@@ -77,7 +113,7 @@
     return next;
   }
 
-  window.dynamicNameCatalog = { firstNames, lastNames };
+  window.dynamicNameCatalog = { firstNames, femaleFirstNames, maleFirstNames, lastNames };
   window.applyDynamicNamePlaceholders = applyDynamicNamePlaceholders;
   window.applyDynamicNamePlaceholdersToIncidentTemplate = applyDynamicNamePlaceholdersToIncidentTemplate;
 })();

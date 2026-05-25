@@ -438,7 +438,8 @@ async function handleMapsApi(request, response, url) {
       id: map.id,
       name: map.name,
       stations: Array.isArray(map.stations) ? map.stations.length : 0,
-      hospitals: Array.isArray(map.hospitals) ? map.hospitals.length : 0
+      hospitals: Array.isArray(map.hospitals) ? map.hospitals.length : 0,
+      supportGroups: Array.isArray(map.supportGroups) ? map.supportGroups.length : 0
     })));
     return;
   }
@@ -677,6 +678,7 @@ JSON-Schema:
   "type": "emergency|transport|scheduled",
   "timeWindows": [{"start":"8","end":"18"}],
   "variants": [{
+    "weight": 1,
     "callerName": "Anrufer",
     "callerText": "Notruftext, mehrere Varianten mit | trennen",
     "locationMode": "random|hospital|poi",
@@ -706,8 +708,9 @@ Regeln:
 ${modeRules}
 ${variationRules}
 - Erlaubte Fahrzeugtypen: KTW, RTW, NEF, REF, RTH.
-- Gib keinen Wahrscheinlichkeitsfaktor/weight aus; dieser wird lokal immer automatisch auf 1 gesetzt.
-- options-Wahrscheinlichkeiten pro Patient muessen zusammen etwa 1 ergeben.
+- Gib keinen globalen Einsatz-weight aus; dieser wird lokal immer automatisch auf 1 gesetzt.
+- Gib pro Variante ein sinnvolles "weight" aus. Beispiele: haeufige Variante 0.6, seltene Variante 0.15, mehrere gleich haeufige Varianten je 1.
+- options-Wahrscheinlichkeiten pro Patient muessen zusammen etwa 1 ergeben. Nutze mehrere Optionen, wenn unterschiedliche Rettungsmittel realistisch sind, z.B. [{"probability":0.7,"vehicles":["RTW"]},{"probability":0.3,"vehicles":["KTW"]}] oder [{"probability":0.8,"vehicles":["RTW","NEF"]},{"probability":0.2,"vehicles":["RTW"]}].
 - KTP ueber 19222 oder mit Anrufer ist type transport, auch wenn die Fahrt zeitlich geplant ist. type scheduled nur fuer automatisch im Hintergrund entstehende Planfahrten ohne Telefonanruf und ohne initial zugewiesenes Fahrzeug.
 - RTW-Notfaelle ca. 1 Patient, requiredDepartmentKeys passend zur Lage.
 - requiredDepartmentKeys ist eine Mehrfachauswahl. Setze bei Bedarf mehrere Fachrichtungen, z.B. ["trauma","icu"] bei Polytrauma, ["neurology","stroke"] bei Schlaganfall, ["internal","cardiology"] bei ACS. Nutze ["none"] nur, wenn kein Klinikziel gebraucht wird.
@@ -789,6 +792,7 @@ function normalizeGeneratedIncidents(input, fallbackTitle, mode = "emergency", v
       destinationPoiCategories: common.destinationPoiCategories,
       destinationPoiIds: common.destinationPoiIds,
       requiredServices: allowedList(rawVariant.requiredServices || sourceVariant.requiredServices, ["FW", "POL"]),
+      weight: positiveWeight(rawVariant.weight, 1),
       report: patients.length > 1 ? "" : stringValue(rawVariant.report, 500),
       situationReport: patients.length > 1 ? stringValue(rawVariant.situationReport || rawVariant.report, 600) : "",
       patients
@@ -892,6 +896,12 @@ function probabilityValue(value, fallback = 0) {
   if (!Number.isFinite(number)) return fallback;
   const normalized = number > 1 ? number / 100 : number;
   return Math.max(0, Math.min(1, normalized));
+}
+
+function positiveWeight(value, fallback = 1) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return fallback;
+  return number;
 }
 
 function clampInteger(value, min, max, fallback) {

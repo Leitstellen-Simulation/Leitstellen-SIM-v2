@@ -17,6 +17,7 @@ function createEmptyCenter() {
     stations: [],
     hospitals: [],
     poi: [],
+    supportGroups: [],
     callRates: normalizedCallRates()
   };
 }
@@ -54,6 +55,7 @@ const state = {
   availableMaps: [],
   coveragePoints: [],
   pendingCoverageVehicleId: null,
+  supportGroupStates: {},
   testMode: false,
   serverAvailable: false,
   systemStatus: {
@@ -111,6 +113,10 @@ const el = {
   closeAdminLoginDialog: document.querySelector("#close-admin-login-dialog"),
   cancelAdminLogin: document.querySelector("#cancel-admin-login"),
   coverageButton: document.querySelector("#coverage-button"),
+  supportGroupButton: document.querySelector("#support-group-button"),
+  supportGroupDialog: document.querySelector("#support-group-dialog"),
+  supportGroupList: document.querySelector("#support-group-list"),
+  closeSupportGroupDialog: document.querySelector("#close-support-group-dialog"),
   vehicleSort: document.querySelector("#vehicle-sort"),
   clockLabel: document.querySelector("#clock-label"),
   incidentDialog: document.querySelector("#incident-dialog"),
@@ -139,6 +145,7 @@ const el = {
   editorNef: document.querySelector("#editor-nef"),
   editorRef: document.querySelector("#editor-ref"),
   editorRth: document.querySelector("#editor-rth"),
+  editorElrd: document.querySelector("#editor-elrd"),
   editorLat: document.querySelector("#editor-lat"),
   editorLng: document.querySelector("#editor-lng"),
   useMapCenterButton: document.querySelector("#use-map-center-button"),
@@ -191,6 +198,8 @@ el.endShiftButton.addEventListener("click", endShift);
 el.editorButton.addEventListener("click", openEditor);
 el.incidentEditorButton.addEventListener("click", openIncidentEditor);
 el.coverageButton?.addEventListener("click", openCoverageDialog);
+el.supportGroupButton?.addEventListener("click", openSupportGroupDialog);
+el.closeSupportGroupDialog?.addEventListener("click", () => el.supportGroupDialog?.close());
 el.vehicleSort.addEventListener("change", renderVehicles);
 el.incidentMapButton.addEventListener("click", showPendingCallOnMap);
 el.incidentForm.addEventListener("submit", submitIncidentDialog);
@@ -236,6 +245,7 @@ async function startShift() {
   state.center.callRates = normalizedCallRates(state.center.callRates);
   state.incidentCatalog = await loadIncidentCatalog();
   ensureHospitalDepartments(state.center);
+  state.center.supportGroups ||= [];
   ensurePoiCatalog(state.center);
   state.coveragePoints = buildCoveragePoints(state.center);
   state.dispatcher = el.dispatcherName.value.trim() || "Gast";
@@ -253,6 +263,7 @@ async function startShift() {
   state.showForeignVehiclesInDialog = false;
   state.showForeignHospitalsInTransport = false;
   state.lastForeignAvailabilityRoll = null;
+  state.supportGroupStates = {};
   state.systemStatus.routing = "unbekannt";
   state.systemStatus.weather = "unbekannt";
   state.systemStatus.geocoding = "unbekannt";
@@ -476,6 +487,68 @@ function toggleTestMode() {
   logRadio(`Testbetrieb ${state.testMode ? "aktiviert: automatische Anrufe pausiert" : "deaktiviert: automatische Anrufe aktiv"}.`, "admin");
 }
 
+function openSupportGroupDialog() {
+  renderSupportGroupDialog();
+  showDialog(el.supportGroupDialog);
+}
+
+function renderSupportGroupDialog() {
+  if (!el.supportGroupList) return;
+  const groups = state.center?.supportGroups || [];
+  el.supportGroupList.innerHTML = "";
+  if (!groups.length) {
+    el.supportGroupList.textContent = "Keine UGRD-/SEG-Gruppen in dieser Karte angelegt.";
+    return;
+  }
+  groups.forEach((group) => {
+    const groupState = supportGroupState(group.id);
+    const activeVehicles = state.vehicles.filter((vehicle) => vehicle.supportGroupId === group.id);
+    const pending = groupState.pending || 0;
+    const available = activeVehicles.filter((vehicle) => [1, 2].includes(vehicle.status) && !vehicle.incidentId && !vehicle.nextIncidentId).length;
+    const busy = activeVehicles.length - available;
+    const row = document.createElement("article");
+    row.className = "support-group-card";
+    const units = (group.units || []).map((unit) => unit.shortName || unit.name || unit.type).join(", ") || "keine Fahrzeuge";
+    row.innerHTML = `
+      <div>
+        <h3>${escapeHtml(group.label || group.id || "UGRD/SEG")}</h3>
+        <p>${escapeHtml(units)}</p>
+        <small>Status: ${escapeHtml(groupState.status || "bereit")} | ausstehend ${pending} | frei ${available} | gebunden ${busy}</small>
+      </div>
+    `;
+    const actions = document.createElement("div");
+    actions.className = "row-actions";
+    const alarm = document.createElement("button");
+    alarm.type = "button";
+    alarm.textContent = groupState.status === "alarmed" ? "erneut alarmieren" : "alarmieren";
+    alarm.addEventListener("click", () => {
+      alarmSupportGroup(group.id);
+      renderSupportGroupDialog();
+    });
+    const standDown = document.createElement("button");
+    standDown.type = "button";
+    standDown.textContent = "Alarm beenden";
+    standDown.disabled = groupState.status !== "alarmed" && !activeVehicles.length && !pending;
+    standDown.addEventListener("click", () => {
+      standDownSupportGroup(group.id);
+      renderSupportGroupDialog();
+    });
+    actions.append(alarm, standDown);
+    row.append(actions);
+    el.supportGroupList.append(row);
+  });
+}
+
+function supportGroupState(groupId) {
+  state.supportGroupStates ||= {};
+  state.supportGroupStates[groupId] ||= {
+    status: "bereit",
+    pending: 0,
+    activeVehicleIds: []
+  };
+  return state.supportGroupStates[groupId];
+}
+
 function updateTestModeButton() {
   if (!el.testModeButton) return;
   el.testModeButton.textContent = state.testMode ? "Testbetrieb an" : "Testbetrieb aus";
@@ -690,7 +763,8 @@ function vehicleTypeLabel(type) {
     KTW: "Krankentransportwagen",
     NEF: "Notarzteinsatzfahrzeug",
     REF: "Rettungseinsatzfahrzeug",
-    RTH: "Rettungshubschrauber"
+    RTH: "Rettungshubschrauber",
+    ELRD: "Einsatzleiter Rettungsdienst"
   };
   return labels[type] || type;
 }
@@ -950,13 +1024,27 @@ function resolveTemplateLocation(template) {
     const fallbackPoi = locationsInsideCoverage(state.center.poi);
     const poi = candidates[randomInt(0, candidates.length - 1)] || fallbackPoi[randomInt(0, fallbackPoi.length - 1)];
     if (!poi) return resolveTemplateLocation({ ...template, locationMode: "random" });
-    return { ...template, location: poi.label, lat: poi.lat, lng: poi.lng };
+    return {
+      ...template,
+      location: poi.label,
+      lat: poi.lat,
+      lng: poi.lng,
+      locationPoiId: poi.id || "",
+      locationPoiLabel: poi.label || "",
+      callerText: replacePoiPlaceholder(template.callerText, poi)
+    };
   }
   if (template.locationMode === "random") {
     const point = randomPointInCoverage();
     return { ...template, location: point.label || nearestAddressLabel(point.lat, point.lng, template.location), lat: point.lat, lng: point.lng };
   }
   return template;
+}
+
+function replacePoiPlaceholder(value, poi) {
+  if (value === null || value === undefined) return value;
+  const label = poi?.label || poi?.address || "POI";
+  return String(value).replace(/\*POI\*/gi, label);
 }
 
 function resolveTemplateDestination(template) {
@@ -1422,6 +1510,7 @@ function normalizeDynamicIncidentTemplate(template) {
     type: template.type || variant.type || "emergency",
     priority: variant.priority || template.priority || "normal",
     required: variant.required || template.required || ["RTW"],
+    noElrd: Boolean(variant.noElrd ?? template.noElrd ?? false),
     requiredServices: variant.requiredServices || template.requiredServices || [],
     report: variant.report || "",
     situationReport: variant.situationReport || "",
@@ -1666,7 +1755,9 @@ function renderDispositionSuggestion() {
   const label = document.createElement("strong");
   label.textContent = "Vorschlag";
   const text = document.createElement("span");
-  const disposition = defaults.disposition || formatDisposition(defaults.required, defaults.requiredServices);
+  const source = currentIncidentDialogSource();
+  const required = addElrdToRequiredForDialog(defaults.required, source);
+  const disposition = formatDisposition(required, defaults.requiredServices);
   text.textContent = `${disposition} · ${defaults.signal ? "SoSi" : "ohne SoSi"}`;
   copy.append(label, text);
   const button = document.createElement("button");
@@ -1686,13 +1777,20 @@ function applyDispositionSuggestion() {
   state.selectedDialogVehicleIds = new Set();
   setIncidentSignal(defaults.signal ? "yes" : "no");
   setIncidentSupportServices(defaults.requiredServices || []);
-  normalizeRequiredVehicles(defaults.required || []).forEach((type) => {
+  addElrdToRequiredForDialog(defaults.required || [], source).forEach((type) => {
     const vehicle = nearestDispositionVehicle(source, type, unavailableIds);
     if (!vehicle) return;
     state.selectedDialogVehicleIds.add(vehicle.id);
     unavailableIds.add(vehicle.id);
   });
   renderDialogVehicles(source, incident);
+}
+
+function addElrdToRequiredForDialog(required = [], source = null) {
+  const normalized = normalizeRequiredVehicles(required || []);
+  const patientCount = source?.patient?.patients?.length || source?.patients?.length || Number(source?.patientCount) || 1;
+  if (!source?.noElrd && patientCount >= 2 && !normalized.includes("ELRD")) normalized.push("ELRD");
+  return normalized;
 }
 
 function setIncidentSupportServices(services = []) {
@@ -1935,7 +2033,7 @@ function createPatientProfile(call) {
   const transport = call.type === "transport" || keyword.includes("KTP") || keyword.includes("Verlegung");
   const departmentKey = call.requiredDepartmentKey || call.requiredDepartmentKeys?.[0] || departmentKeyForKeyword(keyword, trauma, child);
   const patients = applyPatientConditionReports(normalizePatients(call, departmentKey), call.patientConditions);
-  const requiredVehicles = aggregateRequiredVehicles(patients, call.required || ["RTW"]);
+  const requiredVehicles = applyElrdRequirement(aggregateRequiredVehicles(patients, call.required || ["RTW"]), call, patients);
   return {
     condition: transport ? "transportstabil" : critical ? "kritisch" : "stabil",
     status: "unversorgt",
@@ -2078,6 +2176,13 @@ function resolvePatientRequirement(options) {
 function aggregateRequiredVehicles(patients, fallback = ["RTW"]) {
   const required = normalizeRequiredVehicles(patients.flatMap((patient) => patient.required || []));
   return required.length ? required : normalizeRequiredVehicles(fallback);
+}
+
+function applyElrdRequirement(required, call, patients = []) {
+  const normalized = normalizeRequiredVehicles(required);
+  const needsElrd = !call?.noElrd && (patients || []).filter(Boolean).length >= 2;
+  if (needsElrd && !normalized.includes("ELRD")) normalized.push("ELRD");
+  return normalized;
 }
 
 function normalizeRequiredVehicles(required = []) {

@@ -8,6 +8,7 @@
     stations: [],
     hospitals: [],
     poi: [],
+    supportGroups: [],
     coverageGeoJson: null,
     callRates: defaultCallRates()
   },
@@ -17,6 +18,8 @@
   coverageMarkers: [],
   importedPoiResults: [],
   pointListFilter: "station",
+  editingSupportGroupId: null,
+  editingSupportUnits: [],
   showPoiMarkers: false,
   map: null,
   coverageLayer: null,
@@ -24,15 +27,17 @@
 };
 
 const el = Object.fromEntries([
-  "map-name", "type", "name", "address", "foreign-point", "foreign-availability-row", "foreign-availability", "geocode", "rtw", "ktw", "nef", "ref", "rth", "lat", "lng",
+  "map-name", "type", "name", "address", "foreign-point", "foreign-availability-row", "foreign-availability", "geocode", "rtw", "ktw", "nef", "ref", "rth", "elrd", "lat", "lng",
   "rates",
-  "new-station", "new-hospital", "new-poi", "edit-coverage", "point-dialog", "point-form", "coverage-form", "form-title",
+  "new-station", "new-hospital", "new-poi", "new-support-group", "edit-coverage", "point-dialog", "point-form", "coverage-form", "form-title",
   "cancel-edit", "cancel-coverage", "vehicle-count-section", "unit-section", "hospital-section", "departments",
   "pediatric-only", "poi-section", "poi-category-search", "poi-categories", "coverage", "use-bounds", "apply-coverage",
   "osm-poi-categories", "import-pois", "apply-imported-pois", "osm-poi-status", "osm-poi-preview",
-  "show-poi-markers", "point-filter-stations", "point-filter-hospitals", "point-filter-poi",
+  "show-poi-markers", "point-filter-stations", "point-filter-hospitals", "point-filter-poi", "point-filter-support",
   "set-pin", "edit-coverage-pins", "add-coverage-pin",
   "unit-type", "unit-name", "unit-short", "unit-shift", "add-unit", "units-list",
+  "support-dialog", "support-title", "cancel-support", "support-name", "support-station", "support-availability", "support-min", "support-max",
+  "support-unit-type", "support-unit-name", "support-unit-short", "support-unit-availability", "add-support-unit", "support-units-list", "save-support",
   "use-center", "add", "new", "save", "points", "saved", "map"
 ].map((id) => [id.replaceAll("-", "_"), document.querySelector(`#se-${id}`)]));
 
@@ -67,7 +72,10 @@ function init() {
   el.new_station.addEventListener("click", () => startPointEdit("station"));
   el.new_hospital.addEventListener("click", () => startPointEdit("hospital"));
   el.new_poi.addEventListener("click", () => startPointEdit("poi"));
+  el.new_support_group.addEventListener("click", () => startSupportGroupEdit());
   el.edit_coverage.addEventListener("click", showCoverageForm);
+  el.add_support_unit.addEventListener("click", addSupportUnit);
+  el.save_support.addEventListener("click", saveSupportGroup);
   el.poi_category_search.addEventListener("input", () => renderPoiCategorySelect());
   el.import_pois.addEventListener("click", importOsmPois);
   el.apply_imported_pois.addEventListener("click", applyImportedPois);
@@ -78,6 +86,7 @@ function init() {
   el.point_filter_stations.addEventListener("click", () => setPointListFilter("station"));
   el.point_filter_hospitals.addEventListener("click", () => setPointListFilter("hospital"));
   el.point_filter_poi.addEventListener("click", () => setPointListFilter("poi"));
+  el.point_filter_support.addEventListener("click", () => setPointListFilter("support"));
   el.cancel_edit.addEventListener("click", closeWorkbench);
   el.cancel_coverage.addEventListener("click", closeWorkbench);
   el.new.addEventListener("click", newMap);
@@ -203,6 +212,7 @@ function startPointEdit(type, point = null) {
       el.nef.value = 0;
       el.ref.value = 0;
       el.rth.value = 0;
+      el.elrd.value = 0;
     }
   }
   updateVehicleInputs();
@@ -289,6 +299,94 @@ function renderUnits() {
   });
 }
 
+function startSupportGroupEdit(group = null) {
+  state.editingSupportGroupId = group?.id || null;
+  state.editingSupportUnits = (group?.units || []).map((unit) => ({ ...unit }));
+  el.support_title.textContent = group ? "UGRD/SEG bearbeiten" : "Neue UGRD/SEG";
+  el.support_name.value = group?.label || "";
+  el.support_availability.value = probabilityToPercent(group?.availabilityProbability ?? 0.75);
+  el.support_min.value = group?.minResponseMinutes || 5;
+  el.support_max.value = group?.maxResponseMinutes || 15;
+  renderSupportStationOptions(group?.stationId || "");
+  renderSupportUnits();
+  showDialog(el.support_dialog);
+}
+
+function renderSupportStationOptions(selectedId = "") {
+  el.support_station.innerHTML = "";
+  (state.mapData.stations || []).forEach((station) => {
+    const option = document.createElement("option");
+    option.value = station.id;
+    option.textContent = station.label;
+    option.selected = station.id === selectedId;
+    el.support_station.append(option);
+  });
+}
+
+function addSupportUnit() {
+  const type = el.support_unit_type.value || "RTW";
+  const name = el.support_unit_name.value.trim() || `${type} Hintergrund`;
+  state.editingSupportUnits.push({
+    id: makeId(`${type}-${name}-${Date.now()}`),
+    type,
+    name,
+    fullName: name,
+    shortName: el.support_unit_short.value.trim() || name,
+    availabilityProbability: el.support_unit_availability.value === "" ? undefined : availabilityPercentToProbability(el.support_unit_availability.value)
+  });
+  el.support_unit_name.value = "";
+  el.support_unit_short.value = "";
+  el.support_unit_availability.value = "";
+  renderSupportUnits();
+}
+
+function renderSupportUnits() {
+  el.support_units_list.innerHTML = "";
+  if (!state.editingSupportUnits.length) {
+    el.support_units_list.textContent = "Noch keine Hintergrundfahrzeuge angelegt.";
+    return;
+  }
+  state.editingSupportUnits.forEach((unit) => {
+    const row = document.createElement("article");
+    row.className = "unit-row";
+    row.innerHTML = `<span>${escapeHtml(unit.type)} | ${escapeHtml(unit.name)}${unit.availabilityProbability !== undefined ? ` | ${probabilityToPercent(unit.availabilityProbability)}%` : ""}</span>`;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Entfernen";
+    button.addEventListener("click", () => {
+      state.editingSupportUnits = state.editingSupportUnits.filter((item) => item.id !== unit.id);
+      renderSupportUnits();
+    });
+    row.append(button);
+    el.support_units_list.append(row);
+  });
+}
+
+function saveSupportGroup() {
+  const station = (state.mapData.stations || []).find((item) => item.id === el.support_station.value);
+  const label = el.support_name.value.trim() || "UGRD/SEG";
+  const group = {
+    id: state.editingSupportGroupId || makeId(label),
+    label,
+    stationId: station?.id || "",
+    stationLabel: station?.label || "",
+    lat: station?.lat,
+    lng: station?.lng,
+    availabilityProbability: availabilityPercentToProbability(el.support_availability.value),
+    minResponseMinutes: Math.max(1, Number(el.support_min.value) || 5),
+    maxResponseMinutes: Math.max(1, Number(el.support_max.value) || 15),
+    units: state.editingSupportUnits.map((unit) => ({ ...unit }))
+  };
+  if (group.maxResponseMinutes < group.minResponseMinutes) group.maxResponseMinutes = group.minResponseMinutes;
+  state.mapData.supportGroups ||= [];
+  upsert(state.mapData.supportGroups, group);
+  state.editingSupportGroupId = null;
+  state.editingSupportUnits = [];
+  el.support_dialog.close();
+  setPointListFilter("support");
+  render();
+}
+
 function syncCountsFromUnits() {
   const counts = state.editingUnits.reduce((sum, unit) => {
     sum[unit.type] = (sum[unit.type] || 0) + 1;
@@ -299,6 +397,7 @@ function syncCountsFromUnits() {
   el.nef.value = counts.NEF || 0;
   el.ref.value = counts.REF || 0;
   el.rth.value = counts.RTH || 0;
+  el.elrd.value = counts.ELRD || 0;
 }
 
 function savePoint() {
@@ -352,7 +451,8 @@ function vehicleCounts() {
     KTW: Number(el.ktw.value) || 0,
     NEF: Number(el.nef.value) || 0,
     REF: Number(el.ref.value) || 0,
-    RTH: Number(el.rth.value) || 0
+    RTH: Number(el.rth.value) || 0,
+    ELRD: Number(el.elrd.value) || 0
   };
 }
 
@@ -385,7 +485,7 @@ function updateVehicleInputs() {
   el.foreign_point.disabled = el.type.value === "poi";
   el.foreign_availability_row.hidden = el.type.value !== "station";
   el.foreign_availability.disabled = el.type.value !== "station";
-  [el.rtw, el.ktw, el.nef, el.ref, el.rth, el.unit_type, el.unit_name, el.unit_short, el.unit_shift, el.add_unit].forEach((input) => {
+  [el.rtw, el.ktw, el.nef, el.ref, el.rth, el.elrd, el.unit_type, el.unit_name, el.unit_short, el.unit_shift, el.add_unit].forEach((input) => {
     input.disabled = disabled;
   });
   el.hospital_section.open = el.type.value === "hospital";
@@ -412,21 +512,23 @@ function render() {
   const points = [
     ...state.mapData.stations.map((point) => ({ ...point, type: "station" })),
     ...state.mapData.hospitals.map((point) => ({ ...point, type: "hospital" })),
-    ...(state.mapData.poi || []).map((point) => ({ ...point, type: "poi" }))
+    ...(state.mapData.poi || []).map((point) => ({ ...point, type: "poi" })),
+    ...(state.mapData.supportGroups || []).map((point) => ({ ...point, type: "support" }))
   ];
   points.forEach((point) => {
     if (point.type === "poi" && !state.showPoiMarkers) return;
+    if (!Number.isFinite(Number(point.lat)) || !Number.isFinite(Number(point.lng))) return;
     const foreignClass = point.foreign ? " foreign-map-point" : "";
-    const markerClass = point.type === "hospital" ? "hospital" : point.type === "poi" ? "poi" : "station station-available";
-    const markerLabel = point.type === "hospital" ? (point.foreign ? "FKH" : "KH") : point.type === "poi" ? "POI" : (point.foreign ? "FRW" : "RW");
+    const markerClass = point.type === "hospital" ? "hospital" : point.type === "poi" ? "poi" : point.type === "support" ? "support" : "station station-available";
+    const markerLabel = point.type === "hospital" ? (point.foreign ? "FKH" : "KH") : point.type === "poi" ? "POI" : point.type === "support" ? "UGRD" : (point.foreign ? "FRW" : "RW");
     const icon = L.divIcon({
       className: "",
       html: `<span class="map-marker ${markerClass}${foreignClass}">${markerLabel}</span>`,
-      iconSize: [34, 34],
-      iconAnchor: [17, 17]
+      iconSize: point.type === "support" ? [42, 28] : [34, 34],
+      iconAnchor: point.type === "support" ? [21, 14] : [17, 17]
     });
-    const marker = L.marker([point.lat, point.lng], { icon }).bindPopup(point.label).addTo(state.map);
-    marker.on("click", () => editPoint(point));
+    const marker = L.marker([point.lat, point.lng], { icon }).bindPopup(point.label || point.stationLabel || "UGRD/SEG").addTo(state.map);
+    marker.on("click", () => point.type === "support" ? startSupportGroupEdit(point) : editPoint(point));
     state.layers.push(marker);
   });
   renderList(points);
@@ -449,11 +551,13 @@ function renderList(points) {
       ? `${point.foreign ? " | Fremdwache" : ""}${point.foreign ? ` | ${probabilityToPercent(point.foreignAvailabilityProbability)}% verfügbar` : ""}${point.units?.length ? ` | ${point.units.map((unit) => unit.name).join(", ")}` : ""}`
       : point.type === "hospital"
         ? `${point.foreign ? " | Fremdkrankenhaus" : ""} | ${(point.departments || []).map(departmentLabel).join(", ") || "keine Fachrichtungen"}${point.pediatricOnly ? " | reine Kinderklinik" : ""}`
-        : ` | ${(point.categories || []).join(", ") || "keine Kategorien"}`;
+        : point.type === "support"
+          ? ` | ${(point.units || []).length} Fahrzeug(e) | ${point.stationLabel || "keine Wache"} | ${probabilityToPercent(point.availabilityProbability)}%`
+          : ` | ${(point.categories || []).join(", ") || "keine Kategorien"}`;
     row.innerHTML = `<div><h3>${escapeHtml(point.label)}</h3><p>${point.type}${escapeHtml(extra)}</p></div>`;
     const actions = document.createElement("div");
     actions.className = "row-actions";
-    [["Bearbeiten", () => editPoint(point)], ["Löschen", () => deletePoint(point)]].forEach(([label, handler]) => {
+    [["Bearbeiten", () => point.type === "support" ? startSupportGroupEdit(point) : editPoint(point)], ["Löschen", () => deletePoint(point)]].forEach(([label, handler]) => {
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = label;
@@ -474,13 +578,15 @@ function updatePointListTabs() {
   [
     [el.point_filter_stations, "station"],
     [el.point_filter_hospitals, "hospital"],
-    [el.point_filter_poi, "poi"]
+    [el.point_filter_poi, "poi"],
+    [el.point_filter_support, "support"]
   ].forEach(([button, filter]) => button?.classList.toggle("active", state.pointListFilter === filter));
 }
 
 function emptyPointListText(filter) {
   if (filter === "station") return "Noch keine Wachen angelegt.";
   if (filter === "hospital") return "Noch keine Krankenhäuser angelegt.";
+  if (filter === "support") return "Noch keine UGRD/SEG-Gruppen angelegt.";
   return "Noch keine POI angelegt.";
 }
 
@@ -505,6 +611,7 @@ function fillPointForm(point) {
   el.nef.value = point.vehicles?.NEF || 0;
   el.ref.value = point.vehicles?.REF || 0;
   el.rth.value = point.vehicles?.RTH || 0;
+  el.elrd.value = point.vehicles?.ELRD || 0;
   state.editingUnits = (point.units || []).map((unit) => ({
     id: unit.id || makeId(`${unit.type}-${unit.name}-${Date.now()}`),
     type: unit.type || "RTW",
@@ -524,6 +631,7 @@ function deletePoint(point) {
   state.mapData.stations = state.mapData.stations.filter((item) => item.id !== point.id);
   state.mapData.hospitals = state.mapData.hospitals.filter((item) => item.id !== point.id);
   state.mapData.poi = (state.mapData.poi || []).filter((item) => item.id !== point.id);
+  state.mapData.supportGroups = (state.mapData.supportGroups || []).filter((item) => item.id !== point.id);
   render();
 }
 
@@ -553,7 +661,7 @@ async function loadSavedMaps() {
     maps.forEach((map) => {
       const row = document.createElement("article");
       row.className = "editor-point";
-      row.innerHTML = `<div><h3>${escapeHtml(map.name)}</h3><p>${map.stations} Wachen | ${map.hospitals} Kliniken</p></div>`;
+      row.innerHTML = `<div><h3>${escapeHtml(map.name)}</h3><p>${map.stations} Wachen | ${map.hospitals} Kliniken | ${map.supportGroups || 0} UGRD/SEG</p></div>`;
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = "Laden";
@@ -571,6 +679,7 @@ async function loadMap(id) {
   if (!response.ok) return;
   state.mapData = await response.json();
   state.mapData.poi ||= [];
+  state.mapData.supportGroups ||= [];
   state.mapData.callRates = normalizeCallRates(state.mapData.callRates);
   el.map_name.value = state.mapData.name;
   el.coverage.value = state.mapData.coverageGeoJson ? JSON.stringify(state.mapData.coverageGeoJson, null, 2) : "";
@@ -583,7 +692,7 @@ async function loadMap(id) {
 }
 
 function newMap() {
-  state.mapData = { id: "new-map", name: "Neue Karte", weather: "", mapCenter: [49.00761514468197, 12.09749221801758], zoom: 14, stations: [], hospitals: [], poi: [], coverageGeoJson: null, callRates: defaultCallRates() };
+  state.mapData = { id: "new-map", name: "Neue Karte", weather: "", mapCenter: [49.00761514468197, 12.09749221801758], zoom: 14, stations: [], hospitals: [], poi: [], supportGroups: [], coverageGeoJson: null, callRates: defaultCallRates() };
   el.map_name.value = state.mapData.name;
   el.coverage.value = "";
   renderRateEditor();

@@ -3,10 +3,10 @@
   "name": "ILS Regensburg Tisch Regensburg (Alpha-Version)",
   "weather": "Leichter Regen, 12 C",
   "mapCenter": [
-    49.06059468909428,
-    12.30125427246094
+    49.003529607607916,
+    12.059597969055178
   ],
-  "zoom": 11,
+  "zoom": 17,
   "stations": [
     {
       "id": "rkt-rettungswache-regensburg-west",
@@ -14,8 +14,10 @@
       "address": "RKT Ziegetsdorf",
       "lat": 49.002399,
       "lng": 12.06103,
+      "foreign": false,
       "vehicles": {
-        "RTW": 1
+        "RTW": 1,
+        "ELRD": 1
       },
       "units": [
         {
@@ -25,8 +27,17 @@
           "fullName": "Rettung Regensburg 71/1",
           "shortName": "RT R 71/1",
           "shift": "7-19, 19-7"
+        },
+        {
+          "id": "elrd-rettung-regensburg-10-1-1779707227342",
+          "type": "ELRD",
+          "name": "Rettung Regensburg 10/1",
+          "fullName": "Rettung Regensburg 10/1",
+          "shortName": "RT R 10/1",
+          "shift": "10-14"
         }
-      ]
+      ],
+      "foreignAvailabilityProbability": 0.5
     },
     {
       "id": "johanniter-stellplatz-haslbach",
@@ -34,9 +45,11 @@
       "address": "Johanniter Haslbach",
       "lat": 49.055772,
       "lng": 12.129532,
+      "foreign": false,
       "vehicles": {
         "KTW": 1,
-        "RTW": 1
+        "RTW": 1,
+        "ELRD": 1
       },
       "units": [
         {
@@ -54,8 +67,17 @@
           "fullName": "Akkon Regensburg 71/1",
           "shortName": "AK R 71/1",
           "shift": "7-16, 16-24"
+        },
+        {
+          "id": "elrd-akkon-regensburg-10-1-1779707268325",
+          "type": "ELRD",
+          "name": "Akkon Regensburg 10/1",
+          "fullName": "Akkon Regensburg 10/1",
+          "shortName": "AK R 10/1",
+          "shift": "18-24"
         }
-      ]
+      ],
+      "foreignAvailabilityProbability": 0.5
     },
     {
       "id": "malteser-stellplatz-bruderw-hrdstra-e",
@@ -67,7 +89,8 @@
       "vehicles": {
         "RTW": 1,
         "KTW": 1,
-        "REF": 1
+        "REF": 1,
+        "ELRD": 1
       },
       "units": [
         {
@@ -93,6 +116,14 @@
           "fullName": "Johannes Regensburg 74/1",
           "shortName": "JH R 74/1",
           "shift": "10-18:30"
+        },
+        {
+          "id": "elrd-johannes-regensburg-10-1-1779707249337",
+          "type": "ELRD",
+          "name": "Johannes Regensburg 10/1",
+          "fullName": "Johannes Regensburg 10/1",
+          "shortName": "JH R 10/1",
+          "shift": "14-18"
         }
       ],
       "foreignAvailabilityProbability": 0.5
@@ -103,10 +134,12 @@
       "address": "eigener Kartenpunkt",
       "lat": 49.013405,
       "lng": 12.134657,
+      "foreign": false,
       "vehicles": {
         "RTW": 3,
         "KTW": 7,
-        "REF": 1
+        "REF": 1,
+        "ELRD": 1
       },
       "units": [
         {
@@ -196,8 +229,17 @@
           "fullName": "Rotkreuz Regensburg 74/1",
           "shortName": "RK R 74/1",
           "shift": "8:30-17"
+        },
+        {
+          "id": "elrd-rotkreuz-regensburg-10-1-1779707210403",
+          "type": "ELRD",
+          "name": "Rotkreuz Regensburg 10/1",
+          "fullName": "Rotkreuz Regensburg 10/1",
+          "shortName": "RK R 10/1",
+          "shift": "0-10"
         }
-      ]
+      ],
+      "foreignAvailabilityProbability": 0.5
     },
     {
       "id": "brk-stellplatz-na-barmherzige-br-der",
@@ -16639,6 +16681,28 @@
       "emergency": 4,
       "transport": 2,
       "scheduled": 0.2
+    }
+  ],
+  "supportGroups": [
+    {
+      "id": "ugrd-rkt",
+      "label": "UGRD RKT",
+      "stationId": "rkt-rettungswache-regensburg-west",
+      "stationLabel": "RKT Rettungswache Regensburg-West",
+      "lat": 49.002399,
+      "lng": 12.06103,
+      "availabilityProbability": 0.33,
+      "minResponseMinutes": 5,
+      "maxResponseMinutes": 15,
+      "units": [
+        {
+          "id": "rtw-rettung-regensburg-71-70-1779718500595",
+          "type": "RTW",
+          "name": "Rettung Regensburg 71/70",
+          "fullName": "Rettung Regensburg 71/70",
+          "shortName": "RT R 71/70"
+        }
+      ]
     }
   ]
 }

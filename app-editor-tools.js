@@ -214,13 +214,14 @@ function editorVehicleCounts() {
     KTW: Math.max(0, Number(el.editorKtw.value) || 0),
     NEF: Math.max(0, Number(el.editorNef.value) || 0),
     REF: Math.max(0, Number(el.editorRef.value) || 0),
-    RTH: Math.max(0, Number(el.editorRth.value) || 0)
+    RTH: Math.max(0, Number(el.editorRth.value) || 0),
+    ELRD: Math.max(0, Number(el.editorElrd?.value) || 0)
   };
 }
 
 function updateEditorVehicleControls() {
   const disabled = el.editorType.value !== "station";
-  [el.editorRtw, el.editorKtw, el.editorNef, el.editorRef, el.editorRth].forEach((input) => {
+  [el.editorRtw, el.editorKtw, el.editorNef, el.editorRef, el.editorRth, el.editorElrd].filter(Boolean).forEach((input) => {
     input.disabled = disabled;
   });
 }
@@ -522,6 +523,7 @@ function editMapPoint(point) {
   el.editorNef.value = point.vehicles?.NEF || 0;
   el.editorRef.value = point.vehicles?.REF || 0;
   el.editorRth.value = point.vehicles?.RTH || 0;
+  if (el.editorElrd) el.editorElrd.value = point.vehicles?.ELRD || 0;
   el.addMapPointButton.textContent = "Punkt speichern";
   updateEditorVehicleControls();
 }

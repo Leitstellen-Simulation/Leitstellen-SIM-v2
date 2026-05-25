@@ -223,6 +223,22 @@ label {
   color: white;
 }
 
+.danger-action {
+  border-color: #d6a1a1;
+  background: #fff2f2;
+  color: #9f2424;
+  font-weight: 700;
+}
+
+.danger-action:hover {
+  border-color: #b94a4a;
+  background: #ffe1e1;
+}
+
+.attention-save {
+  box-shadow: 0 0 0 2px rgba(196, 122, 34, .24);
+}
+
 .dispatch-screen {
   width: 100vw;
   height: 100dvh;
@@ -240,7 +256,7 @@ label {
   width: 100vw;
   height: 100dvh;
   display: grid;
-  grid-template-columns: minmax(280px, 340px) minmax(460px, 1fr) minmax(420px, 520px);
+  grid-template-columns: minmax(280px, 340px) minmax(460px, 1fr) minmax(360px, 440px);
   gap: 10px;
   padding: 10px;
 }
@@ -248,12 +264,20 @@ label {
 .dynamic-panel {
   min-height: 0;
   display: grid;
-  grid-template-rows: auto;
   border: 1px solid #b9c5d0;
   border-radius: 8px;
   background: #f8fafc;
   overflow: hidden;
   box-shadow: 0 10px 28px rgba(24, 39, 54, .08);
+}
+
+.dynamic-list-panel {
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+}
+
+.dynamic-main-panel,
+.dynamic-variant-panel {
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .dynamic-panel-head {
@@ -391,6 +415,8 @@ label {
   width: 100%;
   min-width: 0;
   display: grid;
+  grid-template-rows: auto auto auto;
+  align-content: start;
   gap: 3px;
   padding: 9px 10px;
   border: 1px solid #c7d3df;
@@ -399,6 +425,11 @@ label {
   color: inherit;
   text-align: left;
   cursor: pointer;
+  line-height: 1.25;
+}
+
+.dynamic-incident-row {
+  min-height: 68px;
 }
 
 .dynamic-incident-row:hover,
@@ -422,6 +453,7 @@ label {
 .variant-chip strong,
 .patient-chip strong,
 .outcome-chip strong {
+  display: block;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -434,6 +466,7 @@ label {
 .variant-chip span,
 .patient-chip span,
 .outcome-chip span {
+  display: block;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1018,6 +1051,38 @@ label {
   padding: 8px;
 }
 
+.support-group-list {
+  display: grid;
+  gap: 8px;
+}
+
+.support-group-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #c5d0d9;
+  border-radius: 10px;
+  background: white;
+  padding: 9px;
+}
+
+.support-group-card h3 {
+  margin: 0 0 3px;
+  font-size: 15px;
+}
+
+.support-group-card p {
+  margin: 0;
+  color: #334252;
+}
+
+.support-group-card small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+}
+
 .admin-status-bar {
   display: flex;
   flex-wrap: wrap;
@@ -1466,6 +1531,12 @@ label {
   border-left-color: var(--green);
 }
 
+.log-entry.urgent {
+  background: #ffe1e1;
+  border-color: #f0a7a7;
+  border-left-color: #dc2626;
+}
+
 .log-entry.radio-speech {
   background: #fff0dc;
   border-color: #efc083;
@@ -1776,6 +1847,11 @@ label {
 
 .vehicle-type-label.vehicle-type-REF {
   background: #9aa4ae;
+  color: #ffffff !important;
+}
+
+.vehicle-type-label.vehicle-type-ELRD {
+  background: #8e44ad;
   color: #ffffff !important;
 }
 
@@ -2250,6 +2326,14 @@ label {
   border-radius: 6px;
 }
 
+.map-marker.support {
+  width: 40px;
+  height: 26px;
+  border-radius: 7px;
+  background: #4f46e5;
+  font-size: 10px;
+}
+
 .map-marker.incident {
   background: var(--red);
 }
@@ -2325,6 +2409,11 @@ label {
 
 .vehicle-marker.vehicle-REF {
   background: #9aa4ae;
+  color: white;
+}
+
+.vehicle-marker.vehicle-ELRD {
+  background: #8e44ad;
   color: white;
 }
 

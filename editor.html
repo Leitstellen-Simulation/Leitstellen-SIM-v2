@@ -35,6 +35,7 @@
               <button id="se-new-station" type="button">Neue Rettungswache</button>
               <button id="se-new-hospital" type="button">Neue Klinik</button>
               <button id="se-new-poi" type="button">Neuer POI</button>
+              <button id="se-new-support-group" type="button">Neue UGRD/SEG</button>
               <button id="se-edit-coverage" type="button">Einsatzgebiet</button>
             </div>
           </section>
@@ -111,6 +112,7 @@
                 <label>NEF <input id="se-nef" type="number" min="0" value="0"></label>
                 <label>REF <input id="se-ref" type="number" min="0" value="0"></label>
                 <label>RTH <input id="se-rth" type="number" min="0" value="0"></label>
+                <label>ELRD <input id="se-elrd" type="number" min="0" value="0"></label>
               </div>
             </section>
             <section id="se-unit-section" class="editor-subform">
@@ -123,6 +125,7 @@
                     <option value="NEF">NEF</option>
                     <option value="RTH">RTH</option>
                     <option value="REF">REF</option>
+                    <option value="ELRD">ELRD</option>
                     <option value="SONST">Sonstige</option>
                   </select>
                 </label>
@@ -137,6 +140,51 @@
           <footer class="modal-footer">
             <button value="cancel" type="submit">Abbrechen</button>
             <button id="se-add" class="primary-action" type="button">Punkt speichern</button>
+          </footer>
+        </form>
+      </dialog>
+      <dialog id="se-support-dialog" class="modal">
+        <form method="dialog" class="modal-card editor-point-dialog">
+          <header class="modal-header">
+            <h2 id="se-support-title">UGRD/SEG bearbeiten</h2>
+            <button id="se-cancel-support" class="icon-button" value="cancel" type="submit" aria-label="Schließen">x</button>
+          </header>
+          <div class="modal-body editor-dialog-body">
+            <section class="editor-subform">
+              <h3>Gruppe</h3>
+              <label>Name <input id="se-support-name" placeholder="z.B. UGRD 1 Regensburg"></label>
+              <label>Standort/Wache
+                <select id="se-support-station"></select>
+              </label>
+              <label>Verfügbarkeit je Fahrzeug (%) <input id="se-support-availability" type="number" min="0" max="100" step="5" value="75"></label>
+              <div class="form-grid two">
+                <label>Rückmeldung frühestens (min) <input id="se-support-min" type="number" min="1" max="60" value="5"></label>
+                <label>spätestens (min) <input id="se-support-max" type="number" min="1" max="90" value="15"></label>
+              </div>
+            </section>
+            <section class="editor-subform">
+              <h3>Hintergrundfahrzeuge</h3>
+              <div class="unit-editor">
+                <label>Typ
+                  <select id="se-support-unit-type">
+                    <option value="RTW">RTW</option>
+                    <option value="KTW">KTW</option>
+                    <option value="NEF">NEF</option>
+                    <option value="REF">REF</option>
+                    <option value="ELRD">ELRD</option>
+                  </select>
+                </label>
+                <label>Funkrufname lang <input id="se-support-unit-name" placeholder="Rotkreuz Regensburg 71/70"></label>
+                <label>Funkrufname kurz <input id="se-support-unit-short" placeholder="RK R 71/70"></label>
+                <label>eigene Verfügbarkeit (%) <input id="se-support-unit-availability" type="number" min="0" max="100" step="5" placeholder="optional"></label>
+                <button id="se-add-support-unit" type="button">Fahrzeug hinzufügen</button>
+                <div id="se-support-units-list" class="unit-list"></div>
+              </div>
+            </section>
+          </div>
+          <footer class="modal-footer">
+            <button value="cancel" type="submit">Abbrechen</button>
+            <button id="se-save-support" class="primary-action" type="button">Gruppe speichern</button>
           </footer>
         </form>
       </dialog>
@@ -160,6 +208,7 @@
                 <button id="se-point-filter-stations" class="active" type="button">Wachen</button>
                 <button id="se-point-filter-hospitals" type="button">KH</button>
                 <button id="se-point-filter-poi" type="button">POI</button>
+                <button id="se-point-filter-support" type="button">UGRD</button>
               </div>
             </div>
             <div id="se-points" class="editor-point-list"></div>

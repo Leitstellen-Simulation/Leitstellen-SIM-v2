@@ -145,6 +145,7 @@ function shiftTimeLabel(hourText, minuteText = "0") {
 function renderMap() {
   if (!state.mapReady) return;
   clearMapLayers();
+  const markerSlots = new Map();
 
   state.center.stations.forEach((station) => {
     const vehicleSummary = Object.entries(station.vehicles || {})
@@ -158,19 +159,21 @@ function renderMap() {
         : "RW";
     const availabilityText = availableCount ? `${availableCount} Fahrzeug(e) an der Wache` : "keine Fahrzeuge an der Wache";
     const stationKind = foreignStation ? "Fremdwache" : "Rettungswache";
-    const position = offsetStationPosition(station);
+    const position = stackedMapPosition(offsetStationPosition(station), markerSlots);
     const marker = addMapMarker("stations", position.lat, position.lng, stationLabel, stationType, `<strong>${escapeHtml(station.label)}</strong><br>${escapeHtml(stationKind)}<br>${escapeHtml(station.address)}<br>${escapeHtml(vehicleSummary)}<br>${escapeHtml(availabilityText)}`);
     marker.bindPopup(stationPopupContent(station), { autoClose: true, closeOnClick: true, closeButton: true });
   });
   state.center.hospitals.forEach((hospital) => {
     const foreignHospital = isForeignMapPoint(hospital);
-    addMapMarker("hospitals", hospital.lat, hospital.lng, foreignHospital ? "FKH" : "KH", `hospital${foreignHospital ? " foreign-map-point" : ""}`, `<strong>${escapeHtml(hospital.label)}</strong><br>${foreignHospital ? "Fremdkrankenhaus<br>" : ""}${escapeHtml(hospital.address)}`);
+    const position = stackedMapPosition(hospital, markerSlots);
+    addMapMarker("hospitals", position.lat, position.lng, foreignHospital ? "FKH" : "KH", `hospital${foreignHospital ? " foreign-map-point" : ""}`, `<strong>${escapeHtml(hospital.label)}</strong><br>${foreignHospital ? "Fremdkrankenhaus<br>" : ""}${escapeHtml(hospital.address)}`);
   });
   state.incidents.filter((incident) => incident.status !== "geschlossen").forEach((incident) => {
     const lat = Number.isFinite(incident.lat) ? incident.lat : state.center.mapCenter[0];
     const lng = Number.isFinite(incident.lng) ? incident.lng : state.center.mapCenter[1];
+    const position = stackedMapPosition({ lat, lng }, markerSlots);
     const attention = incidentHasRadioAttention(incident) ? " attention" : "";
-    const marker = addMapMarker("incidents", lat, lng, "!", `incident${attention}`, `${incident.keyword}<br>${incident.location || "Regensburg"}`);
+    const marker = addMapMarker("incidents", position.lat, position.lng, "!", `incident${attention}`, `${incident.keyword}<br>${incident.location || "Regensburg"}`);
     marker.on("click", () => {
       selectIncidentFromMapOrList(incident);
       renderAll();
@@ -194,7 +197,8 @@ function renderMap() {
       iconSize: [72, 34],
       iconAnchor: [36, 17]
     });
-    const marker = L.marker([vehicle.lat, vehicle.lng], { icon })
+    const position = stackedMapPosition(vehicle, markerSlots);
+    const marker = L.marker([position.lat, position.lng], { icon })
       .bindPopup(vehiclePopupContent(vehicle))
       .addTo(state.map);
     marker.on("click", (event) => {
@@ -207,6 +211,23 @@ function renderMap() {
     }
     state.layers.vehicles.push(marker);
   });
+}
+
+function stackedMapPosition(point, markerSlots) {
+  const lat = Number(point?.lat);
+  const lng = Number(point?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !state.map?.project) return { lat, lng };
+  const key = `${lat.toFixed(5)}:${lng.toFixed(5)}`;
+  const index = markerSlots.get(key) || 0;
+  markerSlots.set(key, index + 1);
+  if (!index) return { lat, lng };
+  const direction = index % 2 ? -1 : 1;
+  const step = Math.ceil(index / 2);
+  const horizontalStep = Math.floor((step - 1) / 4);
+  const pixelOffset = L.point(horizontalStep * 38, direction * (38 + (step - 1) % 4 * 38));
+  const projected = state.map.project(L.latLng(lat, lng), state.map.getZoom()).add(pixelOffset);
+  const shifted = state.map.unproject(projected, state.map.getZoom());
+  return { lat: shifted.lat, lng: shifted.lng };
 }
 
 function offsetStationPosition(station) {
@@ -297,6 +318,7 @@ function vehiclePopupContent(vehicle) {
     addPopupButton(wrapper, "mit Sondersignal zum Auftrag", () => toggleVehicleSignal(vehicle.id));
   }
   if (vehicle.status === 7) addPopupButton(wrapper, "Zielortwechsel", () => changeTransportDestination(vehicle.id));
+  if (vehicle.supportGroupId) addPopupButton(wrapper, "UGRD einruecken", () => recallSupportGroupVehicle(vehicle.id));
   if (canAskAccompanyingDoctorRelease(vehicle)) addPopupButton(wrapper, "Abkömmlich?", () => askAccompanyingDoctorRelease(vehicle.id));
   if (canReleaseAccompanyingDoctor(vehicle)) addPopupButton(wrapper, "abkömmlich freimelden", () => releaseAccompanyingDoctor(vehicle.id));
   if (vehicle.status === 8) addPopupButton(wrapper, "einsatzklar?", () => askVehicleReadiness(vehicle.id));
@@ -707,6 +729,7 @@ function renderIncidentsCollapsible(visible) {
     details.append(renderServiceSupport(incident));
     if (incident.assistanceDecision) details.append(renderAssistanceDecision(incident));
     if (incident.ktwHandoverDecision) details.append(renderKtwHandoverDecision(incident));
+    if (incident.elrdWaitDecision) details.append(renderElrdWaitDecision(incident));
 
     activeTransportRequests(incident).forEach((request) => {
       const transportBox = document.createElement("div");
@@ -826,6 +849,9 @@ function renderAssistanceDecision(incident) {
   const missing = incident.assistanceDecision?.missing || [];
   appendTextBlock(wrapper, "strong", `Nachforderung: ${missing.join(", ")}`);
   const patientRows = assistanceDecisionPatients(incident, missing);
+  if (missing.includes("ELRD") && patientRows.length) {
+    appendAssistanceButtons(wrapper, incident, ["ELRD"]);
+  }
   if (patientRows.length) {
     patientRows.forEach(({ patient, missing: patientMissing }) => {
       const group = document.createElement("div");
@@ -854,6 +880,13 @@ function assistanceDecisionPatients(incident, decisionMissing = []) {
 }
 
 function appendAssistanceButtons(parent, incident, missing, patientId = null) {
+  if (missing.includes("ELRD")) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "ELRD nachalarmieren";
+    button.addEventListener("click", () => openIncidentDialog(incident));
+    parent.append(button);
+  }
   if (missing.includes("NEF") || missing.includes("RTH")) {
     const button = document.createElement("button");
     button.type = "button";
@@ -904,6 +937,49 @@ function renderKtwHandoverDecision(incident) {
   no.addEventListener("click", () => answerKtwHandover(incident.id, false));
   wrapper.append(yes, no);
   return wrapper;
+}
+
+function renderElrdWaitDecision(incident) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "assistance-decision";
+  const request = incident.elrdWaitDecision || {};
+  const patientLabel = request.patientLabel || "Patient";
+  appendTextBlock(wrapper, "strong", `${patientLabel}: auf ELRD vor Transportziel warten?`);
+  const yes = document.createElement("button");
+  yes.type = "button";
+  yes.textContent = "Ja, auf ELRD warten";
+  yes.addEventListener("click", () => answerElrdWait(incident.id, true));
+  const no = document.createElement("button");
+  no.type = "button";
+  no.textContent = "Nein, Transportziel abfragen";
+  no.addEventListener("click", () => answerElrdWait(incident.id, false));
+  wrapper.append(yes, no);
+  return wrapper;
+}
+
+function answerElrdWait(incidentId, shouldWait) {
+  const incident = state.incidents.find((item) => item.id === incidentId);
+  const request = incident?.elrdWaitDecision;
+  if (!incident || !request) return;
+  const vehicle = state.vehicles.find((unit) => unit.id === request.vehicleId);
+  const patient = (incident.patient?.patients || []).find((item) => item.id === request.patientId);
+  incident.elrdWaitDecision = null;
+  if (!vehicle || !patient) return;
+  if (shouldWait) {
+    patient.waitForElrdBeforeTransport = true;
+    patient.elrdWaitBypassed = false;
+    vehicle.statusText = `${patient.label} transportbereit, wartet auf ELRD`;
+    maybeRequestAdditionalResources(vehicle, incident);
+    logRadio(`${vehicle.name}: Wartet mit Transportzielabfrage auf ELRD.`, "radio");
+    scheduleTreatmentCompletion(vehicle, incident);
+    openIncidentDialog(incident);
+  } else {
+    patient.waitForElrdBeforeTransport = false;
+    patient.elrdWaitBypassed = true;
+    logRadio(`${vehicle.name}: ELRD wird nicht abgewartet, Transportzielabfrage folgt.`, "radio");
+    requestTransportDestination(vehicle, incident);
+  }
+  renderAll();
 }
 
 function answerKtwHandover(incidentId, available) {
@@ -1014,6 +1090,12 @@ function resetTreatmentCapsAfterRequirementChange(incident) {
     const currentProgress = patientTreatmentProgress(patient, incident);
     if (patient.supportCapReachedAt) patient.supportCapReachedAt = state.minute;
     patient.supportCapValue = currentProgress;
+    (patient.assignedVehicles || [])
+      .map((id) => state.vehicles.find((vehicle) => vehicle.id === id))
+      .filter(Boolean)
+      .forEach((vehicle) => {
+        vehicle.supportOnly = !(patient.required || []).some((type) => vehicleSatisfiesPatientRequirement(vehicle.type, type, patient));
+      });
   });
 }
 
@@ -1254,6 +1336,7 @@ function currentTreatmentCap(patient, incident, assignedVehicles = null) {
   const hasDoctorSupport = assigned.some((vehicle) => ["NEF", "RTH"].includes(vehicle.type));
   const hasRthSupport = assigned.some((vehicle) => vehicle.type === "RTH");
   const hasRefSupport = assigned.some((vehicle) => vehicle.type === "REF");
+  const hasElrdSupport = assigned.some((vehicle) => vehicle.type === "ELRD");
   const waitingOnlyForTransport = missing.every((type) => ["RTW", "KTW"].includes(type));
   if (hasRthSupport && waitingOnlyForTransport) return { cap: 1, support: false };
   if (hasDoctorSupport && waitingOnlyForTransport) return { cap: 0.8, support: true };
@@ -1266,6 +1349,7 @@ function currentTreatmentCap(patient, incident, assignedVehicles = null) {
   if (hasKtwFirstResponse && !hasRequiredTransportUnit) {
     if ((patient.required || []).includes("RTW")) return { cap: 0.5, support: true };
   }
+  if (hasElrdSupport && !hasRequiredTransportUnit) return { cap: 0.5, support: true };
   return { cap: 0.5, support: true };
 }
 
@@ -1576,7 +1660,7 @@ async function requestDialogTravelTime(vehicle, call, force = false) {
 function renderQuickVehicleButtons(call, assignedIds, incident = null) {
   const wrapper = document.createElement("section");
   wrapper.className = "quick-vehicle-picker";
-  ["RTW", "KTW", "NEF", "RTH"].forEach((type) => {
+  ["RTW", "KTW", "NEF", "RTH", "ELRD"].forEach((type) => {
     const vehicle = nearestFreeVehicleOfType(call, type, assignedIds);
     const shiftNotice = shiftNoticeForVehicle(vehicle);
     const button = document.createElement("button");
@@ -1631,7 +1715,7 @@ function shiftStartMinuteFromLabel(label) {
 
 function renderVehicles() {
   const vehicleSortName = (vehicle) => vehicle.shortName || vehicle.name;
-  const typeOrder = { RTW: 1, NEF: 2, KTW: 3, REF: 4, RTH: 5 };
+  const typeOrder = { RTW: 1, NEF: 2, KTW: 3, REF: 4, RTH: 5, ELRD: 6 };
   const vehicleTypeRank = (vehicle) => typeOrder[vehicle.type] || 99;
   const statusRank = (vehicle) => vehicle.status === 6 ? 99 : vehicle.status;
   const sorted = state.vehicles.filter((vehicle) => !vehicle.foreign).sort((a, b) => {
@@ -1682,6 +1766,7 @@ function renderVehicles() {
       if (vehicle.status === 1) addVehicleAction(actions, "Status H", () => sendVehicleHome(vehicle.id));
       if (vehicle.status === 3) addVehicleAction(actions, "Einsatzabbruch (E)", () => abortVehicleMission(vehicle.id));
       if (vehicle.status === 7) addVehicleAction(actions, "Zielort ändern", () => changeTransportDestination(vehicle.id));
+      if (vehicle.supportGroupId) addVehicleAction(actions, "UGRD einruecken", () => recallSupportGroupVehicle(vehicle.id));
       if (canReleaseAccompanyingDoctor(vehicle)) addVehicleAction(actions, "abkömmlich frei", () => releaseAccompanyingDoctor(vehicle.id));
       if (canAskAccompanyingDoctorRelease(vehicle)) addVehicleAction(actions, "Abkoemmlich?", () => askAccompanyingDoctorRelease(vehicle.id));
       if (vehicle.status === 8) addVehicleAction(actions, "Einsatzklar?", () => askVehicleReadiness(vehicle.id));
