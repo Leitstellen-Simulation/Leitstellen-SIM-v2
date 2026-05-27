@@ -51,6 +51,10 @@ const server = createServer(async (request, response) => {
       await handleOsmPoiApi(request, response);
       return;
     }
+    if (url.pathname === "/api/boundary-search") {
+      await handleBoundarySearchApi(request, response);
+      return;
+    }
     if (url.pathname === "/api/admin-login") {
       await handleAdminLogin(request, response);
       return;
@@ -208,6 +212,119 @@ async function handleRouteApi(request, response, url) {
   }
 }
 
+async function handleBoundarySearchApi(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, { error: "method not allowed" }, 405);
+    return;
+  }
+  const payload = await readJsonBody(request, response, { query: "" });
+  if (!payload) return;
+  const query = String(payload.query || "").trim();
+  if (query.length < 3) {
+    sendJson(response, { error: "search query too short" }, 400);
+    return;
+  }
+  try {
+    const boundaries = [];
+    const seen = new Set();
+    for (const searchQuery of boundarySearchQueries(query)) {
+      const params = new URLSearchParams({
+        format: "jsonv2",
+        q: searchQuery,
+        polygon_geojson: "1",
+        addressdetails: "1",
+        extratags: "1",
+        limit: "10",
+        countrycodes: "de"
+      });
+      const searchUrl = `https://nominatim.openstreetmap.org/search?${params}`;
+      const boundaryResponse = await fetch(searchUrl, {
+        headers: {
+          "user-agent": "Leitstellen-SIM-v2/0.3 boundary import",
+          accept: "application/json"
+        },
+        signal: AbortSignal.timeout(10000)
+      });
+      if (!boundaryResponse.ok) continue;
+      const data = await boundaryResponse.json();
+      (Array.isArray(data) ? data : [])
+        .map(normalizeBoundaryResult)
+        .filter(Boolean)
+        .forEach((boundary) => {
+          if (seen.has(boundary.id)) return;
+          seen.add(boundary.id);
+          boundaries.push(boundary);
+        });
+      if (boundaries.length) break;
+    }
+    sendJson(response, { boundaries });
+  } catch (error) {
+    console.warn(`Boundary search failed: ${error.message}`);
+    sendJson(response, { error: "boundary search unavailable" }, 502);
+  }
+}
+
+function boundarySearchQueries(query) {
+  const cleaned = String(query || "").trim().replace(/\s+/g, " ");
+  const withoutPrefix = cleaned
+    .replace(/^stadt\s+/i, "")
+    .replace(/^landkreis\s+/i, "")
+    .trim();
+  return [...new Set([
+    cleaned,
+    `${cleaned}, Bayern, Deutschland`,
+    withoutPrefix && `${withoutPrefix}, Bayern, Deutschland`,
+    withoutPrefix && `${withoutPrefix} Landkreis, Bayern, Deutschland`
+  ].filter(Boolean))];
+}
+
+function normalizeBoundaryResult(item) {
+  const geometry = item?.geojson;
+  if (!geometry || !["Polygon", "MultiPolygon"].includes(geometry.type)) return null;
+  const osmClass = item.class || item.category || "";
+  const adminLevel = String(item.extratags?.admin_level || item.extratags?.["admin_level"] || "");
+  const administrativeBoundary = (osmClass === "boundary" || item.type === "administrative")
+    && (!adminLevel || ["6", "8"].includes(adminLevel));
+  if (!administrativeBoundary) return null;
+  const id = `${item.osm_type || "osm"}-${item.osm_id || item.place_id || Math.random().toString(36).slice(2)}`;
+  const label = boundaryDisplayLabel(item);
+  return {
+    id,
+    label,
+    type: item.type || item.class || "boundary",
+    displayName: item.display_name || label,
+    osmType: item.osm_type || "",
+    osmId: item.osm_id || null,
+    geoJson: {
+      type: "Feature",
+      properties: {
+        id,
+        name: label,
+        displayName: item.display_name || label,
+        osmType: item.osm_type || "",
+        osmId: item.osm_id || null,
+        boundaryType: item.type || item.class || "boundary"
+      },
+      geometry
+    }
+  };
+}
+
+function boundaryDisplayLabel(item) {
+  const address = item?.address || {};
+  const firstDisplayPart = String(item?.display_name || "").split(",")[0]?.trim();
+  return item?.name
+    || address.city
+    || address.town
+    || address.village
+    || address.municipality
+    || address.hamlet
+    || firstDisplayPart
+    || address.county
+    || address.state_district
+    || "OSM-Grenze";
+}
+
 const osmPoiCategories = {
   practice: {
     label: "Arztpraxis",
@@ -314,12 +431,12 @@ async function handleOsmPoiApi(request, response) {
     sendJson(response, { error: "no supported categories selected" }, 400);
     return;
   }
-  const selector = overpassSpatialSelector(payload);
-  if (!selector) {
+  const selectors = overpassSpatialSelectors(payload);
+  if (!selectors.length) {
     sendJson(response, { error: "invalid coverage area" }, 400);
     return;
   }
-  const query = buildOverpassPoiQuery(categories, selector);
+  const query = buildOverpassPoiQuery(categories, selectors);
   try {
     const overpassResponse = await fetch("https://overpass-api.de/api/interpreter", {
       method: "POST",
@@ -342,34 +459,42 @@ async function handleOsmPoiApi(request, response) {
   }
 }
 
-function buildOverpassPoiQuery(categories, selector) {
+function buildOverpassPoiQuery(categories, selectors) {
   const queries = categories.flatMap((key) => osmPoiCategories[key].queries);
-  const parts = queries.flatMap((filter) => [
+  const parts = queries.flatMap((filter) => selectors.flatMap((selector) => [
     `node${filter}${selector};`,
     `way${filter}${selector};`,
     `relation${filter}${selector};`
-  ]);
+  ]));
   return `[out:json][timeout:25];(${parts.join("")});out body center 1200;`;
 }
 
-function overpassSpatialSelector(payload) {
-  const polygon = Array.isArray(payload.polygon) ? payload.polygon : [];
-  const points = polygon
-    .map((point) => ({ lat: Number(point.lat), lng: Number(point.lng) }))
-    .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
-  if (points.length >= 3) {
-    const closed = sameCoordinate(points[0], points.at(-1)) ? points : [...points, points[0]];
-    return `(poly:"${closed.map((point) => `${point.lat} ${point.lng}`).join(" ")}")`;
-  }
+function overpassSpatialSelectors(payload) {
+  const polygons = Array.isArray(payload.polygons) && payload.polygons.length
+    ? payload.polygons
+    : (Array.isArray(payload.polygon) ? [payload.polygon] : []);
+  const selectors = polygons
+    .map(overpassPolygonSelector)
+    .filter(Boolean);
+  if (selectors.length) return selectors;
   const bounds = payload.bounds || {};
   const south = Number(bounds.south);
   const west = Number(bounds.west);
   const north = Number(bounds.north);
   const east = Number(bounds.east);
   if ([south, west, north, east].every(Number.isFinite) && south < north && west < east) {
-    return `(${south},${west},${north},${east})`;
+    return [`(${south},${west},${north},${east})`];
   }
-  return null;
+  return [];
+}
+
+function overpassPolygonSelector(polygon) {
+  const points = (Array.isArray(polygon) ? polygon : [])
+    .map((point) => ({ lat: Number(point.lat), lng: Number(point.lng) }))
+    .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+  if (points.length < 3) return null;
+  const closed = sameCoordinate(points[0], points.at(-1)) ? points : [...points, points[0]];
+  return `(poly:"${closed.map((point) => `${point.lat} ${point.lng}`).join(" ")}")`;
 }
 
 function sameCoordinate(a, b) {
@@ -699,7 +824,8 @@ JSON-Schema:
       "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
       "requiresDoctorAccompaniment": false,
       "needsFW": false,
-      "needsPOL": false
+      "needsPOL": false,
+      "recommendedVehicles": ["HVO","FR"]
     }]
   }]
 }
@@ -707,7 +833,7 @@ JSON-Schema:
 Regeln:
 ${modeRules}
 ${variationRules}
-- Erlaubte Fahrzeugtypen: KTW, RTW, NEF, REF, RTH.
+- Erlaubte Fahrzeugtypen: KTW, RTW, NEF, VEF, REF, RTH, ITW, ITH, HVO, FR. HVO/FR nur als recommendedVehicles nutzen, nicht in options.
 - Gib keinen globalen Einsatz-weight aus; dieser wird lokal immer automatisch auf 1 gesetzt.
 - Gib pro Variante ein sinnvolles "weight" aus. Beispiele: haeufige Variante 0.6, seltene Variante 0.15, mehrere gleich haeufige Varianten je 1.
 - options-Wahrscheinlichkeiten pro Patient muessen zusammen etwa 1 ergeben. Nutze mehrere Optionen, wenn unterschiedliche Rettungsmittel realistisch sind, z.B. [{"probability":0.7,"vehicles":["RTW"]},{"probability":0.3,"vehicles":["KTW"]}] oder [{"probability":0.8,"vehicles":["RTW","NEF"]},{"probability":0.2,"vehicles":["RTW"]}].
@@ -715,6 +841,7 @@ ${variationRules}
 - RTW-Notfaelle ca. 1 Patient, requiredDepartmentKeys passend zur Lage.
 - requiredDepartmentKeys ist eine Mehrfachauswahl. Setze bei Bedarf mehrere Fachrichtungen, z.B. ["trauma","icu"] bei Polytrauma, ["neurology","stroke"] bei Schlaganfall, ["internal","cardiology"] bei ACS. Nutze ["none"] nur, wenn kein Klinikziel gebraucht wird.
 - acuity beschreibt den dynamischen Zustand: planned-transport fuer planbare KTP, stable fuer stabile Patienten, potential-critical fuer moegliche Verschlechterung, critical fuer kritisch, reanimation fuer laufende Reanimation. Reanimation erfordert immer NEF.
+- recommendedVehicles ist optional fuer HVO/FR bei Reanimation, Bewusstlosigkeit oder RD-2-Bewusstsein; diese Fahrzeuge stabilisieren nur und sind keine Pflichtfahrzeuge.
 - NEF/RTH nur bei kritisch, Bewusstlosigkeit, Reanimation, schwerem Trauma, Geburt/Kind kritisch oder Notarztbegleitung.
 - destinationMode poi nur fuer Fahrten zu Arztpraxis, Zahnarztpraxis, Dialyse, Altenheim oder Krankenhaus als festes Ziel. Heimfahrt nach Hause ist destinationMode home.
 - locationMode poi nur wenn der Einsatz sinnvoll an einer echten POI-Kategorie startet. Wohnadresse/Privatadresse ist locationMode random.
@@ -834,12 +961,13 @@ function normalizeGeneratedPatients(value) {
     noTransportText: stringValue(patient?.noTransportText, 220) || "Ambulante Versorgung ausreichend, kein Transport.",
     requiresDoctorAccompaniment: Boolean(patient?.requiresDoctorAccompaniment),
     needsFW: Boolean(patient?.needsFW),
-    needsPOL: Boolean(patient?.needsPOL)
+    needsPOL: Boolean(patient?.needsPOL),
+    recommendedVehicles: allowedList(patient?.recommendedVehicles, ["HVO", "FR"])
   }));
 }
 
 function normalizeGeneratedOptions(value) {
-  const allowedVehicles = ["KTW", "RTW", "NEF", "REF", "RTH"];
+  const allowedVehicles = ["KTW", "RTW", "NEF", "VEF", "REF", "RTH", "ITW", "ITH"];
   const options = Array.isArray(value) ? value : [];
   const normalized = options.map((option) => {
     const vehicles = allowedList(option?.vehicles, allowedVehicles);

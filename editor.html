@@ -37,6 +37,7 @@
               <button id="se-new-poi" type="button">Neuer POI</button>
               <button id="se-new-support-group" type="button">Neue UGRD/SEG</button>
               <button id="se-edit-coverage" type="button">Einsatzgebiet</button>
+              <button id="se-edit-weight-zones" type="button">Gewichtung</button>
             </div>
           </section>
 
@@ -58,6 +59,19 @@
               <button id="se-cancel-coverage" type="button">Schließen</button>
             </div>
             <p class="inline-hint">Aktuellen Kartenausschnitt übernehmen oder GeoJSON einfügen.</p>
+            <div class="boundary-import-box">
+              <label>Landkreis / kreisfreie Stadt suchen
+                <input id="se-boundary-query" placeholder="z.B. Stadt Regensburg oder Landkreis Regensburg">
+              </label>
+              <div class="editor-actions">
+                <button id="se-search-boundaries" type="button">Grenzen suchen</button>
+                <button id="se-replace-boundaries" class="primary-action" type="button" disabled>Bestehendes Gebiet ersetzen</button>
+                <button id="se-add-boundaries" type="button" disabled>Zum Gebiet hinzufügen</button>
+                <button id="se-clear-coverage" type="button">Einsatzgebiet löschen</button>
+              </div>
+              <small id="se-boundary-status" class="inline-hint">Keine Grenzsuche gestartet.</small>
+              <div id="se-boundary-results" class="editor-point-list boundary-result-list empty-state">Noch keine Treffer.</div>
+            </div>
             <textarea id="se-coverage" rows="8" placeholder='{"type":"Feature","geometry":{"type":"Polygon","coordinates":[...]}}'></textarea>
             <div class="editor-actions">
               <button id="se-use-bounds" type="button">Kartenausschnitt übernehmen</button>
@@ -65,6 +79,28 @@
               <button id="se-add-coverage-pin" type="button">Grenzpunkt hinzufügen</button>
               <button id="se-apply-coverage" class="primary-action" type="button">GeoJSON anwenden</button>
             </div>
+          </section>
+          <section id="se-weight-form" class="editor-workbench" hidden>
+            <div class="editor-workbench-head">
+              <strong>Gewichtungszonen</strong>
+              <button id="se-cancel-weight" type="button">Schließen</button>
+            </div>
+            <p class="inline-hint">Eigene Ebene für Einsatzhäufigkeit. Höhere Faktoren werden dunkler dargestellt.</p>
+            <div class="boundary-import-box">
+              <label>Gemeinde / Stadtteil / Landkreis suchen
+                <input id="se-weight-query" placeholder="z.B. Hemau, Stadt Regensburg">
+              </label>
+              <label>Gewichtungsfaktor
+                <input id="se-weight-factor" type="number" min="0.1" step="0.1" value="1">
+              </label>
+              <div class="editor-actions">
+                <button id="se-search-weight-boundaries" type="button">Zonen suchen</button>
+                <button id="se-add-weight-zones" class="primary-action" type="button" disabled>Auswahl als Gewichtung hinzufügen</button>
+              </div>
+              <small id="se-weight-status" class="inline-hint">Keine Suche gestartet.</small>
+              <div id="se-weight-results" class="editor-point-list boundary-result-list empty-state">Noch keine Treffer.</div>
+            </div>
+            <div id="se-weight-zone-list" class="editor-point-list weight-zone-list empty-state">Noch keine Gewichtungszonen.</div>
           </section>
         </div>
       </aside>
@@ -110,9 +146,14 @@
                 <label>RTW <input id="se-rtw" type="number" min="0" value="1"></label>
                 <label>KTW <input id="se-ktw" type="number" min="0" value="0"></label>
                 <label>NEF <input id="se-nef" type="number" min="0" value="0"></label>
+                <label>VEF <input id="se-vef" type="number" min="0" value="0"></label>
                 <label>REF <input id="se-ref" type="number" min="0" value="0"></label>
+                <label>ITW <input id="se-itw" type="number" min="0" value="0"></label>
                 <label>RTH <input id="se-rth" type="number" min="0" value="0"></label>
+                <label>ITH <input id="se-ith" type="number" min="0" value="0"></label>
                 <label>ELRD <input id="se-elrd" type="number" min="0" value="0"></label>
+                <label>HvO <input id="se-hvo" type="number" min="0" value="0"></label>
+                <label>FR <input id="se-fr" type="number" min="0" value="0"></label>
               </div>
             </section>
             <section id="se-unit-section" class="editor-subform">
@@ -123,15 +164,21 @@
                     <option value="RTW">RTW</option>
                     <option value="KTW">KTW</option>
                     <option value="NEF">NEF</option>
+                    <option value="VEF">VEF</option>
                     <option value="RTH">RTH</option>
+                    <option value="ITH">ITH</option>
+                    <option value="ITW">ITW</option>
                     <option value="REF">REF</option>
                     <option value="ELRD">ELRD</option>
+                    <option value="HVO">HvO</option>
+                    <option value="FR">FR</option>
                     <option value="SONST">Sonstige</option>
                   </select>
                 </label>
                 <label>Funkrufname lang <input id="se-unit-name" placeholder="Rettung Regensburg 71/1"></label>
                 <label>Funkrufname kurz <input id="se-unit-short" placeholder="RT R 71/1"></label>
                 <label>Schichtzeit <input id="se-unit-shift" placeholder="7-19, 19-7"></label>
+                <label>Ausrück-/Fremdwachenverfügbarkeit (%) <input id="se-unit-responder-availability" type="number" min="0" max="100" step="5" placeholder="100"></label>
                 <button id="se-add-unit" type="button">Fahrzeug hinzufügen</button>
                 <div id="se-units-list" class="unit-list"></div>
               </div>
@@ -170,8 +217,13 @@
                     <option value="RTW">RTW</option>
                     <option value="KTW">KTW</option>
                     <option value="NEF">NEF</option>
+                    <option value="VEF">VEF</option>
+                    <option value="ITW">ITW</option>
+                    <option value="ITH">ITH</option>
                     <option value="REF">REF</option>
                     <option value="ELRD">ELRD</option>
+                    <option value="HVO">HvO</option>
+                    <option value="FR">FR</option>
                   </select>
                 </label>
                 <label>Funkrufname lang <input id="se-support-unit-name" placeholder="Rotkreuz Regensburg 71/70"></label>

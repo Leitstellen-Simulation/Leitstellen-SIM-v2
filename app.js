@@ -18,6 +18,7 @@ function createEmptyCenter() {
     hospitals: [],
     poi: [],
     supportGroups: [],
+    weightZones: [],
     callRates: normalizedCallRates()
   };
 }
@@ -246,6 +247,7 @@ async function startShift() {
   state.incidentCatalog = await loadIncidentCatalog();
   ensureHospitalDepartments(state.center);
   state.center.supportGroups ||= [];
+  state.center.weightZones ||= [];
   ensurePoiCatalog(state.center);
   state.coveragePoints = buildCoveragePoints(state.center);
   state.dispatcher = el.dispatcherName.value.trim() || "Gast";
@@ -762,9 +764,14 @@ function vehicleTypeLabel(type) {
     RTW: "Rettungswagen",
     KTW: "Krankentransportwagen",
     NEF: "Notarzteinsatzfahrzeug",
+    VEF: "Verlegungseinsatzfahrzeug",
     REF: "Rettungseinsatzfahrzeug",
     RTH: "Rettungshubschrauber",
-    ELRD: "Einsatzleiter Rettungsdienst"
+    ITW: "Intensivtransportwagen",
+    ITH: "Intensivtransporthubschrauber",
+    ELRD: "Einsatzleiter Rettungsdienst",
+    HVO: "Helfer vor Ort",
+    FR: "First Responder"
   };
   return labels[type] || type;
 }
@@ -822,6 +829,7 @@ function createVehicleFromStationUnit(station, stationIndex, unit, unitIndex) {
     stationId: station.id,
     foreign,
     availabilityProbability: foreignAvailabilityProbability(unit, station),
+    responderAvailabilityProbability: unit.responderAvailabilityProbability ?? station.responderAvailabilityProbability,
     status: 2,
     statusText: foreign ? "auf Fremdwache verfügbar" : "auf Wache",
     lat: station.lat + unitIndex * 0.00045,
@@ -1185,12 +1193,15 @@ function listValue(value) {
 }
 
 function randomPointInCoverage() {
-  const ring = primaryCoverageRing();
-  if (!Array.isArray(ring) || !ring.length) {
+  const weightedPoint = randomPointInWeightZones();
+  if (weightedPoint) return weightedPoint;
+  const rings = coverageOuterRings(state.center?.coverageGeoJson);
+  if (!rings.length) {
     return { lat: state.center.mapCenter[0], lng: state.center.mapCenter[1], label: nearestAddressLabel(state.center.mapCenter[0], state.center.mapCenter[1], defaultLocationLabel()) };
   }
-  const lngs = ring.map((point) => point[0]);
-  const lats = ring.map((point) => point[1]);
+  const allPoints = rings.flat();
+  const lngs = allPoints.map((point) => point[0]);
+  const lats = allPoints.map((point) => point[1]);
   for (let attempt = 0; attempt < 120; attempt += 1) {
     const point = {
       lat: randomFloat(Math.min(...lats), Math.max(...lats)),
@@ -1199,6 +1210,49 @@ function randomPointInCoverage() {
     if (callPointInsideCoverage(point.lat, point.lng)) return { ...point, label: null };
   }
   return { lat: state.center.mapCenter[0], lng: state.center.mapCenter[1], label: nearestAddressLabel(state.center.mapCenter[0], state.center.mapCenter[1], defaultLocationLabel()) };
+}
+
+function randomPointInWeightZones() {
+  const zones = (state.center?.weightZones || [])
+    .map((zone) => ({ zone, geometry: callCoverageGeometry(zone.geoJson), weight: Math.max(0.1, Number(zone.weight) || 1) }))
+    .filter((entry) => entry.geometry);
+  if (!zones.length) return null;
+  const weightedZones = zones
+    .map((entry) => ({ ...entry, score: entry.weight * Math.max(0.000001, geometryApproxArea(entry.geometry)) }))
+    .filter((entry) => entry.score > 0);
+  if (!weightedZones.length) return null;
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const entry = weightedZoneChoice(weightedZones);
+    const point = randomPointInGeometry(entry.geometry);
+    if (point && callPointInsideCoverage(point.lat, point.lng)) return { ...point, label: null };
+  }
+  return null;
+}
+
+function weightedZoneChoice(items) {
+  const total = items.reduce((sum, item) => sum + Math.max(0, item.score), 0);
+  let roll = Math.random() * total;
+  for (const item of items) {
+    roll -= Math.max(0, item.score);
+    if (roll <= 0) return item;
+  }
+  return items.at(-1);
+}
+
+function randomPointInGeometry(geometry) {
+  const rings = geometryOuterRings(geometry);
+  if (!rings.length) return null;
+  const allPoints = rings.flat();
+  const lngs = allPoints.map((point) => point[0]);
+  const lats = allPoints.map((point) => point[1]);
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const point = {
+      lat: randomFloat(Math.min(...lats), Math.max(...lats)),
+      lng: randomFloat(Math.min(...lngs), Math.max(...lngs))
+    };
+    if (callGeometryContainsPoint(geometry, point.lat, point.lng)) return point;
+  }
+  return null;
 }
 
 function keepCallInsideCoverage(call) {
@@ -1236,15 +1290,34 @@ function callCoverageGeometry(geoJson) {
 }
 
 function primaryCoverageRing() {
-  const geometry = callCoverageGeometry(state.center?.coverageGeoJson);
-  if (geometry?.type === "Polygon") return geometry.coordinates?.[0];
-  if (geometry?.type === "MultiPolygon") return geometry.coordinates?.[0]?.[0];
-  if (geometry?.type === "GeometryCollection") {
-    const polygon = (geometry.geometries || []).find((item) => item.type === "Polygon");
-    const multiPolygon = (geometry.geometries || []).find((item) => item.type === "MultiPolygon");
-    return polygon?.coordinates?.[0] || multiPolygon?.coordinates?.[0]?.[0] || null;
+  return coverageOuterRings(state.center?.coverageGeoJson)[0] || null;
+}
+
+function coverageOuterRings(geoJson) {
+  return geometryOuterRings(callCoverageGeometry(geoJson));
+}
+
+function geometryOuterRings(geometry) {
+  if (!geometry) return [];
+  if (geometry.type === "Polygon") return Array.isArray(geometry.coordinates?.[0]) ? [geometry.coordinates[0]] : [];
+  if (geometry.type === "MultiPolygon") return (geometry.coordinates || []).map((polygon) => polygon?.[0]).filter(Array.isArray);
+  if (geometry.type === "GeometryCollection") return (geometry.geometries || []).flatMap(geometryOuterRings);
+  return [];
+}
+
+function geometryApproxArea(geometry) {
+  return geometryOuterRings(geometry).reduce((sum, ring) => sum + Math.abs(ringShoelaceArea(ring)), 0);
+}
+
+function ringShoelaceArea(ring) {
+  if (!Array.isArray(ring) || ring.length < 3) return 0;
+  let area = 0;
+  for (let index = 0; index < ring.length; index += 1) {
+    const [lngA, latA] = ring[index];
+    const [lngB, latB] = ring[(index + 1) % ring.length];
+    area += lngA * latB - lngB * latA;
   }
-  return null;
+  return area / 2;
 }
 
 function callGeometryContainsPoint(geometry, lat, lng) {
@@ -1868,8 +1941,15 @@ function dialogPatientsForConditionEditor(source) {
 function nearestDispositionVehicle(call, type, unavailableIds) {
   const exact = nearestFreeVehicleOfType(call, type, unavailableIds);
   if (exact) return exact;
-  if (type === "NEF") return nearestFreeVehicleOfType(call, "RTH", unavailableIds);
-  if (type === "KTW") return nearestFreeVehicleOfType(call, "RTW", unavailableIds);
+  if (type === "NEF") {
+    return nearestFreeVehicleOfType(call, "VEF", unavailableIds)
+      || nearestFreeVehicleOfType(call, "RTH", unavailableIds)
+      || nearestFreeVehicleOfType(call, "ITH", unavailableIds)
+      || nearestFreeVehicleOfType(call, "ITW", unavailableIds);
+  }
+  if (type === "KTW") return nearestFreeVehicleOfType(call, "RTW", unavailableIds) || nearestFreeVehicleOfType(call, "ITW", unavailableIds);
+  if (type === "RTW") return nearestFreeVehicleOfType(call, "ITW", unavailableIds);
+  if (type === "RTH") return nearestFreeVehicleOfType(call, "ITH", unavailableIds);
   return null;
 }
 
@@ -2087,10 +2167,8 @@ function normalizePatients(call, fallbackDepartmentKey) {
     return call.patients.map((patient, index) => {
       const required = resolvePatientRequirement(patient.required || patient.options || [{ vehicles: patient.vehicles || ["RTW"], probability: 1 }]);
       const acuity = normalizePatientAcuity(patient.acuity || patient.patientAcuity || (call.type === "scheduled" ? "planned-transport" : "stable"));
-      const effectiveRequired = acuity === "reanimation" && !required.some(isDoctorRequirement)
-        ? [...required, "NEF"]
-        : required;
-      const refOnly = required.length > 0 && required.every((type) => type === "REF");
+      const effectiveRequired = acuity === "reanimation" ? ["RTW", "NEF"] : required;
+      const refOnly = acuity !== "reanimation" && required.length > 0 && required.every((type) => type === "REF");
       return {
         id: patient.id || `pat-${index + 1}`,
         label: patient.label || `Pat ${index + 1}`,
@@ -2101,9 +2179,10 @@ function normalizePatients(call, fallbackDepartmentKey) {
         requiredDepartmentKeys: patient.requiredDepartmentKeys || [patient.requiredDepartmentKey || fallbackDepartmentKey],
         requiredDepartment: departmentLabels(patient.requiredDepartmentKeys || [patient.requiredDepartmentKey || fallbackDepartmentKey]),
         transportSignalProbability: Number(patient.transportSignalProbability) || 0,
-        requiresDoctorAccompaniment: Boolean(patient.requiresDoctorAccompaniment),
+        requiresDoctorAccompaniment: acuity === "reanimation" || Boolean(patient.requiresDoctorAccompaniment),
         needsFW: Boolean(patient.needsFW),
         needsPOL: Boolean(patient.needsPOL),
+        recommendedVehicles: normalizeRequiredVehicles(patient.recommendedVehicles || []),
         conditionReport: patient.conditionReport || patient.patientCondition || patient.report || "",
         noTransportProbability: refOnly ? 1 : clampProbability(patient.noTransportProbability),
         noTransportText: patient.noTransportText || (refOnly ? "Ambulante Versorgung durch REF ausreichend, kein Transport." : "Ambulante Versorgung ausreichend, kein Transport."),
@@ -2115,10 +2194,8 @@ function normalizePatients(call, fallbackDepartmentKey) {
   const count = Math.max(1, Number(call.patientCount) || 1);
   const baseRequired = normalizeRequiredVehicles(call.required?.length ? call.required : ["RTW"]);
   const baseAcuity = normalizePatientAcuity(call.acuity || (call.type === "scheduled" ? "planned-transport" : "stable"));
-  const effectiveBaseRequired = baseAcuity === "reanimation" && !baseRequired.some(isDoctorRequirement)
-    ? [...baseRequired, "NEF"]
-    : baseRequired;
-  const baseRefOnly = baseRequired.length > 0 && baseRequired.every((type) => type === "REF");
+  const effectiveBaseRequired = baseAcuity === "reanimation" ? ["RTW", "NEF"] : baseRequired;
+  const baseRefOnly = baseAcuity !== "reanimation" && baseRequired.length > 0 && baseRequired.every((type) => type === "REF");
   return Array.from({ length: count }, (_, index) => ({
     id: `pat-${index + 1}`,
     label: `Pat ${index + 1}`,
@@ -2130,8 +2207,9 @@ function normalizePatients(call, fallbackDepartmentKey) {
     requiredDepartment: departmentLabels([fallbackDepartmentKey]),
     needsFW: false,
     needsPOL: false,
-    requiresDoctorAccompaniment: false,
+    requiresDoctorAccompaniment: baseAcuity === "reanimation",
     conditionReport: "",
+    recommendedVehicles: normalizeRequiredVehicles(call.recommendedVehicles || []),
     noTransportProbability: baseRefOnly ? 1 : 0,
     noTransportText: baseRefOnly ? "Ambulante Versorgung durch REF ausreichend, kein Transport." : "Ambulante Versorgung ausreichend, kein Transport.",
     transportNeeded: baseRefOnly ? false : callTransportNeeded(call),
@@ -2186,7 +2264,11 @@ function applyElrdRequirement(required, call, patients = []) {
 }
 
 function normalizeRequiredVehicles(required = []) {
-  return (required || []).filter(Boolean).map((type) => type === "RTH" ? "NEF" : type);
+  return (required || []).filter(Boolean).map((type) => {
+    const normalized = String(type).trim().toUpperCase();
+    if (normalized === "HVO" || normalized === "HVO/FR") return "HVO";
+    return normalized === "VEF" || normalized === "RTH" ? "NEF" : normalized;
+  });
 }
 
 function departmentForKeyword(keyword, trauma = false, child = false) {

@@ -10,6 +10,7 @@
     poi: [],
     supportGroups: [],
     coverageGeoJson: null,
+    weightZones: [],
     callRates: defaultCallRates()
   },
   editingId: null,
@@ -17,6 +18,8 @@
   pinMode: false,
   coverageMarkers: [],
   importedPoiResults: [],
+  boundaryResults: [],
+  weightBoundaryResults: [],
   pointListFilter: "station",
   editingSupportGroupId: null,
   editingSupportUnits: [],
@@ -27,15 +30,17 @@
 };
 
 const el = Object.fromEntries([
-  "map-name", "type", "name", "address", "foreign-point", "foreign-availability-row", "foreign-availability", "geocode", "rtw", "ktw", "nef", "ref", "rth", "elrd", "lat", "lng",
+  "map-name", "type", "name", "address", "foreign-point", "foreign-availability-row", "foreign-availability", "geocode", "rtw", "ktw", "nef", "vef", "ref", "itw", "rth", "ith", "elrd", "hvo", "fr", "lat", "lng",
   "rates",
-  "new-station", "new-hospital", "new-poi", "new-support-group", "edit-coverage", "point-dialog", "point-form", "coverage-form", "form-title",
+  "new-station", "new-hospital", "new-poi", "new-support-group", "edit-coverage", "edit-weight-zones", "point-dialog", "point-form", "coverage-form", "weight-form", "form-title",
   "cancel-edit", "cancel-coverage", "vehicle-count-section", "unit-section", "hospital-section", "departments",
   "pediatric-only", "poi-section", "poi-category-search", "poi-categories", "coverage", "use-bounds", "apply-coverage",
+  "boundary-query", "search-boundaries", "replace-boundaries", "add-boundaries", "clear-coverage", "boundary-status", "boundary-results",
+  "cancel-weight", "weight-query", "weight-factor", "search-weight-boundaries", "add-weight-zones", "weight-status", "weight-results", "weight-zone-list",
   "osm-poi-categories", "import-pois", "apply-imported-pois", "osm-poi-status", "osm-poi-preview",
   "show-poi-markers", "point-filter-stations", "point-filter-hospitals", "point-filter-poi", "point-filter-support",
   "set-pin", "edit-coverage-pins", "add-coverage-pin",
-  "unit-type", "unit-name", "unit-short", "unit-shift", "add-unit", "units-list",
+  "unit-type", "unit-name", "unit-short", "unit-shift", "unit-responder-availability", "add-unit", "units-list",
   "support-dialog", "support-title", "cancel-support", "support-name", "support-station", "support-availability", "support-min", "support-max",
   "support-unit-type", "support-unit-name", "support-unit-short", "support-unit-availability", "add-support-unit", "support-units-list", "save-support",
   "use-center", "add", "new", "save", "points", "saved", "map"
@@ -63,6 +68,10 @@ function init() {
   el.use_center.addEventListener("click", useCenter);
   el.use_bounds.addEventListener("click", useBoundsAsCoverage);
   el.apply_coverage.addEventListener("click", applyCoverageGeoJson);
+  el.search_boundaries.addEventListener("click", searchBoundaries);
+  el.replace_boundaries.addEventListener("click", () => applySelectedBoundaries("replace"));
+  el.add_boundaries.addEventListener("click", () => applySelectedBoundaries("add"));
+  el.clear_coverage.addEventListener("click", clearCoverageGeoJson);
   el.edit_coverage_pins.addEventListener("click", editCoveragePins);
   el.add_coverage_pin.addEventListener("click", addCoveragePin);
   el.geocode.addEventListener("click", geocodeAddress);
@@ -74,6 +83,9 @@ function init() {
   el.new_poi.addEventListener("click", () => startPointEdit("poi"));
   el.new_support_group.addEventListener("click", () => startSupportGroupEdit());
   el.edit_coverage.addEventListener("click", showCoverageForm);
+  el.edit_weight_zones.addEventListener("click", showWeightForm);
+  el.search_weight_boundaries.addEventListener("click", searchWeightBoundaries);
+  el.add_weight_zones.addEventListener("click", addSelectedWeightZones);
   el.add_support_unit.addEventListener("click", addSupportUnit);
   el.save_support.addEventListener("click", saveSupportGroup);
   el.poi_category_search.addEventListener("input", () => renderPoiCategorySelect());
@@ -89,6 +101,7 @@ function init() {
   el.point_filter_support.addEventListener("click", () => setPointListFilter("support"));
   el.cancel_edit.addEventListener("click", closeWorkbench);
   el.cancel_coverage.addEventListener("click", closeWorkbench);
+  el.cancel_weight.addEventListener("click", closeWorkbench);
   el.new.addEventListener("click", newMap);
   el.save.addEventListener("click", saveMapFile);
   el.type.addEventListener("change", updateVehicleInputs);
@@ -180,6 +193,242 @@ function applyCoverageGeoJson() {
   }
 }
 
+async function searchBoundaries() {
+  const query = el.boundary_query.value.trim();
+  if (query.length < 3) {
+    setBoundaryStatus("Bitte mindestens drei Zeichen eingeben.", true);
+    return;
+  }
+  el.search_boundaries.disabled = true;
+  el.search_boundaries.textContent = "Suche...";
+  el.replace_boundaries.disabled = true;
+  el.add_boundaries.disabled = true;
+  setBoundaryStatus("OSM-Grenzen werden gesucht...");
+  try {
+    const response = await fetch("/api/boundary-search", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ query })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Grenzsuche fehlgeschlagen");
+    state.boundaryResults = Array.isArray(data.boundaries) ? data.boundaries : [];
+    renderBoundaryResults();
+    const hasResults = state.boundaryResults.length > 0;
+    el.replace_boundaries.disabled = !hasResults;
+    el.add_boundaries.disabled = !hasResults;
+    setBoundaryStatus(hasResults ? `${state.boundaryResults.length} Grenze(n) gefunden.` : "Keine passenden Grenzen gefunden.", !hasResults);
+  } catch (error) {
+    state.boundaryResults = [];
+    renderBoundaryResults();
+    setBoundaryStatus(error.message || "Grenzsuche fehlgeschlagen.", true);
+  } finally {
+    el.search_boundaries.disabled = false;
+    el.search_boundaries.textContent = "Grenzen suchen";
+  }
+}
+
+function renderBoundaryResults() {
+  el.boundary_results.innerHTML = "";
+  if (!state.boundaryResults.length) {
+    el.boundary_results.className = "editor-point-list boundary-result-list empty-state";
+    el.boundary_results.textContent = "Noch keine Treffer.";
+    return;
+  }
+  el.boundary_results.className = "editor-point-list boundary-result-list";
+  state.boundaryResults.forEach((result) => {
+    const row = document.createElement("label");
+    row.className = "editor-point boundary-result";
+    row.innerHTML = `
+      <input type="checkbox" value="${escapeHtml(result.id)}" checked>
+      <div>
+        <h3>${escapeHtml(result.label || "OSM-Grenze")}</h3>
+        <p>${escapeHtml(result.displayName || result.type || "Verwaltungsgrenze")}</p>
+      </div>
+    `;
+    el.boundary_results.append(row);
+  });
+}
+
+function applySelectedBoundaries(mode) {
+  const selectedIds = new Set([...el.boundary_results.querySelectorAll("input:checked")].map((input) => input.value));
+  const selectedFeatures = state.boundaryResults
+    .filter((result) => selectedIds.has(result.id))
+    .map((result) => result.geoJson)
+    .filter(Boolean);
+  if (!selectedFeatures.length) {
+    setBoundaryStatus("Bitte mindestens eine Grenze auswählen.", true);
+    return;
+  }
+  const features = mode === "add"
+    ? [...coverageFeatures(state.mapData.coverageGeoJson), ...selectedFeatures]
+    : selectedFeatures;
+  state.mapData.coverageGeoJson = coverageFromFeatures(features);
+  el.coverage.value = JSON.stringify(state.mapData.coverageGeoJson, null, 2);
+  clearCoverageMarkers();
+  render();
+  if (state.coverageLayer) {
+    state.map.fitBounds(state.coverageLayer.getBounds(), { padding: [20, 20] });
+  }
+  setBoundaryStatus(`${selectedFeatures.length} Grenze(n) ${mode === "add" ? "hinzugefügt" : "übernommen"}.`);
+}
+
+function clearCoverageGeoJson() {
+  state.mapData.coverageGeoJson = null;
+  el.coverage.value = "";
+  clearCoverageMarkers();
+  render();
+  setBoundaryStatus("Einsatzgebiet gelöscht. Ohne Einsatzgebiet nutzt die Simulation den Kartenausschnitt/Fallback.");
+}
+
+function coverageFeatures(geoJson) {
+  if (!geoJson) return [];
+  if (geoJson.type === "FeatureCollection") return (geoJson.features || []).filter((feature) => feature?.geometry);
+  if (geoJson.type === "Feature") return geoJson.geometry ? [geoJson] : [];
+  if (["Polygon", "MultiPolygon", "GeometryCollection"].includes(geoJson.type)) {
+    return [{ type: "Feature", properties: { name: "Einsatzgebiet" }, geometry: geoJson }];
+  }
+  return [];
+}
+
+function coverageFromFeatures(features) {
+  const clean = features.filter((feature) => feature?.geometry);
+  if (clean.length === 1) return clean[0];
+  return {
+    type: "FeatureCollection",
+    features: clean
+  };
+}
+
+function setBoundaryStatus(text, isError = false) {
+  el.boundary_status.textContent = text;
+  el.boundary_status.classList.toggle("error-text", Boolean(isError));
+}
+
+async function searchWeightBoundaries() {
+  const query = el.weight_query.value.trim();
+  if (query.length < 3) {
+    setWeightStatus("Bitte mindestens drei Zeichen eingeben.", true);
+    return;
+  }
+  el.search_weight_boundaries.disabled = true;
+  el.add_weight_zones.disabled = true;
+  el.search_weight_boundaries.textContent = "Suche...";
+  setWeightStatus("Grenzen fuer Gewichtungszone werden gesucht...");
+  try {
+    const response = await fetch("/api/boundary-search", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ query })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Zonensuche fehlgeschlagen");
+    state.weightBoundaryResults = Array.isArray(data.boundaries) ? data.boundaries : [];
+    renderWeightBoundaryResults();
+    el.add_weight_zones.disabled = !state.weightBoundaryResults.length;
+    setWeightStatus(state.weightBoundaryResults.length ? `${state.weightBoundaryResults.length} Zone(n) gefunden.` : "Keine passenden Grenzen gefunden.", !state.weightBoundaryResults.length);
+  } catch (error) {
+    state.weightBoundaryResults = [];
+    renderWeightBoundaryResults();
+    setWeightStatus(error.message || "Zonensuche fehlgeschlagen.", true);
+  } finally {
+    el.search_weight_boundaries.disabled = false;
+    el.search_weight_boundaries.textContent = "Zonen suchen";
+  }
+}
+
+function renderWeightBoundaryResults() {
+  el.weight_results.innerHTML = "";
+  if (!state.weightBoundaryResults.length) {
+    el.weight_results.className = "editor-point-list boundary-result-list empty-state";
+    el.weight_results.textContent = "Noch keine Treffer.";
+    return;
+  }
+  el.weight_results.className = "editor-point-list boundary-result-list";
+  state.weightBoundaryResults.forEach((result) => {
+    const row = document.createElement("label");
+    row.className = "editor-point boundary-result";
+    row.innerHTML = `
+      <input type="checkbox" value="${escapeHtml(result.id)}" checked>
+      <div>
+        <h3>${escapeHtml(result.label || "Gewichtungszone")}</h3>
+        <p>${escapeHtml(result.displayName || result.type || "Verwaltungsgrenze")}</p>
+      </div>
+    `;
+    el.weight_results.append(row);
+  });
+}
+
+function addSelectedWeightZones() {
+  const selectedIds = new Set([...el.weight_results.querySelectorAll("input:checked")].map((input) => input.value));
+  const factor = Math.max(0.1, Number(String(el.weight_factor.value).replace(",", ".")) || 1);
+  const selected = state.weightBoundaryResults.filter((result) => selectedIds.has(result.id) && result.geoJson);
+  if (!selected.length) {
+    setWeightStatus("Bitte mindestens eine Zone auswählen.", true);
+    return;
+  }
+  state.mapData.weightZones ||= [];
+  selected.forEach((result) => {
+    const existing = state.mapData.weightZones.find((zone) => zone.id === result.id);
+    const zone = {
+      id: result.id,
+      label: result.label || "Gewichtungszone",
+      weight: factor,
+      geoJson: result.geoJson
+    };
+    if (existing) Object.assign(existing, zone);
+    else state.mapData.weightZones.push(zone);
+  });
+  setWeightStatus(`${selected.length} Gewichtungszone(n) hinzugefügt.`);
+  renderWeightZoneList();
+  render();
+}
+
+function renderWeightZoneList() {
+  state.mapData.weightZones ||= [];
+  el.weight_zone_list.innerHTML = "";
+  if (!state.mapData.weightZones.length) {
+    el.weight_zone_list.className = "editor-point-list weight-zone-list empty-state";
+    el.weight_zone_list.textContent = "Noch keine Gewichtungszonen.";
+    return;
+  }
+  el.weight_zone_list.className = "editor-point-list weight-zone-list";
+  state.mapData.weightZones.forEach((zone) => {
+    const row = document.createElement("article");
+    row.className = "editor-point weight-zone-row";
+    const inputId = `weight-${zone.id}`;
+    row.innerHTML = `
+      <div>
+        <h3>${escapeHtml(zone.label || "Gewichtungszone")}</h3>
+        <p>Faktor <input id="${escapeHtml(inputId)}" type="number" min="0.1" step="0.1" value="${escapeHtml(zone.weight || 1)}"></p>
+      </div>
+    `;
+    const input = row.querySelector("input");
+    input.addEventListener("input", () => {
+      zone.weight = Math.max(0.1, Number(String(input.value).replace(",", ".")) || 1);
+      render();
+    });
+    const actions = document.createElement("div");
+    actions.className = "row-actions";
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "Löschen";
+    remove.addEventListener("click", () => {
+      state.mapData.weightZones = state.mapData.weightZones.filter((item) => item.id !== zone.id);
+      renderWeightZoneList();
+      render();
+    });
+    actions.append(remove);
+    row.append(actions);
+    el.weight_zone_list.append(row);
+  });
+}
+
+function setWeightStatus(text, isError = false) {
+  el.weight_status.textContent = text;
+  el.weight_status.classList.toggle("error-text", Boolean(isError));
+}
+
 function useCenter() {
   const center = state.map.getCenter();
   setPointCoordinates(center);
@@ -222,11 +471,20 @@ function startPointEdit(type, point = null) {
 function showCoverageForm() {
   state.editingId = null;
   el.coverage_form.hidden = false;
+  el.weight_form.hidden = true;
+}
+
+function showWeightForm() {
+  state.editingId = null;
+  el.coverage_form.hidden = true;
+  el.weight_form.hidden = false;
+  renderWeightZoneList();
 }
 
 function closeWorkbench() {
   state.editingId = null;
   el.coverage_form.hidden = true;
+  el.weight_form.hidden = true;
   if (el.point_dialog.open) el.point_dialog.close();
   clearPointFields();
 }
@@ -257,17 +515,24 @@ function addUnit() {
   if (el.type.value !== "station") return;
   const type = el.unit_type.value;
   const name = el.unit_name.value.trim() || `${type} ${state.editingUnits.length + 1}`;
+  const availability = el.unit_responder_availability.value === ""
+    ? undefined
+    : availabilityPercentToProbability(el.unit_responder_availability.value);
   state.editingUnits.push({
     id: makeId(`${type}-${name}-${Date.now()}`),
     type,
     name,
     fullName: name,
     shortName: el.unit_short.value.trim() || name,
-    shift: el.unit_shift.value.trim()
+    shift: el.unit_shift.value.trim(),
+    ...(type === "HVO" || type === "FR"
+      ? availability === undefined ? {} : { responderAvailabilityProbability: availability }
+      : availability === undefined ? {} : { availabilityProbability: availability })
   });
   el.unit_name.value = "";
   el.unit_short.value = "";
   el.unit_shift.value = "";
+  el.unit_responder_availability.value = "";
   syncCountsFromUnits();
   renderUnits();
 }
@@ -285,7 +550,13 @@ function renderUnits() {
   state.editingUnits.forEach((unit) => {
     const row = document.createElement("article");
     row.className = "unit-row";
-    row.innerHTML = `<div><strong>${escapeHtml(unit.shortName)}</strong><span>${escapeHtml(unit.name)} | ${escapeHtml(unit.type)}${unit.shift ? ` | ${escapeHtml(unit.shift)}` : ""}</span></div>`;
+    const responderAvailability = unit.responderAvailabilityProbability !== undefined
+      ? ` | Ausrücken ${probabilityToPercent(unit.responderAvailabilityProbability)}%`
+      : "";
+    const foreignAvailability = unit.availabilityProbability !== undefined
+      ? ` | Verfügbar ${probabilityToPercent(unit.availabilityProbability)}%`
+      : "";
+    row.innerHTML = `<div><strong>${escapeHtml(unit.shortName)}</strong><span>${escapeHtml(unit.name)} | ${escapeHtml(unit.type)}${unit.shift ? ` | ${escapeHtml(unit.shift)}` : ""}${responderAvailability}${foreignAvailability}</span></div>`;
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = "Entfernen";
@@ -395,9 +666,14 @@ function syncCountsFromUnits() {
   el.rtw.value = counts.RTW || 0;
   el.ktw.value = counts.KTW || 0;
   el.nef.value = counts.NEF || 0;
+  el.vef.value = counts.VEF || 0;
   el.ref.value = counts.REF || 0;
+  el.itw.value = counts.ITW || 0;
   el.rth.value = counts.RTH || 0;
+  el.ith.value = counts.ITH || 0;
   el.elrd.value = counts.ELRD || 0;
+  el.hvo.value = counts.HVO || 0;
+  el.fr.value = counts.FR || 0;
 }
 
 function savePoint() {
@@ -450,10 +726,26 @@ function vehicleCounts() {
     RTW: Number(el.rtw.value) || 0,
     KTW: Number(el.ktw.value) || 0,
     NEF: Number(el.nef.value) || 0,
+    VEF: Number(el.vef.value) || 0,
     REF: Number(el.ref.value) || 0,
+    ITW: Number(el.itw.value) || 0,
     RTH: Number(el.rth.value) || 0,
-    ELRD: Number(el.elrd.value) || 0
+    ITH: Number(el.ith.value) || 0,
+    ELRD: Number(el.elrd.value) || 0,
+    HVO: Number(el.hvo.value) || 0,
+    FR: Number(el.fr.value) || 0
   };
+}
+
+function stationHasOnlyStabilizers(point) {
+  const vehicles = point?.vehicles || {};
+  const entries = Object.entries(vehicles).filter(([, count]) => Number(count) > 0);
+  return entries.length > 0 && entries.every(([type]) => type === "HVO" || type === "FR");
+}
+
+function stationEditorMarkerLabel(point) {
+  if (!stationHasOnlyStabilizers(point)) return "RW";
+  return Number(point?.vehicles?.HVO) > 0 ? "HvO" : "FR";
 }
 
 function availabilityPercentToProbability(value) {
@@ -509,6 +801,27 @@ function render() {
     state.coverageLayer = layer;
     state.layers.push(layer);
   }
+  [...(state.mapData.weightZones || [])]
+    .sort((a, b) => weightZoneWeight(a) - weightZoneWeight(b))
+    .forEach((zone) => {
+    const baseStyle = weightZoneStyle(zone);
+    const layer = L.geoJSON(zone.geoJson, {
+      style: baseStyle
+    }).bindPopup(`<strong>${escapeHtml(zone.label || "Gewichtungszone")}</strong><br>Faktor ${escapeHtml(weightZoneWeight(zone))}`)
+      .bindTooltip(`${zone.label || "Gewichtungszone"}: Faktor ${weightZoneWeight(zone)}`, {
+        sticky: true,
+        direction: "top",
+        className: "weight-zone-tooltip"
+      })
+      .addTo(state.map);
+    layer.on("mouseover", () => layer.setStyle({
+      ...baseStyle,
+      weight: baseStyle.weight + 2,
+      fillOpacity: Math.min(0.78, baseStyle.fillOpacity + 0.18)
+    }));
+    layer.on("mouseout", () => layer.setStyle(baseStyle));
+    state.layers.push(layer);
+  });
   const points = [
     ...state.mapData.stations.map((point) => ({ ...point, type: "station" })),
     ...state.mapData.hospitals.map((point) => ({ ...point, type: "hospital" })),
@@ -519,8 +832,8 @@ function render() {
     if (point.type === "poi" && !state.showPoiMarkers) return;
     if (!Number.isFinite(Number(point.lat)) || !Number.isFinite(Number(point.lng))) return;
     const foreignClass = point.foreign ? " foreign-map-point" : "";
-    const markerClass = point.type === "hospital" ? "hospital" : point.type === "poi" ? "poi" : point.type === "support" ? "support" : "station station-available";
-    const markerLabel = point.type === "hospital" ? (point.foreign ? "FKH" : "KH") : point.type === "poi" ? "POI" : point.type === "support" ? "UGRD" : (point.foreign ? "FRW" : "RW");
+    const markerClass = point.type === "hospital" ? "hospital" : point.type === "poi" ? "poi" : point.type === "support" ? "support" : `station station-available${stationHasOnlyStabilizers(point) ? " station-stabilizer" : ""}`;
+    const markerLabel = point.type === "hospital" ? (point.foreign ? "FKH" : "KH") : point.type === "poi" ? "POI" : point.type === "support" ? "UGRD" : (point.foreign ? "FRW" : stationEditorMarkerLabel(point));
     const icon = L.divIcon({
       className: "",
       html: `<span class="map-marker ${markerClass}${foreignClass}">${markerLabel}</span>`,
@@ -548,7 +861,7 @@ function renderList(points) {
     const row = document.createElement("article");
     row.className = `editor-point${point.foreign ? " foreign-point" : ""}`;
     const extra = point.type === "station"
-      ? `${point.foreign ? " | Fremdwache" : ""}${point.foreign ? ` | ${probabilityToPercent(point.foreignAvailabilityProbability)}% verfügbar` : ""}${point.units?.length ? ` | ${point.units.map((unit) => unit.name).join(", ")}` : ""}`
+      ? stationListExtra(point)
       : point.type === "hospital"
         ? `${point.foreign ? " | Fremdkrankenhaus" : ""} | ${(point.departments || []).map(departmentLabel).join(", ") || "keine Fachrichtungen"}${point.pediatricOnly ? " | reine Kinderklinik" : ""}`
         : point.type === "support"
@@ -567,6 +880,22 @@ function renderList(points) {
     row.append(actions);
     el.points.append(row);
   });
+}
+
+function stationListExtra(point) {
+  const unitText = point.units?.length
+    ? ` | ${point.units.map((unit) => {
+      const availability = unit.availabilityProbability !== undefined
+        ? ` (${probabilityToPercent(unit.availabilityProbability)}%)`
+        : "";
+      return `${unit.name}${availability}`;
+    }).join(", ")}`
+    : "";
+  if (!point.foreign) return unitText;
+  const fallback = point.units?.length
+    ? " | Fallback Wache"
+    : " | Wache";
+  return ` | Fremdwache${fallback} ${probabilityToPercent(point.foreignAvailabilityProbability)}%${unitText}`;
 }
 
 function setPointListFilter(filter) {
@@ -609,16 +938,23 @@ function fillPointForm(point) {
   el.rtw.value = point.vehicles?.RTW || 0;
   el.ktw.value = point.vehicles?.KTW || 0;
   el.nef.value = point.vehicles?.NEF || 0;
+  el.vef.value = point.vehicles?.VEF || 0;
   el.ref.value = point.vehicles?.REF || 0;
+  el.itw.value = point.vehicles?.ITW || 0;
   el.rth.value = point.vehicles?.RTH || 0;
+  el.ith.value = point.vehicles?.ITH || 0;
   el.elrd.value = point.vehicles?.ELRD || 0;
+  el.hvo.value = point.vehicles?.HVO || 0;
+  el.fr.value = point.vehicles?.FR || 0;
   state.editingUnits = (point.units || []).map((unit) => ({
     id: unit.id || makeId(`${unit.type}-${unit.name}-${Date.now()}`),
     type: unit.type || "RTW",
     name: unit.fullName || unit.name || "",
     fullName: unit.fullName || unit.name || "",
     shortName: unit.shortName || unit.short || unit.name || "",
-    shift: unit.shift || ""
+    shift: unit.shift || "",
+    ...(unit.availabilityProbability !== undefined ? { availabilityProbability: unit.availabilityProbability } : {}),
+    ...(unit.responderAvailabilityProbability !== undefined ? { responderAvailabilityProbability: unit.responderAvailabilityProbability } : {})
   }));
   renderDepartmentChecks(point.departments || []);
   el.pediatric_only.checked = Boolean(point.pediatricOnly);
@@ -680,6 +1016,7 @@ async function loadMap(id) {
   state.mapData = await response.json();
   state.mapData.poi ||= [];
   state.mapData.supportGroups ||= [];
+  state.mapData.weightZones ||= [];
   state.mapData.callRates = normalizeCallRates(state.mapData.callRates);
   el.map_name.value = state.mapData.name;
   el.coverage.value = state.mapData.coverageGeoJson ? JSON.stringify(state.mapData.coverageGeoJson, null, 2) : "";
@@ -692,7 +1029,7 @@ async function loadMap(id) {
 }
 
 function newMap() {
-  state.mapData = { id: "new-map", name: "Neue Karte", weather: "", mapCenter: [49.00761514468197, 12.09749221801758], zoom: 14, stations: [], hospitals: [], poi: [], supportGroups: [], coverageGeoJson: null, callRates: defaultCallRates() };
+  state.mapData = { id: "new-map", name: "Neue Karte", weather: "", mapCenter: [49.00761514468197, 12.09749221801758], zoom: 14, stations: [], hospitals: [], poi: [], supportGroups: [], coverageGeoJson: null, weightZones: [], callRates: defaultCallRates() };
   el.map_name.value = state.mapData.name;
   el.coverage.value = "";
   renderRateEditor();
@@ -702,7 +1039,7 @@ function newMap() {
 
 function editCoveragePins() {
   clearCoverageMarkers();
-  const ring = state.mapData.coverageGeoJson?.geometry?.coordinates?.[0];
+  const ring = primaryCoverageRing(state.mapData.coverageGeoJson);
   const points = Array.isArray(ring) && ring.length > 3
     ? ring.slice(0, -1).slice(0, 25).map(([lng, lat]) => ({ lat, lng }))
     : boundsToCoveragePoints();
@@ -848,7 +1185,7 @@ async function importOsmPois() {
   }
   const payload = {
     categories,
-    polygon: coveragePolygonForImport(),
+    polygons: coveragePolygonsForImport(),
     bounds: boundsForImport()
   };
   el.import_pois.disabled = true;
@@ -929,11 +1266,61 @@ function renderOsmImportPreview() {
   }
 }
 
-function coveragePolygonForImport() {
-  const ring = state.mapData.coverageGeoJson?.geometry?.coordinates?.[0];
-  if (!Array.isArray(ring) || ring.length < 4) return null;
+function coveragePolygonsForImport() {
+  return coverageOuterRings(state.mapData.coverageGeoJson)
+    .map((ring) => ringToLatLngPoints(ring))
+    .filter((polygon) => polygon.length >= 3);
+}
+
+function weightZoneStyle(zone) {
+  const weight = weightZoneWeight(zone);
+  const colors = weightZoneColors(weight);
+  const opacity = Math.max(0.16, Math.min(0.68, 0.13 + Math.sqrt(weight) * 0.2));
+  return {
+    color: colors.stroke,
+    weight: weight >= 1.5 ? 2.5 : 1.6,
+    fillColor: colors.fill,
+    fillOpacity: opacity
+  };
+}
+
+function weightZoneWeight(zone) {
+  return Math.max(0.1, Number(String(zone?.weight ?? 1).replace(",", ".")) || 1);
+}
+
+function weightZoneColors(weight) {
+  if (weight < 0.5) return { fill: "#2563eb", stroke: "#1e3a8a" };
+  if (weight < 0.9) return { fill: "#0891b2", stroke: "#155e75" };
+  if (weight < 1.2) return { fill: "#f59e0b", stroke: "#92400e" };
+  if (weight < 1.6) return { fill: "#f97316", stroke: "#9a3412" };
+  if (weight < 2.4) return { fill: "#dc2626", stroke: "#7f1d1d" };
+  return { fill: "#7c3aed", stroke: "#4c1d95" };
+}
+
+function ringToLatLngPoints(ring) {
+  if (!Array.isArray(ring) || ring.length < 4) return [];
   return ring.slice(0, -1).map(([lng, lat]) => ({ lat: Number(lat), lng: Number(lng) }))
     .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+}
+
+function coverageOuterRings(geoJson) {
+  const rings = [];
+  coverageFeatures(geoJson).forEach((feature) => {
+    const geometry = feature.geometry;
+    if (geometry?.type === "Polygon" && Array.isArray(geometry.coordinates?.[0])) {
+      rings.push(geometry.coordinates[0]);
+    }
+    if (geometry?.type === "MultiPolygon") {
+      (geometry.coordinates || []).forEach((polygon) => {
+        if (Array.isArray(polygon?.[0])) rings.push(polygon[0]);
+      });
+    }
+  });
+  return rings;
+}
+
+function primaryCoverageRing(geoJson) {
+  return coverageOuterRings(geoJson)[0] || null;
 }
 
 function boundsForImport() {

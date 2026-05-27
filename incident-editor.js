@@ -1,6 +1,7 @@
 const state = {
   incidents: [],
   current: null,
+  savedIncidentId: null,
   dirty: false,
   selectedVariantId: null,
   selectedPatientId: null,
@@ -77,6 +78,7 @@ async function loadIncidents() {
 function newIncident() {
   if (!confirmDiscardUnsavedChanges()) return;
   state.current = createEmptyIncident();
+  state.savedIncidentId = null;
   state.selectedVariantId = state.current.variants[0].id;
   state.selectedPatientId = state.current.variants[0].patients[0].id;
   fillFormFromCurrent();
@@ -142,6 +144,7 @@ function createEmptyPatient() {
 
 function editIncident(incident) {
   state.current = toDynamicIncident(incident);
+  state.savedIncidentId = state.current.id || null;
   state.selectedVariantId = state.current.variants[0]?.id || null;
   state.selectedPatientId = selectedVariant()?.patients?.[0]?.id || null;
   fillFormFromCurrent();
@@ -200,7 +203,7 @@ function collectFormIntoCurrent() {
 
 async function saveIncident() {
   const incident = collectFormIntoCurrent();
-  const index = state.incidents.findIndex((item) => item.id === incident.id);
+  const index = state.incidents.findIndex((item) => item.id === (state.savedIncidentId || incident.id));
   if (index >= 0) state.incidents[index] = structuredCloneSafe(incident);
   else state.incidents.unshift(structuredCloneSafe(incident));
   await fetch("/api/incidents", {
@@ -208,6 +211,7 @@ async function saveIncident() {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(state.incidents)
   });
+  state.savedIncidentId = incident.id;
   editIncident(incident);
   markClean();
   setAiStatus("Gespeichert.", "ok");
@@ -220,6 +224,7 @@ function duplicateIncident() {
   copy.title = `${copy.title || "Einsatz"} Kopie`;
   copy.keyword = copy.title;
   state.current = copy;
+  state.savedIncidentId = null;
   fillFormFromCurrent();
   markDirty();
   renderEverything();
@@ -228,7 +233,7 @@ function duplicateIncident() {
 async function deleteCurrentIncident() {
   const current = state.current;
   if (!current?.id) return;
-  const existingIndex = state.incidents.findIndex((incident) => incident.id === current.id);
+  const existingIndex = state.incidents.findIndex((incident) => incident.id === (state.savedIncidentId || current.id));
   const title = current.title || current.keyword || "diesen Einsatz";
   if (existingIndex < 0) {
     if (!confirm("Dieser Einsatz ist noch nicht gespeichert. Verwerfen?")) return;
@@ -638,7 +643,8 @@ function sanitizePatient(patient, index) {
     requiresDoctorAccompaniment: Boolean(patient.requiresDoctorAccompaniment),
     reanimationCase: Boolean(patient.reanimationCase),
     needsFW: Boolean(patient.needsFW),
-    needsPOL: Boolean(patient.needsPOL)
+    needsPOL: Boolean(patient.needsPOL),
+    recommendedVehicles: listValue(patient.recommendedVehicles).map((item) => item.toUpperCase()).filter((item) => ["HVO", "FR"].includes(item))
   };
 }
 

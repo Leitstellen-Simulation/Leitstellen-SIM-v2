@@ -1840,8 +1840,15 @@ label {
 }
 
 .vehicle-type-label.vehicle-type-NEF,
-.vehicle-type-label.vehicle-type-RTH {
+.vehicle-type-label.vehicle-type-VEF,
+.vehicle-type-label.vehicle-type-RTH,
+.vehicle-type-label.vehicle-type-ITH {
   background: #d94b4b;
+  color: #ffffff !important;
+}
+
+.vehicle-type-label.vehicle-type-ITW {
+  background: #7c3aed;
   color: #ffffff !important;
 }
 
@@ -1852,6 +1859,12 @@ label {
 
 .vehicle-type-label.vehicle-type-ELRD {
   background: #8e44ad;
+  color: #ffffff !important;
+}
+
+.vehicle-type-label.vehicle-type-HVO,
+.vehicle-type-label.vehicle-type-FR {
+  background: #6b7280;
   color: #ffffff !important;
 }
 
@@ -2084,19 +2097,22 @@ label {
 }
 
 .quick-vehicle-picker {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
+  display: flex;
+  gap: 4px;
   margin-bottom: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
 }
 
 .quick-vehicle-picker button {
-  min-height: 28px;
-  padding: 0 7px;
-  font-size: 12px;
+  flex: 0 0 auto;
+  min-height: 26px;
+  max-width: 142px;
+  padding: 0 6px;
+  font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: normal;
+  white-space: nowrap;
 }
 
 .vehicle-type-badge {
@@ -2307,6 +2323,10 @@ label {
   background: var(--green);
 }
 
+.map-marker.station-stabilizer {
+  background: #6b7280;
+}
+
 .map-marker.hospital {
   background: var(--blue);
   border-radius: 50%;
@@ -2402,8 +2422,15 @@ label {
 }
 
 .vehicle-marker.vehicle-NEF,
-.vehicle-marker.vehicle-RTH {
+.vehicle-marker.vehicle-VEF,
+.vehicle-marker.vehicle-RTH,
+.vehicle-marker.vehicle-ITH {
   background: #d94b4b;
+  color: white;
+}
+
+.vehicle-marker.vehicle-ITW {
+  background: #7c3aed;
   color: white;
 }
 
@@ -2414,6 +2441,12 @@ label {
 
 .vehicle-marker.vehicle-ELRD {
   background: #8e44ad;
+  color: white;
+}
+
+.vehicle-marker.vehicle-HVO,
+.vehicle-marker.vehicle-FR {
+  background: #6b7280;
   color: white;
 }
 
@@ -3148,6 +3181,40 @@ label {
   border: 1px solid #d2dce6;
   border-radius: 8px;
   background: #fff;
+}
+
+.boundary-import-box {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #d2dce6;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.boundary-result-list {
+  max-height: 220px;
+  overflow: auto;
+}
+
+.boundary-result {
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  cursor: pointer;
+}
+
+.boundary-result input {
+  margin-top: 3px;
+}
+
+.weight-zone-tooltip {
+  border: 1px solid #1f2937;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .94);
+  color: #111827;
+  font-size: 11px;
+  font-weight: 800;
+  box-shadow: 0 6px 18px rgba(17, 24, 39, .18);
 }
 
 .osm-poi-result h3 {

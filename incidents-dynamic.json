@@ -1,6 +1,73 @@
 [
   {
     "schemaVersion": 2,
+    "id": "ki-rd-1-sonstiges-hypoglyk-mie-somnolent-1779280075733",
+    "category": "Sonstiges",
+    "title": "RD 1 Sonstiges - Hypoglykämie (somnolent)",
+    "keyword": "RD 1 Sonstiges - Hypoglykämie (somnolent)",
+    "type": "emergency",
+    "weight": 1,
+    "timeWindows": [],
+    "call": {
+      "callerName": "Anrufer",
+      "callerText": "Mein Mann ist plötzlich ganz verwirrt und schläfrig, er ist Diabetiker und hat heute kaum etwas gegessen.|Hilfe, mein Vater reagiert nicht richtig, er ist zuckerkrank und ganz benommen.",
+      "locationMode": "random",
+      "poiCategories": [],
+      "poiIds": [],
+      "destinationMode": "none",
+      "destinationPoiProbability": 0,
+      "destinationPoiCategories": [],
+      "destinationPoiIds": []
+    },
+    "variants": [
+      {
+        "id": "var-1-rd-1-sonstiges-hypoglykamie-somnolent",
+        "label": "Standard",
+        "weight": 1,
+        "report": "Patient somnolent, BZ 40 mg/dl, nach Gabe von Glukose 40% i.v. BZ-Anstieg auf 120 mg/dl, jetzt wach und orientiert, Transport in Klinik.",
+        "situationReport": "",
+        "requiredServices": [],
+        "signal": false,
+        "noElrd": false,
+        "patients": [
+          {
+            "id": "pat-1",
+            "label": "Pat 1",
+            "options": [
+              {
+                "probability": 0.85,
+                "vehicles": [
+                  "RTW"
+                ]
+              },
+              {
+                "probability": 0.15,
+                "vehicles": [
+                  "NEF",
+                  "RTW"
+                ]
+              }
+            ],
+            "acuity": "potential-critical",
+            "requiredDepartmentKeys": [
+              "internal"
+            ],
+            "conditionReport": "Somnolenter Patient, BZ 40 mg/dl, nach Glukosegabe wach, BZ 120 mg/dl.",
+            "transportSignalProbability": 0.2,
+            "noTransportProbability": 0.4,
+            "noTransportText": "Patient nach Glukosegabe vollständig orientiert und vital stabil, lehnt Transport ab.",
+            "requiresDoctorAccompaniment": false,
+            "reanimationCase": false,
+            "needsFW": false,
+            "needsPOL": false,
+            "recommendedVehicles": []
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "schemaVersion": 2,
     "id": "ki-ktp-verschlechterter-allgemeinzustand-1779546008752",
     "category": "Krankentransport",
     "title": "KTP - Verschlechterter Allgemeinzustand",
@@ -52,7 +119,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       },
@@ -77,6 +145,7 @@
                 ]
               }
             ],
+            "acuity": "stable",
             "requiredDepartmentKeys": [
               "internal"
             ],
@@ -88,7 +157,7 @@
             "reanimationCase": false,
             "needsFW": false,
             "needsPOL": false,
-            "acuity": "stable"
+            "recommendedVehicles": []
           }
         ]
       }
@@ -154,7 +223,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       }
@@ -225,7 +295,8 @@
             "requiresDoctorAccompaniment": true,
             "reanimationCase": false,
             "needsFW": true,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           },
           {
             "id": "pat-2",
@@ -249,7 +320,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       },
@@ -293,7 +365,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       }
@@ -354,7 +427,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       },
@@ -386,6 +460,7 @@
                 ]
               }
             ],
+            "acuity": "potential-critical",
             "requiredDepartmentKeys": [
               "internal",
               "icu"
@@ -398,7 +473,7 @@
             "reanimationCase": false,
             "needsFW": false,
             "needsPOL": false,
-            "acuity": "potential-critical"
+            "recommendedVehicles": []
           }
         ]
       }
@@ -463,7 +538,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       },
@@ -495,6 +571,7 @@
                 ]
               }
             ],
+            "acuity": "potential-critical",
             "requiredDepartmentKeys": [
               "internal",
               "cardiology"
@@ -507,7 +584,7 @@
             "reanimationCase": false,
             "needsFW": false,
             "needsPOL": false,
-            "acuity": "potential-critical"
+            "recommendedVehicles": []
           }
         ]
       }
@@ -574,7 +651,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       }
@@ -639,7 +717,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       },
@@ -684,7 +763,8 @@
             "requiresDoctorAccompaniment": true,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       },
@@ -732,7 +812,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       }
@@ -791,10 +872,14 @@
             "transportSignalProbability": 1,
             "noTransportProbability": 0,
             "noTransportText": "Ambulante Versorgung ausreichend, kein Transport.",
-            "requiresDoctorAccompaniment": false,
+            "requiresDoctorAccompaniment": true,
             "reanimationCase": true,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": [
+              "HVO",
+              "FR"
+            ]
           }
         ]
       },
@@ -819,6 +904,7 @@
                 ]
               }
             ],
+            "acuity": "stable",
             "requiredDepartmentKeys": [
               "internal"
             ],
@@ -830,7 +916,10 @@
             "reanimationCase": false,
             "needsFW": false,
             "needsPOL": false,
-            "acuity": "stable"
+            "recommendedVehicles": [
+              "HVO",
+              "FR"
+            ]
           }
         ]
       }
@@ -889,7 +978,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       },
@@ -934,7 +1024,8 @@
             "requiresDoctorAccompaniment": true,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       }
@@ -1001,7 +1092,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       },
@@ -1045,7 +1137,8 @@
             "requiresDoctorAccompaniment": true,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       }
@@ -1118,7 +1211,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       },
@@ -1156,7 +1250,11 @@
             "requiresDoctorAccompaniment": true,
             "reanimationCase": true,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": [
+              "HVO",
+              "FR"
+            ]
           }
         ]
       }
@@ -1229,7 +1327,8 @@
             "requiresDoctorAccompaniment": true,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       },
@@ -1265,7 +1364,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       }
@@ -1324,7 +1424,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       },
@@ -1367,7 +1468,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       },
@@ -1405,7 +1507,8 @@
             "requiresDoctorAccompaniment": true,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       }
@@ -1470,7 +1573,8 @@
             "requiresDoctorAccompaniment": true,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       }
@@ -1491,11 +1595,9 @@
       "locationMode": "random",
       "poiCategories": [],
       "poiIds": [],
-      "destinationMode": "poi",
+      "destinationMode": "none",
       "destinationPoiProbability": 1,
-      "destinationPoiCategories": [
-        "practice"
-      ],
+      "destinationPoiCategories": [],
       "destinationPoiIds": []
     },
     "variants": [
@@ -1540,7 +1642,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       }
@@ -1599,7 +1702,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       },
@@ -1643,7 +1747,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       },
@@ -1681,7 +1786,8 @@
             "requiresDoctorAccompaniment": true,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       }
@@ -1754,7 +1860,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       },
@@ -1785,6 +1892,7 @@
                 ]
               }
             ],
+            "acuity": "stable",
             "requiredDepartmentKeys": [
               "psychiatry"
             ],
@@ -1796,7 +1904,7 @@
             "reanimationCase": false,
             "needsFW": false,
             "needsPOL": false,
-            "acuity": "stable"
+            "recommendedVehicles": []
           }
         ]
       }
@@ -1861,7 +1969,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       }
@@ -1936,7 +2045,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       },
@@ -1980,7 +2090,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       },
@@ -2022,7 +2133,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       }
@@ -2081,7 +2193,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       }
@@ -2152,7 +2265,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": true,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           },
           {
             "id": "pat-2",
@@ -2183,7 +2297,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           },
           {
             "id": "pat-1779136919952",
@@ -2214,73 +2329,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
-          }
-        ]
-      }
-    ]
-  },
-  {
-    "schemaVersion": 2,
-    "id": "ki-rd-1-sonstiges---hypoglyk-mie-somnolent--1779280075733",
-    "category": "Sonstiges",
-    "title": "RD 1 Sonstiges - Hypoglykämie (somnolent)",
-    "keyword": "RD 1 Sonstiges - Hypoglykämie (somnolent)",
-    "type": "emergency",
-    "weight": 1,
-    "timeWindows": [],
-    "call": {
-      "callerName": "Anrufer",
-      "callerText": "Mein Mann ist plötzlich ganz verwirrt und schläfrig, er ist Diabetiker und hat heute kaum etwas gegessen.|Hilfe, mein Vater reagiert nicht richtig, er ist zuckerkrank und ganz benommen.",
-      "locationMode": "random",
-      "poiCategories": [],
-      "poiIds": [],
-      "destinationMode": "none",
-      "destinationPoiProbability": 0,
-      "destinationPoiCategories": [],
-      "destinationPoiIds": []
-    },
-    "variants": [
-      {
-        "id": "var-1-rd-1-sonstiges-hypoglykamie-somnolent",
-        "label": "Standard",
-        "weight": 1,
-        "report": "Patient somnolent, BZ 40 mg/dl, nach Gabe von Glukose 40% i.v. BZ-Anstieg auf 120 mg/dl, jetzt wach und orientiert, Transport in Klinik.",
-        "situationReport": "",
-        "requiredServices": [],
-        "signal": false,
-        "noElrd": false,
-        "patients": [
-          {
-            "id": "pat-1",
-            "label": "Pat 1",
-            "options": [
-              {
-                "probability": 0.85,
-                "vehicles": [
-                  "RTW"
-                ]
-              },
-              {
-                "probability": 0.15,
-                "vehicles": [
-                  "NEF",
-                  "RTW"
-                ]
-              }
-            ],
-            "acuity": "stable",
-            "requiredDepartmentKeys": [
-              "internal"
-            ],
-            "conditionReport": "Somnolenter Patient, BZ 40 mg/dl, nach Glukosegabe wach, BZ 120 mg/dl.",
-            "transportSignalProbability": 0.2,
-            "noTransportProbability": 0.4,
-            "noTransportText": "Patient nach Glukosegabe vollständig orientiert und vital stabil, lehnt Transport ab.",
-            "requiresDoctorAccompaniment": false,
-            "reanimationCase": false,
-            "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       }
@@ -2352,7 +2402,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       }
@@ -2425,7 +2476,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       }
@@ -2500,7 +2552,8 @@
             "requiresDoctorAccompaniment": true,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       }
@@ -2572,7 +2625,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       }
@@ -2633,7 +2687,8 @@
             "requiresDoctorAccompaniment": true,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       }
@@ -2694,7 +2749,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       }
@@ -2760,7 +2816,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       },
@@ -2796,7 +2853,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       }
@@ -2863,7 +2921,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       }
@@ -2922,7 +2981,8 @@
             "requiresDoctorAccompaniment": false,
             "reanimationCase": false,
             "needsFW": false,
-            "needsPOL": false
+            "needsPOL": false,
+            "recommendedVehicles": []
           }
         ]
       },
@@ -2947,6 +3007,7 @@
                 ]
               }
             ],
+            "acuity": "stable",
             "requiredDepartmentKeys": [
               "trauma"
             ],
@@ -2958,7 +3019,7 @@
             "reanimationCase": false,
             "needsFW": false,
             "needsPOL": false,
-            "acuity": "stable"
+            "recommendedVehicles": []
           }
         ]
       }
