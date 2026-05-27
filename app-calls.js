@@ -1,21 +1,28 @@
+const CALL_IDLE_BONUS_DELAY_MINUTES = 10;
+const CALL_IDLE_BONUS_PER_MINUTE = 0.01;
+
 function processCallRates() {
   if (state.testMode) {
     state.lastCallRateMinute = Math.floor(state.absoluteMinute);
+    state.lastUnplannedCallAbsoluteMinute = state.lastCallRateMinute;
     return;
   }
   const currentMinute = Math.floor(state.absoluteMinute);
   let previous = state.lastCallRateMinute ?? currentMinute;
   const steps = Math.min(60, currentMinute - previous);
   for (let index = 0; index < steps; index += 1) {
-    const minute = (previous + index + 1) % 1440;
-    const events = callEventsForMinute(minute);
+    const absoluteMinute = previous + index + 1;
+    const minute = absoluteMinute % 1440;
+    const events = callEventsForMinute(minute, absoluteMinute);
     if (events.scheduled && typeof createScheduledIncidentFromRate === "function") {
       createScheduledIncidentFromRate();
     }
+    let callCreated = false;
     if (events.callType) {
-      receiveCall(events.callType);
+      callCreated = receiveCall(events.callType);
+      if (callCreated) state.lastUnplannedCallAbsoluteMinute = absoluteMinute;
     }
-    if (events.scheduled || events.callType) {
+    if (events.scheduled || callCreated) {
       break;
     }
   }
@@ -23,19 +30,41 @@ function processCallRates() {
 }
 
 function callTypeForMinute(minute) {
-  return callEventsForMinute(minute).callType;
+  return callEventsForMinute(minute, Math.floor(state.absoluteMinute)).callType;
 }
 
-function callEventsForMinute(minute) {
+function callEventsForMinute(minute, absoluteMinute = Math.floor(state.absoluteMinute)) {
+  const chance = currentCallChanceInfo(minute, absoluteMinute);
+  return {
+    callType: chance.totalRate > 0 && Math.random() < chance.callChance
+      ? (Math.random() < chance.emergencyShare ? "emergency" : "transport")
+      : null,
+    scheduled: Math.random() < Math.max(0, Number(chance.rate.scheduled) || 0) / 60
+  };
+}
+
+function currentCallChanceInfo(minute = Math.floor(state.minute), absoluteMinute = Math.floor(state.absoluteMinute)) {
   const hour = Math.floor(minute / 60);
   const rate = normalizedCallRates(state.center.callRates)[hour];
-  const rolls = [
-    ["emergency", rate.emergency],
-    ["transport", rate.transport]
-  ].filter(([, value]) => Math.random() < Math.max(0, Number(value) || 0) / 60);
+  const emergencyRate = Math.max(0, Number(rate.emergency) || 0);
+  const transportRate = Math.max(0, Number(rate.transport) || 0);
+  const totalRate = emergencyRate + transportRate;
+  const idleMinutes = Number.isFinite(state.lastUnplannedCallAbsoluteMinute)
+    ? Math.max(0, absoluteMinute - state.lastUnplannedCallAbsoluteMinute)
+    : 0;
+  const idleBonus = Math.max(0, idleMinutes - CALL_IDLE_BONUS_DELAY_MINUTES) * CALL_IDLE_BONUS_PER_MINUTE;
+  const callChance = Math.min(1, totalRate / 60 + idleBonus);
   return {
-    callType: rolls.length ? rolls.sort((a, b) => b[1] - a[1])[0][0] : null,
-    scheduled: Math.random() < Math.max(0, Number(rate.scheduled) || 0) / 60
+    rate,
+    emergencyRate,
+    transportRate,
+    totalRate,
+    emergencyShare: totalRate > 0 ? emergencyRate / totalRate : 0,
+    transportShare: totalRate > 0 ? transportRate / totalRate : 0,
+    baseChance: Math.min(1, totalRate / 60),
+    idleMinutes,
+    idleBonus,
+    callChance
   };
 }
 
@@ -47,12 +76,12 @@ function receiveCall(forcedType = null) {
   const templates = availableCallTemplates();
   if (!templates.length) {
     logCall("Kein Einsatzkatalog geladen. Bitte Einsatzeditor oder incidents-data.json pruefen.", "warn");
-    return;
+    return false;
   }
   let templateIndex = weightedCallTemplateIndex(forcedType);
   if (templateIndex < 0) {
     logCall("Kein passender Telefon-Einsatz im Katalog gefunden.", "warn");
-    return;
+    return false;
   }
   if (templates.length > 1 && templateIndex === state.lastCallTemplateIndex) {
     templateIndex = (templateIndex + randomInt(1, templates.length - 1)) % templates.length;
@@ -61,9 +90,10 @@ function receiveCall(forcedType = null) {
   const call = callFromIncidentTemplate(templates[templateIndex]);
   keepCallInsideCoverage(call);
   updateCallAddressFromNearestSource(call);
-  queueIncomingCall(call);
+  const queued = queueIncomingCall(call);
   reverseGeocodeCall(call);
   reverseGeocodeCallDestination(call);
+  return queued;
 }
 
 function callFromIncidentTemplate(template, extra = {}) {
@@ -82,17 +112,19 @@ function callFromIncidentTemplate(template, extra = {}) {
 }
 
 function queueIncomingCall(call, options = {}) {
-  if (!call) return;
+  if (!call) return false;
   call.id ||= makeId();
   call.receivedAtMinute ??= state.minute;
   call.receivedAtAbsoluteMinute ??= state.absoluteMinute;
   call.answered ??= false;
   const queue = pendingCallQueue();
-  if (!queue.some((item) => item.id === call.id)) queue.push(call);
+  const existed = queue.some((item) => item.id === call.id);
+  if (!existed) queue.push(call);
   if (!state.pendingCall) state.pendingCall = call;
   playPhoneRing();
   logCall(options.message || `Neuer Telefonanruf${queue.length > 1 ? ` (${queue.length} wartend)` : ""}.`, "warn");
   updateCallControls();
+  return !existed;
 }
 
 function pendingCallQueue() {

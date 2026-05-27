@@ -12,6 +12,7 @@ const ROAD_TRANSPORT_VEHICLE_TYPES = ["KTW", "RTW", "ITW"];
 const TRANSPORT_VEHICLE_TYPES = ["KTW", "RTW", "RTH", "ITH", "ITW"];
 const ROAD_TRANSPORT_REQUIREMENT_TYPES = ["KTW", "RTW", "ITW"];
 const STABILIZER_VEHICLE_TYPES = ["HVO", "FR"];
+const DETERIORATION_SUPPORT_VEHICLE_TYPES = ["HVO", "FR", "ELRD"];
 
 function simMinuteNow() {
   return Number.isFinite(state.absoluteMinute) ? state.absoluteMinute : state.minute;
@@ -1182,18 +1183,19 @@ function dynamicDeteriorationRate(patient, incident) {
     .map((id) => state.vehicles.find((vehicle) => vehicle.id === id))
     .filter((vehicle) => vehicle?.status === 4);
   if (!assigned.length) return base;
-  if (patientMissingTypes(patient).length === 0) return 0;
+  const missing = patientMissingTypes(patient);
+  if (missing.length === 0) return 0;
+  if (missing.includes("RTW") && assigned.some((vehicle) => vehicle.type === "REF")) return 0;
   const hasRefOrRtw = assigned.some((vehicle) => ["REF", "RTW"].includes(vehicle.type));
-  const hasOnlyStabilizer = assigned.some((vehicle) => isStabilizerVehicle(vehicle.type))
-    && !assigned.some((vehicle) => !isStabilizerVehicle(vehicle.type));
-  const needsDoctor = (patientMissingTypes(patient) || []).some(isDoctorRequirement);
+  const hasOnlyDeteriorationSupport = assigned.every((vehicle) => isDeteriorationSupportVehicle(vehicle.type));
+  const needsDoctor = missing.some(isDoctorRequirement);
   if (hasRefOrRtw && needsDoctor) {
     if (patient.acuity === "stable") return base * 0.25;
     if (patient.acuity === "potential-critical") return base * 0.4;
     if (patient.acuity === "critical") return base * 0.5;
   }
-  if (patient.acuity === "stable") return base * (hasOnlyStabilizer ? 0.8 : 0.6);
-  if (patient.acuity === "potential-critical") return base * (hasOnlyStabilizer ? 0.8 : 0.7);
+  if (patient.acuity === "stable") return base * (hasOnlyDeteriorationSupport ? 0.8 : 0.6);
+  if (patient.acuity === "potential-critical") return base * (hasOnlyDeteriorationSupport ? 0.8 : 0.7);
   if (patient.acuity === "critical") return base * 0.7;
   return base;
 }
@@ -1390,6 +1392,10 @@ function patientNeedsMoreVehicles(patient) {
 
 function isStabilizerVehicle(type) {
   return STABILIZER_VEHICLE_TYPES.includes(type);
+}
+
+function isDeteriorationSupportVehicle(type) {
+  return DETERIORATION_SUPPORT_VEHICLE_TYPES.includes(type);
 }
 
 function patientHasAnyResourceAtScene(patient) {
@@ -2127,11 +2133,16 @@ function requestTransportDestination(vehicle, incident) {
     finishPatientWithoutTransport(incident, patient, vehicle, nonTransportCompletionReason(patient));
     return;
   }
+  if (patient && patientHasActiveTransportVehicle(patient, incident, vehicle.id)) {
+    requestVehicleClearance(vehicle, incident, `${patient.label || "Patient"} bereits durch ${unitName(patient.pendingTransportVehicleId || patient.transportVehicleId)} fuer Transport uebernommen`);
+    return;
+  }
   if (patient && !patientReadyForTransport(patient, incident)) {
     waitForPatientReadiness(vehicle, incident, patient);
     return;
   }
   incident.status = "wartet auf Zielklinik";
+  if (patient) patient.pendingTransportVehicleId = vehicle.id;
   vehicle.pendingTransportRequest = {
     id: makeId(),
     incidentId: incident.id,
@@ -2141,6 +2152,7 @@ function requestTransportDestination(vehicle, incident) {
   };
   vehicle.statusText = "Status 5: Sprechwunsch";
   triggerRadioStatus(vehicle, 5, `Benötige Krankenhaus-Zuweisung mit Fachrichtung: ${vehicle.pendingTransportRequest.requiredDepartment}.`);
+  if (patient) releaseRedundantTransportVehiclesForPatient(incident, patient, vehicle.id);
   renderAll();
 }
 
@@ -2150,11 +2162,13 @@ function activateTransportRequest(vehicle, incidentId) {
   const patient = patientForVehicle(vehicle, incident);
   if (patient && !patientRequiresTransport(patient)) {
     vehicle.pendingTransportRequest = null;
+    if (patient.pendingTransportVehicleId === vehicle.id) patient.pendingTransportVehicleId = null;
     finishPatientWithoutTransport(incident, patient, vehicle, nonTransportCompletionReason(patient));
     return;
   }
   if (patient && (!patientReadyForTransport(patient, incident) || !vehicleCanTransportPatient(vehicle, patient))) {
     vehicle.pendingTransportRequest = null;
+    if (patient.pendingTransportVehicleId === vehicle.id) patient.pendingTransportVehicleId = null;
     vehicle.statusText = `${patient.label} wartet auf vollständige Transportfreigabe`;
     waitForPatientReadiness(vehicle, incident, patient);
     return;
@@ -2178,6 +2192,33 @@ function activateTransportRequest(vehicle, incidentId) {
     : `Rückmeldung: ${request.report} Benötige Krankenhaus-Zuweisung mit Fachrichtung: ${request.requiredDepartment}.`;
   logRadio(`${vehicle.name}: ${message}`, "radio");
   renderAll();
+}
+
+function patientHasActiveTransportVehicle(patient, incident, currentVehicleId = null) {
+  if (!patient) return false;
+  const candidateIds = [
+    patient.pendingTransportVehicleId,
+    patient.transportVehicleId,
+    ...(incident.transportRequests || [])
+      .filter((request) => !request.patientId || request.patientId === patient.id)
+      .map((request) => request.vehicleId),
+    ...(patient.assignedVehicles || [])
+      .map((id) => state.vehicles.find((unit) => unit.id === id))
+      .filter((unit) => unit?.pendingTransportRequest?.patientId === patient.id)
+      .map((unit) => unit.id)
+  ].filter(Boolean);
+  return candidateIds.some((id) => id !== currentVehicleId);
+}
+
+function releaseRedundantTransportVehiclesForPatient(incident, patient, activeVehicleId) {
+  (patient.assignedVehicles || [])
+    .filter((id) => id !== activeVehicleId)
+    .map((id) => state.vehicles.find((unit) => unit.id === id))
+    .filter((unit) => unit && unit.status === 4)
+    .filter((unit) => !unit.pendingTransportRequest)
+    .filter((unit) => !doctorStillRequiredForPatient(unit, patient))
+    .filter((unit) => vehicleCanTransportPatient(unit, patient))
+    .forEach((unit) => requestVehicleClearance(unit, incident, `${patient.label || "Patient"} durch ${unitName(activeVehicleId)} fuer Transport uebernommen`));
 }
 
 function patientForVehicle(vehicle, incident) {
@@ -2269,12 +2310,23 @@ function beginTransportToDestination(incidentId, destination, vehicleId) {
 }
 
 function clearTransportRequest(incident, requestId = null, vehicleId = null) {
+  const removed = [];
   incident.transportRequests = (incident.transportRequests || []).filter((request) => {
-    if (requestId && request.id === requestId) return false;
-    if (vehicleId && request.vehicleId === vehicleId) return false;
+    if (requestId && request.id === requestId) {
+      removed.push(request);
+      return false;
+    }
+    if (vehicleId && request.vehicleId === vehicleId) {
+      removed.push(request);
+      return false;
+    }
     return true;
   });
   incident.transportRequest = incident.transportRequests[0] || null;
+  removed.forEach((request) => {
+    const patient = (incident.patient?.patients || []).find((item) => item.id === request.patientId);
+    if (patient?.pendingTransportVehicleId === request.vehicleId) patient.pendingTransportVehicleId = null;
+  });
 }
 
 function transportUsesSignal(vehicle, incident) {
@@ -2359,6 +2411,8 @@ function markPatientTransportStarted(vehicle, incident) {
   if (!patient) return;
   patient.transporting = true;
   patient.transportVehicleId = vehicle.id;
+  patient.pendingTransportVehicleId = null;
+  releaseRedundantTransportVehiclesForPatient(incident, patient, vehicle.id);
 }
 
 function releaseSupportVehiclesAfterHandover(incident, patient, activeVehicleId) {

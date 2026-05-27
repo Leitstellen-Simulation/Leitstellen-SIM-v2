@@ -1,6 +1,7 @@
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
+import { createHash } from "node:crypto";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,6 +16,7 @@ const defaultIncidentsFile = join(root, incidentCatalogFileName);
 const legacyIncidentsFile = join(root, "incidents-data.json");
 const mapsDir = join(dataRoot, "maps");
 const incidentsFile = join(dataRoot, incidentCatalogFileName);
+const syncMetaFile = join(dataRoot, "startup-sync.json");
 const maxBodyBytes = 2_000_000;
 const adminPassword = process.env.DISPATCH_ADMIN_PASSWORD || "XXX112XXX";
 const openRouterApiKey = process.env.OPENROUTER_API_KEY || "OPENROUTER_API_KEY_HIER_EINTRAGEN";
@@ -27,6 +29,10 @@ const types = {
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8"
 };
+const startupSyncState = {
+  mapConflicts: [],
+  incidentMerge: null
+};
 
 const server = createServer(async (request, response) => {
   try {
@@ -37,6 +43,10 @@ const server = createServer(async (request, response) => {
     }
     if (url.pathname.startsWith("/api/incidents")) {
       await handleIncidentsApi(request, response);
+      return;
+    }
+    if (url.pathname.startsWith("/api/startup-sync")) {
+      await handleStartupSyncApi(request, response);
       return;
     }
     if (url.pathname === "/api/route") {
@@ -97,27 +107,103 @@ async function ensureWritableDataFiles() {
   if (!usesExternalDataDir) return;
 
   await seedDefaultMaps();
-  if (!existsSync(incidentsFile) && existsSync(defaultIncidentsFile)) {
-    await copyDefaultFile(defaultIncidentsFile, incidentsFile);
-  } else if (!existsSync(incidentsFile) && existsSync(legacyIncidentsFile)) {
-    await copyDefaultFile(legacyIncidentsFile, incidentsFile);
-  }
+  await mergeDefaultIncidents();
 }
 
 async function seedDefaultMaps() {
   if (!existsSync(defaultMapsDir)) return;
   await mkdir(mapsDir, { recursive: true });
 
+  const syncMeta = await readSyncMeta();
   const existingFiles = new Set((await readdir(mapsDir)).filter((file) => file.endsWith(".json")));
   const defaultFiles = (await readdir(defaultMapsDir)).filter((file) => file.endsWith(".json"));
   for (const file of defaultFiles) {
-    if (existingFiles.has(file)) continue;
-    await copyDefaultFile(join(defaultMapsDir, file), join(mapsDir, file));
+    const sourceFile = join(defaultMapsDir, file);
+    const targetFile = join(mapsDir, file);
+    if (!existingFiles.has(file)) {
+      await copyDefaultFile(sourceFile, targetFile);
+      continue;
+    }
+    if (await jsonFilesEqual(sourceFile, targetFile)) continue;
+    const bundledHash = await jsonFileHash(sourceFile);
+    if (syncMeta.mapIgnores?.[file] === bundledHash) continue;
+    const bundled = await readJsonFile(sourceFile).catch(() => null);
+    const local = await readJsonFile(targetFile).catch(() => null);
+    startupSyncState.mapConflicts.push({
+      id: safeId(bundled?.id || local?.id || file.replace(/\.json$/i, "")),
+      file,
+      localName: local?.name || local?.id || file,
+      bundledName: bundled?.name || bundled?.id || file,
+      bundledHash
+    });
   }
 }
 
 async function copyDefaultFile(sourceFile, targetFile) {
   await writeFile(targetFile, await readFile(sourceFile, "utf8"), "utf8");
+}
+
+async function jsonFilesEqual(leftFile, rightFile) {
+  try {
+    const [left, right] = await Promise.all([readJsonFile(leftFile), readJsonFile(rightFile)]);
+    return stableJsonString(left) === stableJsonString(right);
+  } catch {
+    return false;
+  }
+}
+
+function stableJsonString(value) {
+  return JSON.stringify(sortJsonValue(value));
+}
+
+async function jsonFileHash(file) {
+  const json = await readJsonFile(file);
+  return createHash("sha256").update(stableJsonString(json)).digest("hex");
+}
+
+async function readSyncMeta() {
+  if (!existsSync(syncMetaFile)) return { mapIgnores: {} };
+  const meta = await readJsonFile(syncMetaFile).catch(() => ({}));
+  return { mapIgnores: {}, ...meta };
+}
+
+async function writeSyncMeta(meta) {
+  await writeJsonFile(syncMetaFile, { mapIgnores: {}, ...meta });
+}
+
+function sortJsonValue(value) {
+  if (Array.isArray(value)) return value.map(sortJsonValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.keys(value).sort().reduce((result, key) => {
+    result[key] = sortJsonValue(value[key]);
+    return result;
+  }, {});
+}
+
+async function mergeDefaultIncidents() {
+  const bundledFile = existsSync(defaultIncidentsFile)
+    ? defaultIncidentsFile
+    : existsSync(legacyIncidentsFile)
+      ? legacyIncidentsFile
+      : null;
+  if (!bundledFile) return;
+  if (!existsSync(incidentsFile)) {
+    await copyDefaultFile(bundledFile, incidentsFile);
+    startupSyncState.incidentMerge = { added: "initial", total: null };
+    return;
+  }
+  const bundled = await readJsonFile(bundledFile).catch(() => []);
+  const local = await readJsonFile(incidentsFile).catch(() => []);
+  if (!Array.isArray(bundled) || !Array.isArray(local)) return;
+  const localIds = new Set(local.map((incident) => incident?.id).filter(Boolean));
+  const additions = bundled.filter((incident) => incident?.id && !localIds.has(incident.id));
+  if (!additions.length) {
+    startupSyncState.incidentMerge = { added: 0, total: local.length };
+    return;
+  }
+  const merged = [...local, ...additions];
+  await writeJsonFile(incidentsFile, merged);
+  startupSyncState.incidentMerge = { added: additions.length, total: merged.length };
 }
 
 async function serveStaticFile(request, response, url) {
@@ -617,6 +703,51 @@ async function handleIncidentsApi(request, response) {
     return;
   }
   notFound(response);
+}
+
+async function handleStartupSyncApi(request, response) {
+  if (!usesExternalDataDir) return sendJson(response, { mapConflicts: [], incidentMerge: null });
+  if (request.method === "GET") {
+    sendJson(response, startupSyncState);
+    return;
+  }
+  if (request.method === "POST") {
+    const body = await readJsonBody(request, response, {});
+    if (!body) return;
+    if (body.type !== "map") return sendJson(response, { error: "unsupported sync type" }, 400);
+    const conflict = startupSyncState.mapConflicts.find((item) => item.id === body.id || item.file === body.file);
+    if (!conflict) return sendJson(response, startupSyncState);
+    const action = String(body.action || "local").toLowerCase();
+    const sourceFile = join(defaultMapsDir, conflict.file);
+    const targetFile = join(mapsDir, conflict.file);
+    if (action === "bundled" || action === "neu") {
+      await copyDefaultFile(sourceFile, targetFile);
+    } else if (action === "both" || action === "beide") {
+      const bundled = await readJsonFile(sourceFile);
+      const copy = await uniqueMapCopy(bundled);
+      await writeJsonFile(mapFilePath(copy.id), copy);
+    } else {
+      const meta = await readSyncMeta();
+      meta.mapIgnores ||= {};
+      meta.mapIgnores[conflict.file] = conflict.bundledHash || await jsonFileHash(sourceFile);
+      await writeSyncMeta(meta);
+    }
+    startupSyncState.mapConflicts = startupSyncState.mapConflicts.filter((item) => item !== conflict);
+    sendJson(response, startupSyncState);
+    return;
+  }
+  notFound(response);
+}
+
+async function uniqueMapCopy(map) {
+  const baseId = safeId(map.id || map.name || "karte");
+  const baseName = map.name || map.id || "Karte";
+  for (let version = 2; version < 100; version += 1) {
+    const id = safeId(`${baseId}-v${version}`);
+    if (existsSync(mapFilePath(id))) continue;
+    return { ...map, id, name: `${baseName} v${version}` };
+  }
+  return { ...map, id: safeId(`${baseId}-${Date.now()}`), name: `${baseName} Kopie` };
 }
 
 async function handleAdminLogin(request, response) {

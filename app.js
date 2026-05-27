@@ -43,6 +43,7 @@ const state = {
   timeouts: [],
   lastClockTick: Date.now(),
   lastCallRateMinute: 0,
+  lastUnplannedCallAbsoluteMinute: 0,
   editorPoints: [],
   editingMapPointId: null,
   selectedDialogVehicleIds: new Set(),
@@ -51,6 +52,7 @@ const state = {
   dialogTravelTimeRequests: new Set(),
   showForeignVehiclesInDialog: false,
   showForeignHospitalsInTransport: false,
+  startupSyncHandled: false,
   lastForeignAvailabilityRoll: null,
   lastCallTemplateIndex: -1,
   availableMaps: [],
@@ -273,7 +275,8 @@ async function startShift() {
   state.timeouts = [];
   state.speed = Number(el.speedSelect.value) || 1;
   state.lastClockTick = Date.now();
-    state.lastCallRateMinute = Math.floor(state.absoluteMinute);
+  state.lastCallRateMinute = Math.floor(state.absoluteMinute);
+  state.lastUnplannedCallAbsoluteMinute = state.lastCallRateMinute;
   state.vehicles = seedVehicles(state.center);
   rollForeignVehicleAvailability(true);
   initializeShiftStatesForStart();
@@ -354,6 +357,50 @@ async function loadCenterOptions() {
     || state.availableMaps[0]?.id
     || DEFAULT_MAP_ID;
   el.centerSelect.value = state.availableMaps.some((map) => map.id === previousValue) ? previousValue : defaultId;
+  if (!state.startupSyncHandled && state.serverAvailable) {
+    state.startupSyncHandled = true;
+    await handleStartupSyncPrompts();
+  }
+}
+
+async function handleStartupSyncPrompts() {
+  let changedMaps = false;
+  try {
+    const response = await fetch("/api/startup-sync");
+    if (!response.ok) return;
+    const sync = await response.json();
+    if (sync?.incidentMerge?.added && sync.incidentMerge.added !== "initial") {
+      console.log(`Einsatzkatalog aktualisiert: ${sync.incidentMerge.added} neue Einsaetze ergaenzt.`);
+    }
+    for (const conflict of sync?.mapConflicts || []) {
+      const choice = window.prompt(
+        `Neue gebuendelte Version fuer Karte "${conflict.localName}" gefunden.\n\n` +
+        "Was soll passieren?\n" +
+        "lokal = lokale Karte behalten\n" +
+        "neu = gebuendelte Version uebernehmen\n" +
+        "beide = beide behalten (neue als v2 anlegen)",
+        "beide"
+      );
+      const action = String(choice || "lokal").trim().toLowerCase();
+      if (!["lokal", "neu", "beide", "bundled", "both"].includes(action)) continue;
+      await fetch("/api/startup-sync", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "map", id: conflict.id, file: conflict.file, action })
+      });
+      if (action !== "lokal") changedMaps = true;
+    }
+    if (changedMaps) await reloadMapOptionsAfterSync();
+  } catch (error) {
+    console.warn("Startup-Synchronisierung nicht verfuegbar", error);
+  }
+}
+
+async function reloadMapOptionsAfterSync() {
+  const previousHandled = state.startupSyncHandled;
+  state.startupSyncHandled = true;
+  await loadCenterOptions();
+  state.startupSyncHandled = previousHandled;
 }
 
 function mergeStaticMaps(maps) {
@@ -468,18 +515,68 @@ function renderAdminStatusBar() {
   if (!state.adminMode) return;
   const mapStatus = state.mapReady ? "online" : "fallback";
   const vehiclesStatus = state.vehicles?.length ? `${state.vehicles.length} Fzg` : "keine Fzg";
+  const callChanceStatus = adminCallChanceStatus();
   const items = [
     ["Server", state.systemStatus.server],
     ["Routing", state.systemStatus.routing],
     ["Wetter", state.systemStatus.weather],
     ["Geocoding", state.systemStatus.geocoding],
     ["Karte", mapStatus],
-    ["Fahrzeuge", vehiclesStatus]
+    ["Fahrzeuge", vehiclesStatus],
+    ["Anruf", callChanceStatus]
   ];
+  const selectedIncident = state.incidents.find((incident) => incident.id === state.selectedIncidentId);
+  const patientDetails = adminPatientStateDetails(selectedIncident);
   el.adminStatusBar.innerHTML = items.map(([label, value]) => {
     const tone = value === "online" || /Fzg$/.test(value) ? "ok" : value === "unbekannt" ? "neutral" : "warn";
     return `<span class="admin-status-chip ${tone}"><b>${escapeHtml(label)}:</b> ${escapeHtml(value)}</span>`;
-  }).join("");
+  }).join("") + (patientDetails ? `<span class="admin-patient-status">${escapeHtml(patientDetails)}</span>` : "");
+}
+
+function adminCallChanceStatus() {
+  if (typeof currentCallChanceInfo !== "function") return "unbekannt";
+  const info = currentCallChanceInfo();
+  const total = Math.round(info.callChance * 1000) / 10;
+  const bonus = Math.round(info.idleBonus * 1000) / 10;
+  const emergency = Math.round(info.emergencyShare * 100);
+  const transport = Math.round(info.transportShare * 100);
+  return `${formatGermanPercent(total)}%/min inkl. +${formatGermanPercent(bonus)}% Bonus (${emergency}% N / ${transport}% T)`;
+}
+
+function formatGermanPercent(value) {
+  return String(value).replace(".", ",");
+}
+
+function adminPatientStateDetails(incident) {
+  const patients = incident?.patient?.patients || [];
+  if (!patients.length || typeof patientConditionPercent !== "function") return "";
+  return patients.map((patient) => adminPatientStateText(patient, incident)).join("   |   ");
+}
+
+function adminPatientStateText(patient, incident) {
+  if (patient.deceased) return `${patient.label || "Pat"} verstorben`;
+  const labels = {
+    "planned-transport": "planbar",
+    stable: "stabil",
+    "potential-critical": "pot. kritisch",
+    critical: "kritisch",
+    reanimation: "Reanimation"
+  };
+  const condition = Math.round(patientConditionPercent(patient, incident) * 100);
+  const parts = [`${patient.label || "Pat"} ${condition}%`, labels[patient.acuity] || patient.acuity || "unbekannt"];
+  if (Number.isFinite(patient.conditionStartPercent)) parts.push(`Start ${Math.round(patient.conditionStartPercent * 100)}%`);
+  if (Number.isFinite(patient.deteriorationPerMinute) && patient.deteriorationPerMinute > 0) {
+    const rate = typeof dynamicDeteriorationRate === "function" ? dynamicDeteriorationRate(patient, incident) : patient.deteriorationPerMinute;
+    parts.push(`Abfall ${(rate * 100).toFixed(2).replace(".", ",")}%/min`);
+  }
+  if (patient.acuity === "reanimation" && Number.isFinite(patient.reanimationSurvivalChance)) {
+    const reaRate = typeof reanimationDeteriorationRate === "function" ? reanimationDeteriorationRate(patient) : null;
+    parts.push(`Rea ${Math.round(patient.reanimationSurvivalChance * 100)}%`);
+    if (Number.isFinite(reaRate)) parts.push(`Rea-Abfall ${(reaRate * 100).toFixed(1).replace(".", ",")}%/min`);
+  }
+  const startedAt = patient.conditionStartedAt ?? incident?.createdAtAbsoluteMinute ?? incident?.createdAtMinute;
+  if (Number.isFinite(startedAt) && typeof simMinuteNow === "function") parts.push(`${Math.max(0, Math.floor(simMinuteNow() - startedAt))} min`);
+  return parts.join(" | ");
 }
 
 function toggleTestMode() {
