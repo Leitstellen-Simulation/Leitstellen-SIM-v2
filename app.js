@@ -273,7 +273,7 @@ async function startShift() {
   state.timeouts = [];
   state.speed = Number(el.speedSelect.value) || 1;
   state.lastClockTick = Date.now();
-  state.lastCallRateMinute = Math.floor(state.minute);
+    state.lastCallRateMinute = Math.floor(state.absoluteMinute);
   state.vehicles = seedVehicles(state.center);
   rollForeignVehicleAvailability(true);
   initializeShiftStatesForStart();

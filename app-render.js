@@ -493,7 +493,7 @@ function renderIncidents() {
   renderIncidentTabCounts(active);
   const visible = active
     .filter((incident) => incidentListBucket(incident) === state.incidentFilter)
-    .sort((a, b) => (b.createdAtMinute ?? 0) - (a.createdAtMinute ?? 0));
+    .sort((a, b) => (b.createdAtAbsoluteMinute ?? b.createdAtMinute ?? 0) - (a.createdAtAbsoluteMinute ?? a.createdAtMinute ?? 0));
 
   if (!visible.length) {
     el.incidentList.className = "incident-list empty-state";
@@ -1053,7 +1053,7 @@ function answerKtwHandover(incidentId, available) {
   }
   patient.awaitingKtwHandover = true;
   patient.rtwMustTransport = false;
-  patient.supportCapReachedAt = state.minute;
+  patient.supportCapReachedAt = simMinuteNow();
   patient.supportCapValue = Math.min(patientTreatmentProgress(patient, incident), 0.95);
   logRadio(`${rtw.name}: KTW soll nachgeführt werden, Versorgung bis Übergabe.`, "radio");
   openIncidentDialog(incident);
@@ -1101,7 +1101,8 @@ function applyAssistanceAlternative(incidentId, mode, patientId = null) {
     incident.assistanceDecision = {
       ...incident.assistanceDecision,
       missing: remainingMissing,
-      createdAtMinute: state.minute
+      createdAtMinute: state.minute,
+      createdAtAbsoluteMinute: simMinuteNow()
     };
     incident.assistanceRequested = true;
     incident.status = "Nachforderung";
@@ -1149,7 +1150,7 @@ function replaceRequirement(required, fromType, toType) {
 function resetTreatmentCapsAfterRequirementChange(incident) {
   (incident.patient?.patients || []).forEach((patient) => {
     const currentProgress = patientTreatmentProgress(patient, incident);
-    if (patient.supportCapReachedAt) patient.supportCapReachedAt = state.minute;
+    if (patient.supportCapReachedAt) patient.supportCapReachedAt = simMinuteNow();
     patient.supportCapValue = currentProgress;
     (patient.assignedVehicles || [])
       .map((id) => state.vehicles.find((vehicle) => vehicle.id === id))
@@ -1350,7 +1351,7 @@ function treatmentProgress(incident) {
     return values.reduce((sum, value) => sum + value, 0) / values.length;
   }
   if (!incident.patient?.treatmentStartedAt) return 0;
-  const elapsed = Math.max(0, state.minute - incident.patient.treatmentStartedAt);
+  const elapsed = Math.max(0, simMinuteNow() - incident.patient.treatmentStartedAt);
   return Math.min(1, elapsed / treatmentMinutes(incident));
 }
 
@@ -1364,27 +1365,27 @@ function patientTreatmentProgress(patient, incident) {
   const { cap, support } = currentTreatmentCap(patient, incident, assigned);
   const supportCapReachedAt = patient.supportCapReachedAt;
   const supportCapValue = patient.supportCapValue ?? 0.8;
-  let startedAt = patient.treatmentStartedAt ?? incident.patient?.treatmentStartedAt ?? state.minute;
+  let startedAt = patient.treatmentStartedAt ?? incident.patient?.treatmentStartedAt ?? simMinuteNow();
   let baseProgress = 0;
   if (supportCapReachedAt) {
     baseProgress = supportCapValue;
     if (cap > supportCapValue) {
       if (patient.treatmentResumedFromCap !== supportCapValue) {
-        patient.treatmentResumedAt = state.minute;
+        patient.treatmentResumedAt = simMinuteNow();
         patient.treatmentResumedFromCap = supportCapValue;
       }
-      startedAt = patient.treatmentResumedAt ?? state.minute;
+      startedAt = patient.treatmentResumedAt ?? simMinuteNow();
     } else {
       startedAt = supportCapReachedAt;
     }
   }
   patient.treatmentStartedAt ??= startedAt;
-  const elapsed = Math.max(0, state.minute - startedAt);
+  const elapsed = Math.max(0, simMinuteNow() - startedAt);
   const progress = Math.min(cap, baseProgress + elapsed / patientTreatmentMinutes(patient, incident));
   if (support && progress >= cap) {
     patient.supportCapReachedAt = patient.supportCapValue === cap && patient.supportCapReachedAt
       ? patient.supportCapReachedAt
-      : state.minute;
+      : simMinuteNow();
     patient.supportCapValue = cap;
     patient.treatmentResumedAt = null;
     patient.treatmentResumedFromCap = null;
@@ -1731,6 +1732,7 @@ async function requestDialogTravelTime(vehicle, call, force = false) {
 function renderQuickVehicleButtons(call, assignedIds, incident = null) {
   const wrapper = document.createElement("section");
   wrapper.className = "quick-vehicle-picker";
+  const showVehicleNameForTypes = new Set(["RTW", "KTW", "NEF"]);
   [
     { label: "RTW", types: ["RTW"] },
     { label: "KTW", types: ["KTW"] },
@@ -1747,9 +1749,10 @@ function renderQuickVehicleButtons(call, assignedIds, incident = null) {
     button.type = "button";
     if (shiftNotice) button.classList.add(`shift-${shiftNotice.type}`);
     button.title = shiftNotice?.text || "";
-    button.innerHTML = vehicle
-      ? `<strong>${escapeHtml(group.label)}:</strong> ${escapeHtml(vehicleQuickName(vehicle))}`
-      : `<strong>${escapeHtml(group.label)}:</strong> -`;
+    const showVehicleName = group.types.length === 1 && showVehicleNameForTypes.has(group.types[0]);
+    button.innerHTML = showVehicleName
+      ? `<strong>${escapeHtml(group.label)}:</strong> ${vehicle ? escapeHtml(vehicleQuickName(vehicle)) : "-"}`
+      : `<strong>${escapeHtml(group.label)}</strong>`;
     button.disabled = !vehicle;
     button.addEventListener("click", () => {
       if (!vehicle) return;

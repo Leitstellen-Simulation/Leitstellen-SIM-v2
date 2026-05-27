@@ -13,6 +13,10 @@ const TRANSPORT_VEHICLE_TYPES = ["KTW", "RTW", "RTH", "ITH", "ITW"];
 const ROAD_TRANSPORT_REQUIREMENT_TYPES = ["KTW", "RTW", "ITW"];
 const STABILIZER_VEHICLE_TYPES = ["HVO", "FR"];
 
+function simMinuteNow() {
+  return Number.isFinite(state.absoluteMinute) ? state.absoluteMinute : state.minute;
+}
+
 function alarmSupportGroup(groupId) {
   const group = (state.center?.supportGroups || []).find((item) => item.id === groupId);
   if (!group) return;
@@ -548,7 +552,8 @@ function completeSpeechPromptResponse(vehicleId, context) {
           vehicleId: vehicle.id,
           vehicleType: vehicle.type,
           missing: stillMissing,
-          createdAtMinute: state.minute
+          createdAtMinute: state.minute,
+          createdAtAbsoluteMinute: simMinuteNow()
         };
         incident.assistanceRequested = true;
       }
@@ -712,7 +717,7 @@ function arriveOnScene(vehicleId) {
   }
   incident.patient.status = "in Behandlung";
   if (incident.patient.patients?.some((patient) => patient.assignedVehicles?.length)) {
-    incident.patient.treatmentStartedAt ??= state.minute;
+    incident.patient.treatmentStartedAt ??= simMinuteNow();
   }
   incident.status = "vor Ort";
   logRadio(`${vehicle.name}: Status 4, Einsatzstelle erreicht${vehicle.type === "ELRD" ? "." : ". Patientenversorgung begonnen."}`, "radio");
@@ -1070,7 +1075,7 @@ function assignVehicleToPatient(vehicle, incident) {
   if (!canContribute && !isDoctorVehicle(vehicle.type) && !canFirstRespond && !canRefFirstRespond && !canElrdFirstRespond && !canStabilize && (patient.assignedVehicles || []).length) return;
   patient.assignedVehicles = patient.assignedVehicles || [];
   patient.assignedVehicles.push(vehicle.id);
-  if (!canStabilize) patient.treatmentStartedAt ??= state.minute;
+  if (!canStabilize) patient.treatmentStartedAt ??= simMinuteNow();
   vehicle.patientId = patient.id;
   vehicle.supportOnly = !canContribute && (isDoctorVehicle(vehicle.type) || canFirstRespond || canRefFirstRespond || canElrdFirstRespond || canStabilize);
   if (patientRequiresOnlyRef(patient)) {
@@ -1079,7 +1084,7 @@ function assignVehicleToPatient(vehicle, incident) {
     patient.noTransportText = patient.noTransportText || "Ambulante Versorgung durch REF ausreichend, kein Transport.";
   }
   if (vehicle.type === "KTW" && patient.awaitingKtwHandover) {
-    patient.supportCapReachedAt = state.minute;
+    patient.supportCapReachedAt = simMinuteNow();
     patient.supportCapValue = Math.min(patient.supportCapValue || 0.95, 0.95);
   }
 }
@@ -1136,10 +1141,10 @@ function initializePatientCondition(patient, incident) {
   const key = normalizeAcuityKey(patient.acuity || (incident?.type === "scheduled" ? "planned-transport" : "stable"));
   const rule = patientAcuityRules[key];
   patient.acuity = key;
-  patient.conditionStartedAt = incident?.createdAtMinute ?? state.minute;
+  patient.conditionStartedAt = incident?.createdAtAbsoluteMinute ?? incident?.createdAtMinute ?? simMinuteNow();
   patient.conditionStartPercent = Number.isFinite(patient.conditionStartPercent)
     ? patient.conditionStartPercent
-    : randomRange(rule.start[0], rule.start[1]);
+    : randomFloat(rule.start[0], rule.start[1]);
   patient.deteriorationPerMinute = Number.isFinite(patient.deteriorationPerMinute)
     ? patient.deteriorationPerMinute
     : rule.decline;
@@ -1147,8 +1152,8 @@ function initializePatientCondition(patient, incident) {
     patient.conditionStartPercent = 0;
     patient.reanimationSurvivalStart = Number.isFinite(patient.reanimationSurvivalStart)
       ? patient.reanimationSurvivalStart
-      : randomRange(0.5, 1);
-    patient.reanimationStartedAt = incident?.createdAtMinute ?? state.minute;
+      : randomFloat(0.5, 1);
+    patient.reanimationStartedAt = incident?.createdAtAbsoluteMinute ?? incident?.createdAtMinute ?? simMinuteNow();
     patient.reanimationLastUpdateAt = patient.reanimationStartedAt;
     enforceReanimationRequirements(patient, incident);
   }
@@ -1162,7 +1167,7 @@ function patientConditionPercent(patient, incident) {
   if (patient.completed || patient.transporting) return patient.conditionCurrentPercent ?? 1;
   if (patient.acuity === "planned-transport") return 1;
   if (patient.acuity === "reanimation") return 0;
-  const elapsed = Math.max(0, state.minute - (patient.conditionStartedAt ?? incident?.createdAtMinute ?? state.minute));
+  const elapsed = Math.max(0, simMinuteNow() - (patient.conditionStartedAt ?? incident?.createdAtAbsoluteMinute ?? incident?.createdAtMinute ?? simMinuteNow()));
   const rate = dynamicDeteriorationRate(patient, incident);
   const value = Math.max(0, (patient.conditionStartPercent ?? 1) - (elapsed * rate));
   patient.conditionCurrentPercent = value;
@@ -1197,9 +1202,9 @@ function startReanimationFromDeterioration(patient, incident) {
   if (patient.acuity === "reanimation" || patient.deceased) return;
   patient.acuity = "reanimation";
   patient.conditionCurrentPercent = 0;
-  patient.reanimationStartedAt = state.minute;
-  patient.reanimationLastUpdateAt = state.minute;
-  patient.reanimationSurvivalStart = randomRange(0.5, 1);
+  patient.reanimationStartedAt = simMinuteNow();
+  patient.reanimationLastUpdateAt = simMinuteNow();
+  patient.reanimationSurvivalStart = randomFloat(0.5, 1);
   enforceReanimationRequirements(patient, incident);
   incident.patient.situationReport = "Reanimation eingetreten. Benötige RTW und Notarzt.";
 }
@@ -1224,7 +1229,7 @@ function enforceReanimationRequirements(patient, incident = null) {
 function updateReanimationState(patient, incident) {
   if (patient.completed || patient.transporting || patient.deceased) return;
   initializePatientCondition(patient, incident);
-  const now = state.minute;
+  const now = simMinuteNow();
   const lastUpdate = patient.reanimationLastUpdateAt ?? patient.reanimationStartedAt ?? now;
   const elapsed = Math.max(0, now - lastUpdate);
   const rate = reanimationDeteriorationRate(patient);
@@ -1455,14 +1460,17 @@ function maybeRequestAdditionalResources(vehicle, incident, options = {}) {
   const needsElrd = missing.includes("ELRD");
   if (![...missing, ...missingServices].length) return [];
   if (!needsDoctor && !needsSceneTransport && !needsAdditionalTransport && !needsTransport && !needsRef && !refNeedsTransport && !needsElrd && !missingServices.length) return [];
-  const allMissing = [...(needsAdditionalTransport && !needsDoctor ? missingAfterCurrentVehicle : missing), ...missingServices];
+  const allMissing = options.asPartOfReport
+    ? [...missing, ...missingServices]
+    : [...(needsAdditionalTransport && !needsDoctor ? missingAfterCurrentVehicle : missing), ...missingServices];
   if (options.asPartOfReport) {
     incident.status = "Nachforderung";
     incident.assistanceDecision = {
       vehicleId: vehicle.id,
       vehicleType: vehicle.type,
       missing: allMissing,
-      createdAtMinute: state.minute
+      createdAtMinute: state.minute,
+      createdAtAbsoluteMinute: simMinuteNow()
     };
     incident.assistanceRequested = true;
     return allMissing;
@@ -1937,7 +1945,8 @@ function handleElrdTransportWait(vehicle, incident, patient) {
     vehicleId: vehicle.id,
     patientId: patient.id,
     patientLabel: patient.label || "Patient",
-    createdAtMinute: state.minute
+    createdAtMinute: state.minute,
+    createdAtAbsoluteMinute: simMinuteNow()
   };
   vehicle.statusText = "Status 5: ELRD-Rueckfrage";
   triggerRadioStatus(vehicle, 5, `${patient.label || "Patient"} transportbereit. Auf ELRD warten?`);
@@ -2037,7 +2046,7 @@ function finishPatientWithoutTransport(incident, patient, vehicle, reason) {
   patient.transportNeeded = false;
   patient.transporting = false;
   patient.completed = true;
-  patient.completedAtMinute = state.minute;
+  patient.completedAtMinute = simMinuteNow();
   patient.assignedVehicles = [];
   incident.patient.outcome = reason;
   incident.patient.status = incidentHasOpenPatients(incident) ? "teilweise abgeschlossen" : "abgeschlossen ohne Transport";
@@ -2393,7 +2402,7 @@ function completeTransportedPatient(vehicle, incident) {
   if (patient.transportVehicleId && patient.transportVehicleId !== vehicle.id) return;
   patient.transporting = false;
   patient.completed = true;
-  patient.completedAtMinute = state.minute;
+  patient.completedAtMinute = simMinuteNow();
   patient.transportVehicleId = null;
   clearTransportRequest(incident, null, vehicle.id);
 }
@@ -2412,7 +2421,7 @@ function closeIncidentIfAllPatientsDone(incident) {
   incident.transportRequests = [];
   incident.assistanceDecision = null;
   incident.assistanceRequested = false;
-  incident.closedAtMinute = state.minute;
+  incident.closedAtMinute = simMinuteNow();
   incident.status = "geschlossen";
   logRadio(`Einsatz abgeschlossen: ${incident.keyword}.`, "radio");
   releaseCompletedIncidentSceneVehicles(incident);
@@ -2446,7 +2455,7 @@ function reassignVehicleToNextPatient(vehicle, incident) {
   releasePatientAssignment(vehicle);
   next.assignedVehicles = next.assignedVehicles || [];
   if (!next.assignedVehicles.includes(vehicle.id)) next.assignedVehicles.push(vehicle.id);
-  next.treatmentStartedAt ??= state.minute;
+  next.treatmentStartedAt ??= simMinuteNow();
   vehicle.patientId = next.id;
   vehicle.supportOnly = !next.required?.some((type) => vehicleSatisfiesPatientRequirement(vehicle.type, type, next));
   vehicle.statusText = `versorgt ${next.label}`;
@@ -2542,7 +2551,7 @@ function finishWithoutTransport(incidentId, reason) {
     patient.transportNeeded = false;
     patient.transporting = false;
     patient.completed = true;
-    patient.completedAtMinute = state.minute;
+    patient.completedAtMinute = simMinuteNow();
   });
   incident.assigned.forEach((id) => {
     const assigned = state.vehicles.find((unit) => unit.id === id);
@@ -2617,7 +2626,7 @@ function renderServiceSupport(incident) {
 }
 
 function refreshServiceArrival(incident, service, serviceState) {
-  if (serviceState.status !== "unterwegs" || !serviceState.arriveAtMinute || state.minute < serviceState.arriveAtMinute) return;
+  if (serviceState.status !== "unterwegs" || !serviceState.arriveAtMinute || simMinuteNow() < serviceState.arriveAtMinute) return;
   serviceState.status = "an Einsatzstelle";
   serviceState.eta = null;
   serviceState.arriveAtMinute = null;
@@ -2632,8 +2641,8 @@ function alarmService(incidentId, service) {
   const eta = randomInt(3, 12);
   serviceState.status = "alarmiert";
   serviceState.eta = eta;
-  serviceState.arriveAtMinute = state.minute + eta;
-  serviceState.alarmedAt = state.minute;
+  serviceState.arriveAtMinute = simMinuteNow() + eta;
+  serviceState.alarmedAt = simMinuteNow();
   incident.services[service] = serviceState;
   clearResolvedAssistanceNeeds(incident);
   logRadio(`${service}: zu ${incident.keyword} alarmiert.`, "warn");
@@ -2657,7 +2666,7 @@ function alarmService(incidentId, service) {
 
 function serviceRemainingMinutes(serviceState) {
   if (!serviceState.arriveAtMinute) return serviceState.eta || 0;
-  return Math.max(1, Math.ceil(serviceState.arriveAtMinute - state.minute));
+  return Math.max(1, Math.ceil(serviceState.arriveAtMinute - simMinuteNow()));
 }
 
 function arriveAtHospital(vehicleId) {

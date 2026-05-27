@@ -1,14 +1,13 @@
 function processCallRates() {
   if (state.testMode) {
-    state.lastCallRateMinute = Math.floor(state.minute);
+    state.lastCallRateMinute = Math.floor(state.absoluteMinute);
     return;
   }
-  const currentMinute = Math.floor(state.minute);
+  const currentMinute = Math.floor(state.absoluteMinute);
   let previous = state.lastCallRateMinute ?? currentMinute;
-  if (currentMinute < previous) previous -= 1440;
   const steps = Math.min(60, currentMinute - previous);
   for (let index = 0; index < steps; index += 1) {
-    const minute = (previous + index + 1 + 1440) % 1440;
+    const minute = (previous + index + 1) % 1440;
     const events = callEventsForMinute(minute);
     if (events.scheduled && typeof createScheduledIncidentFromRate === "function") {
       createScheduledIncidentFromRate();
@@ -146,6 +145,7 @@ function answerCall() {
   if (!call) return;
   call.answered = true;
   call.answeredAtMinute ??= state.minute;
+  call.answeredAtAbsoluteMinute ??= state.absoluteMinute;
   if (!call.callLogShown) {
     logCall(`${call.callerName}: ${call.callerText}`, "call");
     logCall(`Einsatzort genannt: ${call.location}.`, "call");

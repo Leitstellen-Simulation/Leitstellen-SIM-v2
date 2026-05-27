@@ -1,6 +1,6 @@
 {
   "name": "leitstellen-sim-v2",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Browserbasierte Leitstellen-Simulation als Desktop-App",
   "type": "module",
   "main": "electron-main.mjs",
