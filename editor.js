@@ -18,6 +18,13 @@
   pinMode: false,
   coverageMarkers: [],
   importedPoiResults: [],
+  importedOsmData: null,
+  osmImportRunning: false,
+  osmImportPauseAfterTile: false,
+  osmImportAbort: false,
+  showOsmAddressDiagnostics: false,
+  showAllRoadDiagnostics: false,
+  osmRoadPoolLayers: [],
   boundaryResults: [],
   weightBoundaryResults: [],
   pointListFilter: "station",
@@ -33,11 +40,11 @@ const el = Object.fromEntries([
   "map-name", "type", "name", "address", "foreign-point", "foreign-availability-row", "foreign-availability", "geocode", "rtw", "ktw", "nef", "vef", "ref", "itw", "rth", "ith", "elrd", "hvo", "fr", "lat", "lng",
   "rates",
   "new-station", "new-hospital", "new-poi", "new-support-group", "edit-coverage", "edit-weight-zones", "point-dialog", "point-form", "coverage-form", "weight-form", "form-title",
-  "cancel-edit", "cancel-coverage", "vehicle-count-section", "unit-section", "hospital-section", "departments",
+  "cancel-edit", "cancel-coverage", "vehicle-count-section", "unit-section", "hospital-section", "departments", "hospital-unavailable-probability",
   "pediatric-only", "poi-section", "poi-category-search", "poi-categories", "coverage", "use-bounds", "apply-coverage",
   "boundary-query", "search-boundaries", "replace-boundaries", "add-boundaries", "clear-coverage", "boundary-status", "boundary-results",
   "cancel-weight", "weight-query", "weight-factor", "search-weight-boundaries", "add-weight-zones", "weight-status", "weight-results", "weight-zone-list",
-  "osm-poi-categories", "import-pois", "apply-imported-pois", "osm-poi-status", "osm-poi-preview",
+  "osm-poi-categories", "import-roads", "import-outdoor", "import-pois", "pause-osm-import", "abort-osm-import", "apply-imported-pois", "show-address-diagnostics", "show-all-road-diagnostics", "osm-poi-status", "osm-poi-preview",
   "show-poi-markers", "point-filter-stations", "point-filter-hospitals", "point-filter-poi", "point-filter-support",
   "set-pin", "edit-coverage-pins", "add-coverage-pin",
   "unit-type", "unit-name", "unit-short", "unit-shift", "unit-responder-availability", "add-unit", "units-list",
@@ -90,7 +97,33 @@ function init() {
   el.save_support.addEventListener("click", saveSupportGroup);
   el.poi_category_search.addEventListener("input", () => renderPoiCategorySelect());
   el.import_pois.addEventListener("click", importOsmPois);
+  el.pause_osm_import.addEventListener("click", () => {
+    state.osmImportPauseAfterTile = true;
+    el.pause_osm_import.textContent = "Pausiert nach Schritt...";
+    el.pause_osm_import.disabled = true;
+  });
+  el.abort_osm_import.addEventListener("click", () => {
+    state.osmImportAbort = true;
+    el.abort_osm_import.textContent = "Bricht ab...";
+    el.abort_osm_import.disabled = true;
+  });
   el.apply_imported_pois.addEventListener("click", applyImportedPois);
+  el.show_address_diagnostics.addEventListener("change", () => {
+    state.showOsmAddressDiagnostics = el.show_address_diagnostics.checked;
+    if (!state.showOsmAddressDiagnostics) {
+      state.showAllRoadDiagnostics = false;
+      el.show_all_road_diagnostics.checked = false;
+    }
+    render();
+  });
+  el.show_all_road_diagnostics.addEventListener("change", () => {
+    state.showAllRoadDiagnostics = el.show_all_road_diagnostics.checked;
+    if (state.showAllRoadDiagnostics) {
+      state.showOsmAddressDiagnostics = true;
+      el.show_address_diagnostics.checked = true;
+    }
+    render();
+  });
   el.show_poi_markers.addEventListener("change", () => {
     state.showPoiMarkers = el.show_poi_markers.checked;
     render();
@@ -705,6 +738,7 @@ function savePoint() {
   } else {
     point.departments = selectedDepartments();
     point.pediatricOnly = el.pediatric_only.checked;
+    point.unavailableProbability = availabilityPercentToProbability(el.hospital_unavailable_probability.value, 0);
     upsert(state.mapData.hospitals, point);
     state.mapData.stations = state.mapData.stations.filter((item) => item.id !== point.id);
     state.mapData.poi = (state.mapData.poi || []).filter((item) => item.id !== point.id);
@@ -748,15 +782,15 @@ function stationEditorMarkerLabel(point) {
   return Number(point?.vehicles?.HVO) > 0 ? "HvO" : "FR";
 }
 
-function availabilityPercentToProbability(value) {
+function availabilityPercentToProbability(value, fallback = 0.5) {
   const number = Number(value);
-  if (!Number.isFinite(number)) return 0.5;
+  if (!Number.isFinite(number)) return fallback;
   return Math.max(0, Math.min(100, number)) / 100;
 }
 
-function probabilityToPercent(value) {
+function probabilityToPercent(value, fallback = 50) {
   const number = Number(value);
-  if (!Number.isFinite(number)) return 50;
+  if (!Number.isFinite(number)) return fallback;
   const normalized = number > 1 ? number / 100 : number;
   return Math.round(Math.max(0, Math.min(1, normalized)) * 100);
 }
@@ -785,6 +819,7 @@ function updateVehicleInputs() {
     input.disabled = el.type.value !== "hospital";
   });
   el.pediatric_only.disabled = el.type.value !== "hospital";
+  el.hospital_unavailable_probability.disabled = el.type.value !== "hospital";
   el.poi_categories.disabled = el.type.value !== "poi";
   el.poi_category_search.disabled = el.type.value !== "poi";
   renderUnits();
@@ -801,7 +836,7 @@ function render() {
     state.coverageLayer = layer;
     state.layers.push(layer);
   }
-  [...(state.mapData.weightZones || [])]
+  if (!(state.showOsmAddressDiagnostics || el.show_address_diagnostics?.checked || state.osmImportRunning)) [...(state.mapData.weightZones || [])]
     .sort((a, b) => weightZoneWeight(a) - weightZoneWeight(b))
     .forEach((zone) => {
     const baseStyle = weightZoneStyle(zone);
@@ -844,6 +879,7 @@ function render() {
     marker.on("click", () => point.type === "support" ? startSupportGroupEdit(point) : editPoint(point));
     state.layers.push(marker);
   });
+  renderOsmAddressTileOverlay();
   renderList(points);
 }
 
@@ -863,7 +899,7 @@ function renderList(points) {
     const extra = point.type === "station"
       ? stationListExtra(point)
       : point.type === "hospital"
-        ? `${point.foreign ? " | Fremdkrankenhaus" : ""} | ${(point.departments || []).map(departmentLabel).join(", ") || "keine Fachrichtungen"}${point.pediatricOnly ? " | reine Kinderklinik" : ""}`
+        ? `${point.foreign ? " | Fremdkrankenhaus" : ""} | ${(point.departments || []).map(departmentLabel).join(", ") || "keine Fachrichtungen"}${point.pediatricOnly ? " | reine Kinderklinik" : ""} | Abmeldung ${probabilityToPercent(point.unavailableProbability, 0)}%`
         : point.type === "support"
           ? ` | ${(point.units || []).length} Fahrzeug(e) | ${point.stationLabel || "keine Wache"} | ${probabilityToPercent(point.availabilityProbability)}%`
           : ` | ${(point.categories || []).join(", ") || "keine Kategorien"}`;
@@ -958,6 +994,7 @@ function fillPointForm(point) {
   }));
   renderDepartmentChecks(point.departments || []);
   el.pediatric_only.checked = Boolean(point.pediatricOnly);
+  el.hospital_unavailable_probability.value = probabilityToPercent(point.unavailableProbability, 0);
   renderPoiCategorySelect(point.categories || []);
   el.add.textContent = "Änderungen speichern";
   renderUnits();
@@ -977,13 +1014,20 @@ async function saveMapFile() {
   state.mapData.id = makeId(state.mapData.name);
   state.mapData.mapCenter = [state.map.getCenter().lat, state.map.getCenter().lng];
   state.mapData.zoom = state.map.getZoom();
-  const response = await fetch("/api/maps", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(state.mapData)
-  });
-  if (!response.ok) {
-    localStorage.setItem(`dispatchsim.map.${state.mapData.id}`, JSON.stringify(state.mapData));
+  try {
+    const response = await fetch("/api/maps", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(state.mapData)
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || `Speichern fehlgeschlagen (${response.status})`);
+    }
+    el.saved.textContent = "Karte gespeichert.";
+  } catch (error) {
+    el.saved.textContent = `Karte konnte nicht gespeichert werden: ${error.message || error}`;
+    return;
   }
   loadSavedMaps();
 }
@@ -1015,6 +1059,7 @@ async function loadMap(id) {
   if (!response.ok) return;
   state.mapData = await response.json();
   state.mapData.poi ||= [];
+  state.mapData.osmData ||= emptyImportedOsmData();
   state.mapData.supportGroups ||= [];
   state.mapData.weightZones ||= [];
   state.mapData.callRates = normalizeCallRates(state.mapData.callRates);
@@ -1022,6 +1067,11 @@ async function loadMap(id) {
   el.coverage.value = state.mapData.coverageGeoJson ? JSON.stringify(state.mapData.coverageGeoJson, null, 2) : "";
   state.editingId = null;
   state.editingUnits = [];
+  state.showOsmAddressDiagnostics = false;
+  state.showAllRoadDiagnostics = false;
+  el.show_address_diagnostics.checked = false;
+  el.show_all_road_diagnostics.checked = false;
+  updateAddressDiagnosticsToggle();
   closeWorkbench();
   state.map.setView(state.mapData.mapCenter, state.mapData.zoom);
   renderRateEditor();
@@ -1029,9 +1079,14 @@ async function loadMap(id) {
 }
 
 function newMap() {
-  state.mapData = { id: "new-map", name: "Neue Karte", weather: "", mapCenter: [49.00761514468197, 12.09749221801758], zoom: 14, stations: [], hospitals: [], poi: [], supportGroups: [], coverageGeoJson: null, weightZones: [], callRates: defaultCallRates() };
+  state.mapData = { id: "new-map", name: "Neue Karte", weather: "", mapCenter: [49.00761514468197, 12.09749221801758], zoom: 14, stations: [], hospitals: [], poi: [], supportGroups: [], osmData: emptyImportedOsmData(), coverageGeoJson: null, weightZones: [], callRates: defaultCallRates() };
   el.map_name.value = state.mapData.name;
   el.coverage.value = "";
+  state.showOsmAddressDiagnostics = false;
+  state.showAllRoadDiagnostics = false;
+  el.show_address_diagnostics.checked = false;
+  el.show_all_road_diagnostics.checked = false;
+  updateAddressDiagnosticsToggle();
   renderRateEditor();
   closeWorkbench();
   render();
@@ -1116,6 +1171,7 @@ function clearPointFields() {
   el.address.value = "";
   el.foreign_point.checked = false;
   el.foreign_availability.value = 50;
+  el.hospital_unavailable_probability.value = 0;
   state.editingUnits = [];
   syncCountsFromUnits();
   renderDepartmentChecks();
@@ -1179,43 +1235,219 @@ function selectedOsmImportCategories() {
 
 async function importOsmPois() {
   const categories = selectedOsmImportCategories();
-  if (!categories.length) {
-    setOsmImportStatus("Bitte mindestens eine POI-Kategorie auswählen.", true);
+  const layers = selectedOsmImportLayers();
+  if (!categories.length && !layers.length) {
+    setOsmImportStatus("Bitte mindestens eine POI-Kategorie oder einen Standort-Pool auswählen.", true);
     return;
   }
   const payload = {
     categories,
+    layers,
     polygons: coveragePolygonsForImport(),
     bounds: boundsForImport()
   };
   el.import_pois.disabled = true;
+  el.pause_osm_import.disabled = false;
+  el.abort_osm_import.disabled = false;
+  el.pause_osm_import.textContent = "Nach Schritt pausieren";
+  el.abort_osm_import.textContent = "Abbrechen";
   el.apply_imported_pois.disabled = true;
   el.import_pois.textContent = "Suche...";
+  state.osmImportRunning = true;
+  state.osmImportPauseAfterTile = false;
+  state.osmImportAbort = false;
+  state.importedPoiResults = [];
+  state.importedOsmData = emptyImportedOsmData();
   setOsmImportStatus("OSM wird abgefragt...");
   try {
-    const response = await fetch("/api/osm-pois", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || "OSM-Import fehlgeschlagen");
-    state.importedPoiResults = Array.isArray(data.poi) ? data.poi : [];
+    const poiData = { poi: [] };
+    const osmData = emptyImportedOsmData();
+    const warnings = [];
+    for (const layer of layers) {
+      if (state.osmImportAbort) break;
+      setOsmImportStatus(`OSM wird abgefragt: ${osmLayerLabel(layer)}...`);
+      const response = await fetch("/api/osm-data", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...payload, layers: [layer], categories: [] })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) warnings.push(`${osmLayerLabel(layer)}: ${data.error || "fehlgeschlagen"}`);
+      else {
+        const normalized = normalizeImportedOsmData(data);
+        osmData.roads.push(...normalized.roads);
+        osmData.outdoorAreas.push(...normalized.outdoorAreas);
+        warnings.push(...(data.warnings || []));
+      }
+      state.importedOsmData = {
+        roads: uniqueByImportId(osmData.roads),
+        outdoorAreas: uniqueByImportId(osmData.outdoorAreas)
+      };
+      updateAddressDiagnosticsToggle();
+      renderOsmImportPreview();
+      renderOsmAddressTileOverlay();
+      el.apply_imported_pois.disabled = !osmImportHasResults();
+      await pauseOsmImportStep();
+      if (state.osmImportAbort || state.osmImportPauseAfterTile) break;
+    }
+    const categoryChunks = chunkArray(categories, 4);
+    for (let index = 0; index < categoryChunks.length; index += 1) {
+      if (state.osmImportAbort || state.osmImportPauseAfterTile) break;
+      const chunk = categoryChunks[index];
+      setOsmImportStatus(`OSM wird abgefragt: POI ${index + 1}/${categoryChunks.length}...`);
+      const response = await fetch("/api/osm-pois", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...payload, categories: chunk, layers: [] })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) warnings.push(`POI ${chunk.join(", ")}: ${data.error || "fehlgeschlagen"}`);
+      else {
+        poiData.poi.push(...(Array.isArray(data.poi) ? data.poi : []));
+        warnings.push(...(data.warnings || []));
+      }
+      await pauseOsmImportStep();
+    }
+    state.importedPoiResults = uniqueByImportId(Array.isArray(poiData.poi) ? poiData.poi : []);
+    state.importedOsmData = {
+      roads: uniqueByImportId(osmData.roads),
+      outdoorAreas: uniqueByImportId(osmData.outdoorAreas)
+    };
+    updateAddressDiagnosticsToggle();
     renderOsmImportPreview();
-    el.apply_imported_pois.disabled = !state.importedPoiResults.length;
-    setOsmImportStatus(`${state.importedPoiResults.length} Treffer gefunden.`);
+    el.apply_imported_pois.disabled = !osmImportHasResults();
+    if (!osmImportHasResults() && warnings.length) throw new Error(warnings[0] || "OSM-Import fehlgeschlagen");
+    const endLabel = state.osmImportAbort
+      ? "abgebrochen"
+      : state.osmImportPauseAfterTile
+        ? "pausiert"
+        : "gefunden";
+    setOsmImportStatus(warnings.length
+      ? `${osmImportStatusText(endLabel)} Teilweise fehlgeschlagen: ${warnings.slice(0, 2).join(" | ")}`
+      : osmImportStatusText(endLabel), Boolean(warnings.length));
   } catch (error) {
-    state.importedPoiResults = [];
     renderOsmImportPreview();
     setOsmImportStatus(error.message || "OSM-Import fehlgeschlagen.", true);
   } finally {
+    state.osmImportRunning = false;
     el.import_pois.disabled = false;
-    el.import_pois.textContent = "POIs suchen";
+    el.pause_osm_import.disabled = true;
+    el.abort_osm_import.disabled = true;
+    el.pause_osm_import.textContent = "Nach Schritt pausieren";
+    el.abort_osm_import.textContent = "Abbrechen";
+    el.import_pois.textContent = "OSM suchen";
   }
 }
 
+function osmLayerLabel(layer) {
+  return { roads: "Straßen", outdoor: "Outdoor-Flächen" }[layer] || layer;
+}
+
+function pauseOsmImportStep(ms = 350) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function chunkArray(items, size) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) chunks.push(items.slice(index, index + size));
+  return chunks;
+}
+
+function uniqueByImportId(items) {
+  return [...new Map((items || []).map((item) => [item.id || `${item.lat},${item.lng},${item.label}`, item])).values()];
+}
+
+function selectedOsmImportLayers() {
+  return [
+    el.import_roads?.checked ? "roads" : "",
+    el.import_outdoor?.checked ? "outdoor" : ""
+  ].filter(Boolean);
+}
+
+function importBoundsForTiles(payload) {
+  const polygonPoints = (payload.polygons || []).flat();
+  const valid = polygonPoints
+    .map((point) => ({ lat: Number(point.lat), lng: Number(point.lng) }))
+    .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+  if (valid.length) {
+    return {
+      south: Math.min(...valid.map((point) => point.lat)),
+      west: Math.min(...valid.map((point) => point.lng)),
+      north: Math.max(...valid.map((point) => point.lat)),
+      east: Math.max(...valid.map((point) => point.lng))
+    };
+  }
+  return payload.bounds;
+}
+
+function addressImportTiles(bounds, polygons = []) {
+  const south = Number(bounds?.south);
+  const west = Number(bounds?.west);
+  const north = Number(bounds?.north);
+  const east = Number(bounds?.east);
+  if (![south, west, north, east].every(Number.isFinite) || south >= north || west >= east) return [];
+  const tiles = [];
+  const latStep = 0.045;
+  const lngStep = 0.045;
+  for (let tileSouth = south; tileSouth < north; tileSouth += latStep) {
+    for (let tileWest = west; tileWest < east; tileWest += lngStep) {
+      tiles.push({
+        south: roundImportCoord(tileSouth),
+        west: roundImportCoord(tileWest),
+        north: roundImportCoord(Math.min(north, tileSouth + latStep)),
+        east: roundImportCoord(Math.min(east, tileWest + lngStep))
+      });
+    }
+  }
+  const filtered = polygons?.length
+    ? tiles.filter((tile) => tileIntersectsAnyPolygon(tile, polygons))
+    : tiles;
+  return filtered.slice(0, 260);
+}
+
+function tileIntersectsAnyPolygon(tile, polygons) {
+  return polygons.some((polygon) => tileIntersectsPolygon(tile, polygon));
+}
+
+function tileIntersectsPolygon(tile, polygon) {
+  if (!Array.isArray(polygon) || polygon.length < 3) return true;
+  const probes = [
+    { lat: (tile.south + tile.north) / 2, lng: (tile.west + tile.east) / 2 },
+    { lat: tile.south, lng: tile.west },
+    { lat: tile.south, lng: tile.east },
+    { lat: tile.north, lng: tile.west },
+    { lat: tile.north, lng: tile.east }
+  ];
+  if (probes.some((point) => pointInsidePolygon(point.lat, point.lng, polygon))) return true;
+  return polygon.some((point) => pointInsideTile(point, tile));
+}
+
+function pointInsidePolygon(lat, lng, polygon) {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].lng;
+    const yi = polygon[i].lat;
+    const xj = polygon[j].lng;
+    const yj = polygon[j].lat;
+    const intersects = ((yi > lat) !== (yj > lat)) && (lng < ((xj - xi) * (lat - yi)) / ((yj - yi) || 1e-12) + xi);
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+function roundImportCoord(value) {
+  return Math.round(Number(value) * 1_000_000) / 1_000_000;
+}
+
 function applyImportedPois() {
-  if (!state.importedPoiResults.length) return;
+  if (!osmImportHasResults()) return;
+  state.mapData.osmData ||= emptyImportedOsmData();
+  const imported = normalizeImportedOsmData(state.importedOsmData);
+  mergeOsmDataList("roads", imported.roads);
+  mergeOsmDataList("outdoorAreas", imported.outdoorAreas);
+  state.showOsmAddressDiagnostics = Boolean((state.mapData.osmData.roads || []).length);
+  el.show_address_diagnostics.checked = state.showOsmAddressDiagnostics;
+  updateAddressDiagnosticsToggle();
   state.mapData.poi ||= [];
   const byId = new Map(state.mapData.poi.map((poi) => [poi.id, poi]));
   state.importedPoiResults.forEach((poi) => {
@@ -1234,22 +1466,61 @@ function applyImportedPois() {
       state.mapData.poi.push({ ...poi });
     }
   });
-  setOsmImportStatus(`${state.importedPoiResults.length} Treffer in die POI-Liste übernommen.`);
+  setOsmImportStatus(osmImportStatusText("übernommen"));
   state.importedPoiResults = [];
+  state.importedOsmData = null;
   state.pointListFilter = "poi";
   el.apply_imported_pois.disabled = true;
   renderOsmImportPreview();
   render();
 }
 
+function updateAddressDiagnosticsToggle() {
+  if (!el.show_address_diagnostics) return;
+  const count = availableAddressDiagnosticCount();
+  const label = el.show_address_diagnostics.closest("label");
+  if (label) {
+    const suffix = count ? ` (${count} Straßen)` : " (keine Straßen übernommen)";
+    [...label.childNodes]
+      .filter((node) => node.nodeType === Node.TEXT_NODE)
+      .forEach((node) => node.textContent = ` Straßenpool anzeigen${suffix}`);
+  }
+  if (!count) {
+    el.show_address_diagnostics.checked = false;
+    el.show_all_road_diagnostics.checked = false;
+    state.showOsmAddressDiagnostics = false;
+    state.showAllRoadDiagnostics = false;
+  }
+}
+
+function availableAddressDiagnosticCount() {
+  const imported = normalizeImportedOsmData(state.importedOsmData);
+  const current = normalizeImportedOsmData(state.mapData?.osmData);
+  return imported.roads.length || current.roads.length || 0;
+}
+
+function mergeOsmDataList(key, items) {
+  if (!items?.length) return;
+  state.mapData.osmData ||= emptyImportedOsmData();
+  state.mapData.osmData[key] ||= [];
+  const byId = new Map(state.mapData.osmData[key].map((item) => [item.id, item]));
+  items.forEach((item) => byId.set(item.id, { ...(byId.get(item.id) || {}), ...item }));
+  state.mapData.osmData[key] = [...byId.values()];
+}
+
 function renderOsmImportPreview() {
   el.osm_poi_preview.innerHTML = "";
-  if (!state.importedPoiResults.length) {
+  if (!osmImportHasResults()) {
     el.osm_poi_preview.className = "editor-point-list osm-poi-preview empty-state";
     el.osm_poi_preview.textContent = "Keine Treffer in der Vorschau.";
     return;
   }
   el.osm_poi_preview.className = "editor-point-list osm-poi-preview";
+  const osmData = normalizeImportedOsmData(state.importedOsmData);
+  const summary = document.createElement("article");
+  summary.className = "editor-point osm-poi-result";
+  summary.innerHTML = `<div><h3>Standort-Pools</h3><p>${escapeHtml(osmImportStatusText("gefunden"))}</p></div>`;
+  el.osm_poi_preview.append(summary);
   const visible = state.importedPoiResults.slice(0, 80);
   visible.forEach((poi) => {
     const row = document.createElement("article");
@@ -1264,6 +1535,111 @@ function renderOsmImportPreview() {
     note.textContent = `${state.importedPoiResults.length - visible.length} weitere Treffer werden beim Übernehmen ebenfalls importiert.`;
     el.osm_poi_preview.append(note);
   }
+  const samples = [
+    ...osmData.roads.slice(0, 8).map((item) => ({ label: item.label, type: "Straße" })),
+    ...osmData.outdoorAreas.slice(0, 8).map((item) => ({ label: item.label, type: "Outdoor" }))
+  ];
+  samples.forEach((item) => {
+    const row = document.createElement("article");
+    row.className = "editor-point osm-poi-result";
+    row.innerHTML = `<div><h3>${escapeHtml(item.label)}</h3><p>${escapeHtml(item.type)}</p></div>`;
+    el.osm_poi_preview.append(row);
+  });
+}
+
+function renderOsmAddressTileOverlay() {
+  if (!state.map || typeof L === "undefined") return;
+  state.osmRoadPoolLayers.forEach((layer) => layer.remove());
+  state.osmRoadPoolLayers = [];
+  const diagnosticsEnabled = state.showOsmAddressDiagnostics || el.show_address_diagnostics?.checked || state.osmImportRunning;
+  if (!diagnosticsEnabled) return;
+  const roads = roadPoolForOverlay();
+  if (!roads.length) {
+    setOsmImportStatus("Keine Straßendaten für die Poolanzeige vorhanden.", true);
+    return;
+  }
+  const visibleRoads = state.showAllRoadDiagnostics ? roads : roads.slice(0, 7000);
+  visibleRoads.forEach((road) => {
+    const geometry = (road.geometry || []).map((point) => [point[1], point[0]]);
+    if (geometry.length < 2) return;
+    const group = roadPoolGroup(road);
+    const layer = L.polyline(geometry, {
+      color: roadPoolColor(group),
+      opacity: group === "other" ? 0.35 : 0.82,
+      weight: group === "motorway" ? 3.4 : group === "rural" ? 2.5 : 2,
+      interactive: true
+    }).bindTooltip(roadPoolTooltip(road, group), {
+      sticky: true,
+      direction: "top"
+    }).addTo(state.map);
+    state.layers.push(layer);
+    state.osmRoadPoolLayers.push(layer);
+  });
+}
+
+function roadPoolForOverlay() {
+  const imported = normalizeImportedOsmData(state.importedOsmData);
+  const current = normalizeImportedOsmData(state.mapData?.osmData);
+  return imported.roads.length ? imported.roads : current.roads;
+}
+
+function roadPoolGroup(road) {
+  const officialGroup = officialRoadPoolGroup(road);
+  if (officialGroup) return officialGroup;
+  const cls = String(road?.roadClass || "");
+  if (/motorway|trunk/.test(cls)) return "motorway";
+  if (/primary|secondary|unclassified/.test(cls)) return "rural";
+  if (cls === "tertiary") return "urban";
+  if (/residential|living_street/.test(cls)) return "urban";
+  return "other";
+}
+
+function officialRoadPoolGroup(road) {
+  const officialClass = String(road?.officialRoadClass || "");
+  if (officialClass === "motorway") return "motorway";
+  if (["federal", "state", "county"].includes(officialClass)) return "rural";
+  const refs = Array.isArray(road?.routeRefs) ? road.routeRefs.join(" ") : "";
+  const networks = Array.isArray(road?.routeNetworks) ? road.routeNetworks.join(" ") : "";
+  const value = `${networks} ${refs}`;
+  if (/\b(BAB|A\s*\d{1,3})\b/i.test(value)) return "motorway";
+  if (/\b(B|St|L|K|Kr|[A-ZÄÖÜ]{1,3})\s*\d{1,5}\b/.test(value)) return "rural";
+  return "";
+}
+
+function roadPoolTooltip(road, group) {
+  const routeRefs = Array.isArray(road?.routeRefs) && road.routeRefs.length ? ` | Route: ${road.routeRefs.join(", ")}` : "";
+  const routeNetworks = Array.isArray(road?.routeNetworks) && road.routeNetworks.length ? ` | Netz: ${road.routeNetworks.join(", ")}` : "";
+  const official = road?.officialRoadClass ? ` | ${road.officialRoadClass}` : "";
+  return `${roadPoolLabel(group)}: ${road.label || road.name || road.roadClass}${official}${routeRefs}${routeNetworks}`;
+}
+
+function roadPoolColor(group) {
+  return { urban: "#16a34a", rural: "#f97316", motorway: "#dc2626", other: "#64748b" }[group] || "#64748b";
+}
+
+function roadPoolLabel(group) {
+  return { urban: "Innerorts/Wohnstraße", rural: "Außerorts/Landstraße", motorway: "Autobahn/Schnellstraße", other: "Sonstige Straße" }[group] || "Straße";
+}
+
+function emptyImportedOsmData() {
+  return { roads: [], outdoorAreas: [] };
+}
+
+function normalizeImportedOsmData(data) {
+  return {
+    roads: Array.isArray(data?.roads) ? data.roads : [],
+    outdoorAreas: Array.isArray(data?.outdoorAreas) ? data.outdoorAreas : []
+  };
+}
+
+function osmImportHasResults() {
+  const data = normalizeImportedOsmData(state.importedOsmData);
+  return Boolean(state.importedPoiResults.length || data.roads.length || data.outdoorAreas.length);
+}
+
+function osmImportStatusText(action) {
+  const data = normalizeImportedOsmData(state.importedOsmData);
+  return `${state.importedPoiResults.length} POI, ${data.roads.length} Straßen, ${data.outdoorAreas.length} Outdoor-Flächen ${action}.`;
 }
 
 function coveragePolygonsForImport() {

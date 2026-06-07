@@ -11,7 +11,8 @@
     "call": {
       "callerName": "Anrufer",
       "callerText": "Mein Mann ist plötzlich ganz verwirrt und schläfrig, er ist Diabetiker und hat heute kaum etwas gegessen.|Hilfe, mein Vater reagiert nicht richtig, er ist zuckerkrank und ganz benommen.",
-      "locationMode": "random",
+      "locationMode": "address",
+      "locationRoadTypes": [],
       "poiCategories": [],
       "poiIds": [],
       "destinationMode": "none",
@@ -78,7 +79,8 @@
     "call": {
       "callerName": "Anrufer",
       "callerText": "Meinem *Vorname* geht es heute gar nicht gut. Er ist so schlapp und liegt nur noch im Bett. Der Hausarzt war schon da und meint, er muss ins Krankenhaus zur Abklärung.|Hallo, ich brauche einen Krankentransport für meine Mutter. Sie fühlt sich sehr schlecht und wir sollen in die Klinik.",
-      "locationMode": "random",
+      "locationMode": "address",
+      "locationRoadTypes": [],
       "poiCategories": [],
       "poiIds": [],
       "destinationMode": "none",
@@ -180,7 +182,8 @@
     "call": {
       "callerName": "Anrufer",
       "callerText": "Wir brauchen einen Krankentransport für eine Dialysepatientin zur Behandlung. Die Patientin ist *F_Nachname*.",
-      "locationMode": "random",
+      "locationMode": "address",
+      "locationRoadTypes": [],
       "poiCategories": [],
       "poiIds": [],
       "destinationMode": "poi",
@@ -242,7 +245,12 @@
     "call": {
       "callerName": "Anrufer",
       "callerText": "Hallo, es spricht *H_Nachname*, Schwerer Verkehrsunfall auf der Kreuzung, hier sind zwei Autos ineinander gekracht! Eine Person blutet stark, eine weitere ist ansprechbar aber verletzt!",
-      "locationMode": "random",
+      "locationMode": "road",
+      "locationRoadTypes": [
+        "urban",
+        "rural",
+        "motorway"
+      ],
       "poiCategories": [],
       "poiIds": [],
       "destinationMode": "none",
@@ -384,7 +392,8 @@
     "call": {
       "callerName": "Anrufer",
       "callerText": "Meiner Mutter geht es plötzlich schlecht, sie ist ganz schwach und kann kaum aufstehen. Ich weiß nicht, was los ist. | Mein Vater ist heute Morgen ganz apathisch und isst nichts, das ist nicht normal. | Meine Frau fühlt sich seit gestern immer schlechter, sie ist ganz blass und hat keinen Appetit.",
-      "locationMode": "random",
+      "locationMode": "address",
+      "locationRoadTypes": [],
       "poiCategories": [],
       "poiIds": [],
       "destinationMode": "none",
@@ -491,7 +500,8 @@
     "call": {
       "callerName": "Anrufer",
       "callerText": "Mein Mann hat starke Schmerzen in der Brust, er kann kaum atmen. Bitte schicken Sie schnell einen Krankenwagen! | Ich habe plötzlich einen stechenden Schmerz in der Brust. | Meine Frau, klagt über Brustschmerzen, die in den Rücken ausstrahlen.",
-      "locationMode": "random",
+      "locationMode": "address",
+      "locationRoadTypes": [],
       "poiCategories": [],
       "poiIds": [],
       "destinationMode": "none",
@@ -602,7 +612,8 @@
     "call": {
       "callerName": "Anrufer",
       "callerText": "Mein Mann hat starke Schmerzen in der Brust, er ist ganz blass und schwitzt. | Ich habe so ein Druckgefühl auf der Brust und mir ist übel. | Mein Vater klagt über brennende Schmerzen hinter dem Brustbein.",
-      "locationMode": "random",
+      "locationMode": "address",
+      "locationRoadTypes": [],
       "poiCategories": [],
       "poiIds": [],
       "destinationMode": "none",
@@ -670,7 +681,8 @@
     "call": {
       "callerName": "Anrufer",
       "callerText": "Mein linkes Bein ist seit gestern dick und schmerzt. Ich kann kaum auftreten. | Ich habe plötzlich starke Schmerzen in der Wade bekommen und jetzt ist das ganze Bein geschwollen. | Mein Bein ist ganz heiß und rot, ich habe Angst, dass das eine Thrombose ist.",
-      "locationMode": "random",
+      "locationMode": "address",
+      "locationRoadTypes": [],
       "poiCategories": [],
       "poiIds": [],
       "destinationMode": "none",
@@ -831,7 +843,8 @@
     "call": {
       "callerName": "Anrufer",
       "callerText": "Hilfe, ich habe *Nachname* leblos in der Wohnung gefunden! Ich kann keine Atmung feststellen! | Guten Tag, hier ist *Name*. Mein Nachbar reagiert nicht und atmet nicht mehr!",
-      "locationMode": "random",
+      "locationMode": "address",
+      "locationRoadTypes": [],
       "poiCategories": [],
       "poiIds": [],
       "destinationMode": "none",
@@ -937,7 +950,8 @@
     "call": {
       "callerName": "Anrufer",
       "callerText": "Hallo hier ist *Nachname*, ich habe so ein komisches Stolpern in der Brust. Das fühlt sich ganz unregelmäßig an und macht mir Angst.| Guten Tag, ich bin *Nachname* Mein Herz rast und stolpert die ganze Zeit, ich weiß nicht, was das ist.",
-      "locationMode": "random",
+      "locationMode": "address",
+      "locationRoadTypes": [],
       "poiCategories": [],
       "poiIds": [],
       "destinationMode": "none",
@@ -1044,6 +1058,7 @@
       "callerName": "Anrufer",
       "callerText": "Hier ist Schwester *Vorname*. Wir haben einen Patienten mit einer akuten gastrointestinalen Blutung. Er ist kreislaufstabil, aber wir brauchen dringend einen Rettungswagen. | Grüß Gott, Schwester *Vorname*. Ein Bewohner hat eine starke Blutung im Magen-Darm-Trakt. Er ist bei Bewusstsein, bitte schnell kommen.",
       "locationMode": "poi",
+      "locationRoadTypes": [],
       "poiCategories": [
         "nursing-home"
       ],
@@ -1162,6 +1177,7 @@
       "callerName": "Anrufer",
       "callerText": "Hilfe! Hier im Rathaus, während der Sitzung, ist jemand einfach umgekippt. Er atmet noch, ist aber nicht ansprechbar. Kommen Sie schnell! | Schnell, ein Mann ist zusammengebrochen! Er ist blass und reagiert kaum. Wir sind im großen Sitzungssaal.",
       "locationMode": "poi",
+      "locationRoadTypes": [],
       "poiCategories": [
         "townhall"
       ],
@@ -1277,7 +1293,8 @@
     "call": {
       "callerName": "Anrufer",
       "callerText": "Meine Frau hat plötzlich starke Übelkeit, sie ist ganz blass und schwitzt. | Mir ist total schlecht, ich fühle mich so komisch, als ob ich umkippe.",
-      "locationMode": "random",
+      "locationMode": "address",
+      "locationRoadTypes": [],
       "poiCategories": [],
       "poiIds": [],
       "destinationMode": "none",
@@ -1383,7 +1400,8 @@
     "call": {
       "callerName": "Anrufer",
       "callerText": "Hier bekommt jemand schlecht Luft. Die Person sitzt aufrecht und wirkt sehr panisch.",
-      "locationMode": "random",
+      "locationMode": "address",
+      "locationRoadTypes": [],
       "poiCategories": [],
       "poiIds": [],
       "destinationMode": "none",
@@ -1525,8 +1543,9 @@
     "timeWindows": [],
     "call": {
       "callerName": "Anrufer",
-      "callerText": "Hallo, hier Dr Maier. Kritischer Patient mit Herzinfarktverdacht, der Notarzt muss den Transport zwingend begleiten. | Guten Morgen, hier ist die Arzthelferin Sonja, wir bräuchten bitte hier mal Unterstützung, der Patient hat Druck auf der Brust",
-      "locationMode": "random",
+      "callerText": "Hallo, hier Dr Maier. Kritischer Patient mit Herzinfarktverdacht, der Notarzt muss den Transport zwingend begleiten. | Guten Morgen, hier ist die Arzthelferin *VORNAME*, wir bräuchten bitte hier mal Unterstützung, der Patient hat Druck auf der Brust",
+      "locationMode": "poi",
+      "locationRoadTypes": [],
       "poiCategories": [
         "practice",
         "dentist"
@@ -1592,7 +1611,8 @@
     "call": {
       "callerName": "Anrufer",
       "callerText": "Meine Frau hat starke Schmerzen in der Brust, ist blass und kaltschweissig. Es drueckt bis in den linken Arm. | Guten Tag, Schwenner am Apparat, meiner Frau geht es gar nicht gut, ihr ist so übel",
-      "locationMode": "random",
+      "locationMode": "address",
+      "locationRoadTypes": [],
       "poiCategories": [],
       "poiIds": [],
       "destinationMode": "none",
@@ -1660,8 +1680,9 @@
     "timeWindows": [],
     "call": {
       "callerName": "Anrufer",
-      "callerText": "Mein *Nachname* hat starke Schmerzen in der Brust. Es ist seit ein paar Minuten da und wir machen uns Sorgen.",
-      "locationMode": "random",
+      "callerText": "*Nachname* hat starke Schmerzen in der Brust. Es ist seit ein paar Minuten da und wir machen uns Sorgen.",
+      "locationMode": "address",
+      "locationRoadTypes": [],
       "poiCategories": [],
       "poiIds": [],
       "destinationMode": "none",
@@ -1805,7 +1826,10 @@
     "call": {
       "callerName": "Anrufer",
       "callerText": "Hallo, hier ist: *Nachname*. Schicken Sie bitte Hilfe, hier krampft jemand an der Bushaltestelle! | Guten Morgen, *Nachname* hier, hier sitzt einer der ist so ganz komisch am zittern. Könnten Sie mal jemanden zum nachschauen schicken?",
-      "locationMode": "random",
+      "locationMode": "road",
+      "locationRoadTypes": [
+        "urban"
+      ],
       "poiCategories": [],
       "poiIds": [],
       "destinationMode": "none",
@@ -1922,7 +1946,8 @@
     "call": {
       "callerName": "Anrufer",
       "callerText": "Ich entschuldige mich schon mal für die Störung, meine Tochter, die Emmy, die hat so psychische Probleme. Und heute ist es ganz arg schlimm. Könnten Sie mal wenn vorbeischicken? | Grüß Gott, Polizeiobermeister *H_Nachname*, wir haben einen Anruf über nen psych Ausnahmezustand, klingt bei fehlender Eigen- und Fremdgefährdung eher nach was für euch.",
-      "locationMode": "random",
+      "locationMode": "address",
+      "locationRoadTypes": [],
       "poiCategories": [],
       "poiIds": [],
       "destinationMode": "none",
@@ -1993,7 +2018,8 @@
     "call": {
       "callerName": "Anrufer",
       "callerText": "Hilfe, mein Kollege zittert am ganzen Körper und ist kaum ansprechbar!|Meine Frau zuckt und verdreht die Augen, sie reagiert nicht!|Hier auf der Straße liegt jemand und krampft!",
-      "locationMode": "random",
+      "locationMode": "address",
+      "locationRoadTypes": [],
       "poiCategories": [
         "public",
         "mall",
@@ -2152,7 +2178,8 @@
     "call": {
       "callerName": "Anrufer",
       "callerText": "Hier ist der Herr Maier! Helfen Sie mir schnell, mein Vater kann plötzlich nicht mehr sprechen.",
-      "locationMode": "random",
+      "locationMode": "address",
+      "locationRoadTypes": [],
       "poiCategories": [],
       "poiIds": [],
       "destinationMode": "none",
@@ -2212,7 +2239,8 @@
     "call": {
       "callerName": "Anrufer",
       "callerText": "Kellerbrand, mehrere Personen mit Rauchgasexposition. | Moin, der *H_Vorname* hier, gegenüber raucht es stark aus dem Keller | Hello! Am I speaking to the fire department. Our house is smoking!",
-      "locationMode": "random",
+      "locationMode": "address",
+      "locationRoadTypes": [],
       "poiCategories": [],
       "poiIds": [],
       "destinationMode": "none",
@@ -2348,7 +2376,8 @@
     "call": {
       "callerName": "Anrufer",
       "callerText": "Hallo, die *F_Nachname* ist gestürzt, die schreit so vor Schmerzen. | Grüß Gott, Schwester *F_Vorname* von der ambulanten Pflege hier, meine Patientin *F_Nachname* ist gerade aus dem Bett gefallen. Können Sie wenn zur Röntgenkontrolle schicken? | Oh gott oh gott, die *F_Nachname*, der Arm oh Gott. Schicken Sie schnell Hilfe, bitte!",
-      "locationMode": "random",
+      "locationMode": "address",
+      "locationRoadTypes": [],
       "poiCategories": [],
       "poiIds": [],
       "destinationMode": "none",
@@ -2427,6 +2456,7 @@
       "callerName": "Anrufer",
       "callerText": "Hilfe, hier im Sportzentrum hat sich jemand am Knie verletzt! Die Kniescheibe steht irgendwie komisch zur Seite, das sieht nicht gut aus. | Hallo, ich bin hier beim Basketballtraining und ein Spieler ist umgeknickt. Er hat starke Schmerzen im Knie und die Kniescheibe ist rausgesprungen.",
       "locationMode": "poi",
+      "locationRoadTypes": [],
       "poiCategories": [
         "sports-centre"
       ],
@@ -2501,6 +2531,7 @@
       "callerName": "Anrufer",
       "callerText": "Hier ist der Kindergarten Sonnenschein. Ein Kind hat sich mit heißem Tee verbrüht. Es ist bei Bewusstsein, aber es weint stark. Die Haut am Arm und Oberkörper ist rot und es bilden sich Blasen.| Ein Kleinkind hat sich verbrüht, bitte schnell kommen!",
       "locationMode": "poi",
+      "locationRoadTypes": [],
       "poiCategories": [
         "kindergarten"
       ],
@@ -2570,8 +2601,9 @@
     "timeWindows": [],
     "call": {
       "callerName": "Anrufer",
-      "callerText": "Guten Tag, meine Mutter, die Erna ist gerade hingefallen und kommt nicht mehr hoch. Könnten Sie mir Hilfe schicken? | Hallo, hier Bruno von Hausnotruf. Frau Dobler ist Boden. Jetzt Schmerzen! Ganz Schlimm!",
-      "locationMode": "random",
+      "callerText": "Guten Tag, meine Mutter, die *Vorname_F* ist gerade hingefallen und kommt nicht mehr hoch. Könnten Sie mir Hilfe schicken? | Hallo, hier *Vorname* von Hausnotruf. *Nachname_F* ist Boden. Jetzt Schmerzen! Ganz Schlimm!",
+      "locationMode": "address",
+      "locationRoadTypes": [],
       "poiCategories": [],
       "poiIds": [],
       "destinationMode": "none",
@@ -2644,8 +2676,19 @@
     "call": {
       "callerName": "Anrufer",
       "callerText": "Hallo, *H_Nachname* hier. Mein Kollege, der *Vorname* ist grad vom Gerüst gefallen, kommen Sie schnell!",
-      "locationMode": "random",
-      "poiCategories": [],
+      "locationMode": "poi",
+      "locationRoadTypes": [],
+      "poiCategories": [
+        "industrial",
+        "hotel",
+        "mall",
+        "cinema",
+        "church",
+        "townhall",
+        "railway-station",
+        "university",
+        "school"
+      ],
       "poiIds": [],
       "destinationMode": "none",
       "destinationPoiProbability": 0,
@@ -2707,6 +2750,7 @@
       "callerName": "Anrufer",
       "callerText": "Guten Tag, die Frau Mayer müsste nach hause gebracht werden! | Moinsen, der Herr Müller müsste mit O2 wieder heimgefahren werden.",
       "locationMode": "hospital",
+      "locationRoadTypes": [],
       "poiCategories": [
         "hospital"
       ],
@@ -2773,7 +2817,8 @@
     "call": {
       "callerName": "Anrufer",
       "callerText": "Wir brauchen einen Krankentransport zur Dialyse. Die Patientin ist *Nachname* und muss zum Dialysezentrum.",
-      "locationMode": "random",
+      "locationMode": "address",
+      "locationRoadTypes": [],
       "poiCategories": [],
       "poiIds": [],
       "destinationMode": "poi",
@@ -2877,7 +2922,8 @@
     "call": {
       "callerName": "Anrufer",
       "callerText": "Mein Vater müsste heute bitte zum Hausarzt! | Guten Morgen, ich bräuchte einen Transport für meine Mutter zum Arzt.",
-      "locationMode": "random",
+      "locationMode": "address",
+      "locationRoadTypes": [],
       "poiCategories": [],
       "poiIds": [],
       "destinationMode": "poi",
@@ -2940,7 +2986,8 @@
     "call": {
       "callerName": "Anrufer",
       "callerText": "Grüß Gott, Schwester Melinda von der ambulanten Pflege hier, meine Patientin Frau Hansich ist gerade aus dem Bett gefallen. Können Sie wenn zur Röntgenkontrolle schicken? | Hallo, hier Doktor Wenisch, ich bräuchte einmal einen Krankentransport für die Frau Wagmeier zur Röntgenkontrolle nach Sturz.",
-      "locationMode": "random",
+      "locationMode": "address",
+      "locationRoadTypes": [],
       "poiCategories": [],
       "poiIds": [],
       "destinationMode": "none",

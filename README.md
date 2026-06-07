@@ -6,6 +6,19 @@ Das Projekt befindet sich in einer Alpha-Version und ist fuer Tests, Entwicklung
 
 Dieses Projekt laeuft mit Unterstuetzung durch Codex.
 
+## Changelog
+
+### 0.4.6
+
+- Krankenhausabmeldungen: Kliniken koennen sich zufaellig per quittierbarem 19222-Anruf ab- und wieder anmelden. Abgemeldete Kliniken werden dunkelrot dargestellt, gelten fuer die Zielauswahl als ungeeignet und koennen spaeter einen Folge-Transport ausloesen.
+- Transportziel-Workflow: Offene Krankenhaus-Zuweisungen werden als eigener gelber Hinweis angezeigt, lassen Einsatzkarten blinken und zaehlen in den blinkenden Uebersichts-Badges wie Nachforderungen.
+- OSM-Datenimport: Strassen, Verkehrsflaechen und Outdoor-Flaechen koennen aus OpenStreetMap importiert werden. Strassen werden nach Wohn-/Innerortsstrasse, ausserorts und Autobahn/Trunk klassifiziert.
+- Einsatzorte: Wohnadressen, Strassenpool, Outdoor und zufaellige Punkte nutzen Reverse-Geocoding fuer die naechste Adresse. Definierte POI/Kliniken behalten ihren Namen.
+- Karteneditor: Einsatzgebiete koennen aus mehreren Landkreis-/Stadtgrenzen aufgebaut werden, Gewichtungszonen liegen separat und OSM-Importe zeigen Fortschritt/Debug-Ansichten.
+- Electron/Desktop: Lokale Nutzerdaten werden robuster mit gebuendelten Karten und Einsatzkatalogen abgeglichen. Legacy-`incidents-data.json` wurde entfernt, der dynamische Katalog ist massgeblich.
+- UGRD/SEG und Hintergrundlogik: Mehrfachalarmierungen werden blockiert, Nichtausruecken sperrt die Gruppe temporaer, erfolgreiche Rueckmeldungen laufen ueber Funkstatus.
+- Patienten-/Fahrzeuglogik: Reanimation, HvO/FR, ITW/ITH/VEF, ELRD und Nachforderungslogik wurden weiter stabilisiert.
+
 ## Installation
 
 Voraussetzungen:
@@ -48,10 +61,12 @@ Der lokale Server speichert Karten und Einsatzdaten ueber die eingebauten API-En
 - Fahrzeugliste mit Status, Schichtlogik, Funkstatus und Sortierung nach Wache, Status, Typ oder Status + Typ.
 - Karte mit Rettungswachen, Fremdwachen, Krankenhaeusern, Fremd-KH, POI, Einsatzstellen und Fahrzeugpositionen.
 - OpenStreetMap/Esri-Kartenanzeige und OSRM-basierte Fahrzeiten mit Fahrzeugprofilen.
+- Importierte OSM-Strassen-/Outdoor-Pools fuer realistischere Einsatzorte und Heimfahrtziele.
 - Unterscheidung von SoSi/ohne SoSi bei Ausrueckzeit und Fahrt.
 - Rettungsdienstlogik mit KTW, RTW, NEF, VEF, REF, RTH, ITW, ITH, ELRD, HvO und FR.
 - Patientenversorgung mit dynamischem Zustand, variierender Behandlungsdauer, Fortschrittsanzeige, Mehrpatientenlagen und Krankenhauszuweisung.
-- Transportzielauswahl nach Fachrichtung, optional mit Fremd-KH.
+- Transportzielauswahl nach Fachrichtung, optional mit Fremd-KH und Anzeige abgemeldeter Kliniken.
+- Zufallsabmeldungen von Kliniken mit 19222-Anruf, Mindestabmeldezeit und Folge-Transporten bei Fehlzuweisung/Abmeldung.
 - Krankentransporte mit Ziel-POI, Heimfahrtziel, planbaren Einsaetzen und Fahrzeit zum Ziel.
 - Funkleiste mit Status 0/5, Sprechaufforderung und Rueckmeldungen.
 - Status-8-Logik mit Rueckfrage "Einsatzklar?" und verzogener Freimeldung.
@@ -61,7 +76,7 @@ Der lokale Server speichert Karten und Einsatzdaten ueber die eingebauten API-En
 - Feuerwehr/Polizei/AeND als externe Unterstuetzung.
 - UGRD/SEG-Alarmierung mit Hintergrundfahrzeugen und Rueckmeldung, wenn eine Gruppe nicht ausrueckt.
 - Karteneditor fuer Wachen, Fahrzeuge, Kliniken, Fremdwachen, Fremd-KH, POI, Einsatzgebiet und Gewichtungszonen.
-- Import von Landkreis-/Stadtgrenzen fuer Einsatzgebiete.
+- Import von Landkreis-/Stadtgrenzen fuer Einsatzgebiete und OSM-Datenimport fuer POI, Strassen und Outdoor-Flaechen.
 - Einsatzeditor mit dynamischen Einsatzvarianten, POI-Kategorien, Mehrfachauswahl, Zeitfenstern, Gewichtung und individuellen Patientenzustandsmeldungen.
 - Optionaler KI-Einsatzgenerator ueber OpenRouter API-Key. Der Key wird ueber Umgebung/Server bereitgestellt und soll nicht ins Repository.
 

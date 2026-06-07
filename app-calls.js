@@ -75,7 +75,7 @@ function receiveCall(forcedType = null) {
   }
   const templates = availableCallTemplates();
   if (!templates.length) {
-    logCall("Kein Einsatzkatalog geladen. Bitte Einsatzeditor oder incidents-data.json pruefen.", "warn");
+    logCall("Kein Einsatzkatalog geladen. Bitte Einsatzeditor oder incidents-dynamic.json pruefen.", "warn");
     return false;
   }
   let templateIndex = weightedCallTemplateIndex(forcedType);
@@ -87,6 +87,7 @@ function receiveCall(forcedType = null) {
     templateIndex = (templateIndex + randomInt(1, templates.length - 1)) % templates.length;
   }
   state.lastCallTemplateIndex = templateIndex;
+  rememberRecentCallTemplate(templates[templateIndex]);
   const call = callFromIncidentTemplate(templates[templateIndex]);
   keepCallInsideCoverage(call);
   updateCallAddressFromNearestSource(call);
@@ -120,11 +121,20 @@ function queueIncomingCall(call, options = {}) {
   const queue = pendingCallQueue();
   const existed = queue.some((item) => item.id === call.id);
   if (!existed) queue.push(call);
+  if (!existed) reduceSpeedForIncomingCall();
   if (!state.pendingCall) state.pendingCall = call;
   playPhoneRing();
   logCall(options.message || `Neuer Telefonanruf${queue.length > 1 ? ` (${queue.length} wartend)` : ""}.`, "warn");
   updateCallControls();
   return !existed;
+}
+
+function reduceSpeedForIncomingCall() {
+  const oldSpeed = state.speed || 1;
+  if (oldSpeed <= 2) return;
+  state.speed = 2;
+  if (el.speedSelect) el.speedSelect.value = "2";
+  if (typeof rescaleActiveTimers === "function") rescaleActiveTimers(oldSpeed, state.speed);
 }
 
 function pendingCallQueue() {
@@ -175,6 +185,10 @@ function updateCallControls() {
 function answerCall() {
   const call = activePendingCall();
   if (!call) return;
+  if (call.noticeOnly) {
+    acknowledgeNoticeCall(call.id);
+    return;
+  }
   call.answered = true;
   call.answeredAtMinute ??= state.minute;
   call.answeredAtAbsoluteMinute ??= state.absoluteMinute;
@@ -235,10 +249,11 @@ function renderPendingCallActions() {
     selectButton.className = "call-queue-select";
     selectButton.innerHTML = `
       <strong>${index + 1}. ${escapeHtml(callTypeTag(call.type))} ${escapeHtml(call.callerName || "Anrufer")}</strong>
-      <span>${escapeHtml(call.location || defaultLocationLabel())}</span>
+      <span>${escapeHtml(call.noticeOnly ? call.callerText : (call.location || defaultLocationLabel()))}</span>
     `;
     selectButton.addEventListener("click", () => {
       setActivePendingCall(call.id);
+      if (call.noticeOnly) return;
       if (call.answered) {
         renderCallDisposition();
         showDialog(el.callDispositionDialog);
@@ -250,20 +265,23 @@ function renderPendingCallActions() {
     answerButton.type = "button";
     answerButton.className = "call-queue-answer";
     if (!call.answered) answerButton.classList.add("pending-call-alert");
-    answerButton.textContent = call.answered ? "Disponieren" : "Annehmen";
+    answerButton.textContent = call.noticeOnly ? "Quittieren" : call.answered ? "Disponieren" : "Annehmen";
     answerButton.addEventListener("click", () => {
       setActivePendingCall(call.id);
-      answerCall();
+      if (call.noticeOnly) acknowledgeNoticeCall(call.id);
+      else answerCall();
     });
 
     const rejectButton = document.createElement("button");
     rejectButton.type = "button";
     rejectButton.textContent = "Ablehnen";
+    rejectButton.hidden = Boolean(call.noticeOnly);
     rejectButton.addEventListener("click", () => rejectPendingCall(call.id));
 
     const mapButton = document.createElement("button");
     mapButton.type = "button";
     mapButton.textContent = "Karte";
+    mapButton.hidden = Boolean(call.noticeOnly);
     mapButton.addEventListener("click", () => {
       setActivePendingCall(call.id);
       showPendingCallOnMap();
@@ -272,6 +290,30 @@ function renderPendingCallActions() {
     item.append(selectButton, answerButton, rejectButton, mapButton);
     el.callActions.append(item);
   });
+}
+
+function queueNoticeCall({ callerName = "System", callerText = "", location = "Leitstelle", message = "Neuer 19222-Anruf." } = {}) {
+  return queueIncomingCall({
+    id: makeId(),
+    type: "notice",
+    noticeOnly: true,
+    callerName,
+    callerText,
+    location,
+    lat: state.center?.mapCenter?.[0],
+    lng: state.center?.mapCenter?.[1],
+    receivedAtMinute: state.minute,
+    receivedAtAbsoluteMinute: state.absoluteMinute,
+    answered: false
+  }, { message });
+}
+
+function acknowledgeNoticeCall(callId) {
+  const call = removePendingCall(callId);
+  if (!call) return;
+  logCall(`${call.callerName}: ${call.callerText}`, "call");
+  logCall("19222-Anruf quittiert.", "call");
+  updateCallControls();
 }
 
 function rejectPendingCall(callId = state.pendingCall?.id) {
@@ -320,7 +362,11 @@ function weightedCallTemplateIndex(forcedType = null) {
 }
 
 function weightedTemplatePoolIndex(pool) {
-  const weighted = pool.map((item) => ({ ...item, weight: incidentTemplateWeight(item.template) }));
+  const recentIds = new Set(state.recentCallTemplateIds || []);
+  const weighted = pool.map((item) => ({
+    ...item,
+    weight: incidentTemplateWeight(item.template) * (recentIds.has(templateRepeatKey(item.template)) ? 0.25 : 1)
+  }));
   const total = weighted.reduce((sum, item) => sum + item.weight, 0);
   if (total <= 0) return -1;
   let draw = Math.random() * total;
@@ -334,6 +380,16 @@ function weightedTemplatePoolIndex(pool) {
 function incidentTemplateWeight(template) {
   const weight = Number(template?.weight ?? 1);
   return Number.isFinite(weight) && weight > 0 ? weight : 0;
+}
+
+function rememberRecentCallTemplate(template) {
+  const key = templateRepeatKey(template);
+  if (!key) return;
+  state.recentCallTemplateIds = [key, ...(state.recentCallTemplateIds || []).filter((id) => id !== key)].slice(0, 8);
+}
+
+function templateRepeatKey(template) {
+  return template?.id || template?.keyword || template?.title || "";
 }
 
 function availableCallTemplates() {

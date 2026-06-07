@@ -42,13 +42,23 @@
           </section>
 
           <details class="editor-section editor-osm-import-section">
-            <summary>OSM-POI importieren</summary>
+            <summary>OSM-Daten importieren</summary>
             <p class="inline-hint">Einmaliger Import aus OpenStreetMap fuer das Einsatzgebiet. Ohne Einsatzgebiet wird der aktuelle Kartenausschnitt verwendet.</p>
+            <strong>Standort-Pools</strong>
+            <div class="check-grid osm-poi-grid">
+              <label class="check-row"><input id="se-import-roads" type="checkbox" checked> Straßen / Verkehrswege</label>
+              <label class="check-row"><input id="se-import-outdoor" type="checkbox" checked> Wald / Outdoor / Freiflächen</label>
+            </div>
+            <strong>POI-Kategorien</strong>
             <div id="se-osm-poi-categories" class="check-grid osm-poi-grid"></div>
             <div class="editor-actions">
-              <button id="se-import-pois" type="button">POIs suchen</button>
+              <button id="se-import-pois" type="button">OSM suchen</button>
+              <button id="se-pause-osm-import" type="button" disabled>Nach Schritt pausieren</button>
+              <button id="se-abort-osm-import" type="button" disabled>Abbrechen</button>
               <button id="se-apply-imported-pois" class="primary-action" type="button" disabled>Treffer übernehmen</button>
             </div>
+            <label class="check-row"><input id="se-show-address-diagnostics" type="checkbox"> Straßenpool anzeigen</label>
+            <label class="check-row"><input id="se-show-all-road-diagnostics" type="checkbox"> Alle Straßen anzeigen (Debug)</label>
             <small id="se-osm-poi-status" class="inline-hint">Keine Suche gestartet.</small>
             <div id="se-osm-poi-preview" class="editor-point-list osm-poi-preview"></div>
           </details>
@@ -133,6 +143,7 @@
               <h3>Fachrichtungen</h3>
               <p class="inline-hint">Alle Fachrichtungen auswählen, die diese Klinik aufnehmen kann.</p>
               <label class="check-row"><input id="se-pediatric-only" type="checkbox"> Reine Kinderklinik: nur Patienten mit Pädiatrie-Bedarf zuweisen</label>
+              <label>Abmelde-Wahrscheinlichkeit alle 15 min (%) <input id="se-hospital-unavailable-probability" type="number" min="0" max="100" step="1" value="0"></label>
               <div id="se-departments" class="check-grid"></div>
             </section>
             <section id="se-poi-section" class="editor-subform" hidden>

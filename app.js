@@ -54,7 +54,9 @@ const state = {
   showForeignHospitalsInTransport: false,
   startupSyncHandled: false,
   lastForeignAvailabilityRoll: null,
+  lastHospitalAvailabilityRoll: null,
   lastCallTemplateIndex: -1,
+  recentCallTemplateIds: [],
   availableMaps: [],
   coveragePoints: [],
   pendingCoverageVehicleId: null,
@@ -120,6 +122,9 @@ const el = {
   supportGroupDialog: document.querySelector("#support-group-dialog"),
   supportGroupList: document.querySelector("#support-group-list"),
   closeSupportGroupDialog: document.querySelector("#close-support-group-dialog"),
+  transportDestinationDialog: document.querySelector("#transport-destination-dialog"),
+  transportDestinationBody: document.querySelector("#transport-destination-body"),
+  closeTransportDestinationDialog: document.querySelector("#close-transport-destination-dialog"),
   vehicleSort: document.querySelector("#vehicle-sort"),
   clockLabel: document.querySelector("#clock-label"),
   incidentDialog: document.querySelector("#incident-dialog"),
@@ -203,6 +208,7 @@ el.incidentEditorButton.addEventListener("click", openIncidentEditor);
 el.coverageButton?.addEventListener("click", openCoverageDialog);
 el.supportGroupButton?.addEventListener("click", openSupportGroupDialog);
 el.closeSupportGroupDialog?.addEventListener("click", () => el.supportGroupDialog?.close());
+el.closeTransportDestinationDialog?.addEventListener("click", () => el.transportDestinationDialog?.close());
 el.vehicleSort.addEventListener("change", renderVehicles);
 el.incidentMapButton.addEventListener("click", showPendingCallOnMap);
 el.incidentForm.addEventListener("submit", submitIncidentDialog);
@@ -267,6 +273,8 @@ async function startShift() {
   state.showForeignVehiclesInDialog = false;
   state.showForeignHospitalsInTransport = false;
   state.lastForeignAvailabilityRoll = null;
+  state.lastHospitalAvailabilityRoll = null;
+  state.recentCallTemplateIds = [];
   state.supportGroupStates = {};
   state.systemStatus.routing = "unbekannt";
   state.systemStatus.weather = "unbekannt";
@@ -278,6 +286,7 @@ async function startShift() {
   state.lastCallRateMinute = Math.floor(state.absoluteMinute);
   state.lastUnplannedCallAbsoluteMinute = state.lastCallRateMinute;
   state.vehicles = seedVehicles(state.center);
+  initializeHospitalAvailabilityStates();
   rollForeignVehicleAvailability(true);
   initializeShiftStatesForStart();
 
@@ -296,6 +305,7 @@ async function startShift() {
   updateCallControls();
   logCall("Schicht gestartet. Telefon ist frei.", "call");
   logRadio("Dienstplan geladen, einsatzbereite Fahrzeuge sind verfuegbar.", "radio");
+  rollHospitalAvailability(true);
   initMap();
   renderAll();
   startClock();
@@ -365,12 +375,18 @@ async function loadCenterOptions() {
 
 async function handleStartupSyncPrompts() {
   let changedMaps = false;
+  let changedIncidents = false;
   try {
     const response = await fetch("/api/startup-sync");
     if (!response.ok) return;
     const sync = await response.json();
-    if (sync?.incidentMerge?.added && sync.incidentMerge.added !== "initial") {
-      console.log(`Einsatzkatalog aktualisiert: ${sync.incidentMerge.added} neue Einsaetze ergaenzt.`);
+    if (sync?.incidentMerge && sync.incidentMerge.added !== "initial") {
+      const added = Number(sync.incidentMerge.added) || 0;
+      const updated = Number(sync.incidentMerge.updated) || 0;
+      if (added || updated) {
+        console.log(`Einsatzkatalog aktualisiert: ${added} neue, ${updated} aktualisierte Einsaetze.`);
+        changedIncidents = true;
+      }
     }
     for (const conflict of sync?.mapConflicts || []) {
       const choice = window.prompt(
@@ -390,7 +406,26 @@ async function handleStartupSyncPrompts() {
       });
       if (action !== "lokal") changedMaps = true;
     }
+    for (const conflict of sync?.incidentConflicts || []) {
+      const choice = window.prompt(
+        `Neue gebuendelte Version fuer Einsatz "${conflict.localTitle}" gefunden.\n\n` +
+        "Was soll passieren?\n" +
+        "lokal = lokalen Einsatz behalten\n" +
+        "neu = gebuendelte Version uebernehmen\n" +
+        "beide = beide behalten (neue Version als Kopie anlegen)",
+        "lokal"
+      );
+      const action = String(choice || "lokal").trim().toLowerCase();
+      if (!["lokal", "neu", "beide", "bundled", "both"].includes(action)) continue;
+      await fetch("/api/startup-sync", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "incident", id: conflict.id, action })
+      });
+      if (action !== "lokal") changedIncidents = true;
+    }
     if (changedMaps) await reloadMapOptionsAfterSync();
+    if (changedIncidents) state.incidentCatalog = await loadIncidentCatalog();
   } catch (error) {
     console.warn("Startup-Synchronisierung nicht verfuegbar", error);
   }
@@ -601,10 +636,14 @@ function renderSupportGroupDialog() {
   }
   groups.forEach((group) => {
     const groupState = supportGroupState(group.id);
+    const lockRemaining = typeof supportGroupLockRemainingMinutes === "function"
+      ? supportGroupLockRemainingMinutes(groupState)
+      : 0;
     const activeVehicles = state.vehicles.filter((vehicle) => vehicle.supportGroupId === group.id);
     const pending = groupState.pending || 0;
     const available = activeVehicles.filter((vehicle) => [1, 2].includes(vehicle.status) && !vehicle.incidentId && !vehicle.nextIncidentId).length;
     const busy = activeVehicles.length - available;
+    const isAlarmBlocked = groupState.status === "alarmed" || pending > 0 || activeVehicles.length > 0 || lockRemaining > 0;
     const row = document.createElement("article");
     row.className = "support-group-card";
     const units = (group.units || []).map((unit) => unit.shortName || unit.name || unit.type).join(", ") || "keine Fahrzeuge";
@@ -612,14 +651,15 @@ function renderSupportGroupDialog() {
       <div>
         <h3>${escapeHtml(group.label || group.id || "UGRD/SEG")}</h3>
         <p>${escapeHtml(units)}</p>
-        <small>Status: ${escapeHtml(groupState.status || "bereit")} | ausstehend ${pending} | frei ${available} | gebunden ${busy}</small>
+        <small>Status: ${escapeHtml(lockRemaining > 0 ? `gesperrt (${lockRemaining} min)` : groupState.status || "bereit")} | ausstehend ${pending} | frei ${available} | gebunden ${busy}</small>
       </div>
     `;
     const actions = document.createElement("div");
     actions.className = "row-actions";
     const alarm = document.createElement("button");
     alarm.type = "button";
-    alarm.textContent = groupState.status === "alarmed" ? "erneut alarmieren" : "alarmieren";
+    alarm.textContent = lockRemaining > 0 ? `gesperrt ${lockRemaining} min` : "alarmieren";
+    alarm.disabled = isAlarmBlocked;
     alarm.addEventListener("click", () => {
       alarmSupportGroup(group.id);
       renderSupportGroupDialog();
@@ -643,7 +683,8 @@ function supportGroupState(groupId) {
   state.supportGroupStates[groupId] ||= {
     status: "bereit",
     pending: 0,
-    activeVehicleIds: []
+    activeVehicleIds: [],
+    lockedUntilAbsoluteMinute: null
   };
   return state.supportGroupStates[groupId];
 }
@@ -664,6 +705,7 @@ function ensureHospitalDepartments(center) {
   };
   center.hospitals.forEach((hospital) => {
     hospital.departments = (hospital.departments || defaults[hospital.id] || ["internal"]).map(normalizeDepartmentKey);
+    hospital.unavailableProbability = normalizeProbability(hospital.unavailableProbability, 0);
   });
 }
 
@@ -989,6 +1031,65 @@ function rollForeignVehicleAvailability(force = false) {
   if (changed && !force) renderAll();
 }
 
+function initializeHospitalAvailabilityStates() {
+  (state.center.hospitals || []).forEach((hospital) => {
+    hospital.unavailable = false;
+    hospital.unavailableSinceAbsoluteMinute = null;
+    hospital.unavailableUntilAbsoluteMinute = null;
+  });
+}
+
+function rollHospitalAvailability(force = false) {
+  const rollSlot = Math.floor(Math.floor(state.absoluteMinute) / 15);
+  if (!force && state.lastHospitalAvailabilityRoll === rollSlot) return;
+  state.lastHospitalAvailabilityRoll = rollSlot;
+  let changed = false;
+  (state.center.hospitals || []).forEach((hospital) => {
+    if (hospital.unavailable) {
+      if (state.absoluteMinute < Number(hospital.unavailableUntilAbsoluteMinute || 0)) return;
+      const unavailableMinutes = state.absoluteMinute - Number(hospital.unavailableSinceAbsoluteMinute || state.absoluteMinute);
+      const returnChance = unavailableMinutes >= 90 ? 0.3 : 0.15;
+      if (Math.random() < returnChance) {
+        hospital.unavailable = false;
+        hospital.unavailableSinceAbsoluteMinute = null;
+        hospital.unavailableUntilAbsoluteMinute = null;
+        queueHospitalAvailabilityNotice(hospital, false);
+        changed = true;
+      }
+      return;
+    }
+    const probability = normalizeProbability(hospital.unavailableProbability, 0);
+    if (probability > 0 && Math.random() < probability) {
+      hospital.unavailable = true;
+      hospital.unavailableSinceAbsoluteMinute = state.absoluteMinute;
+      hospital.unavailableUntilAbsoluteMinute = state.absoluteMinute + 45;
+      queueHospitalAvailabilityNotice(hospital, true);
+      changed = true;
+    }
+  });
+  if (changed && !force) renderAll();
+}
+
+function hospitalIsUnavailable(hospital) {
+  return Boolean(hospital?.unavailable);
+}
+
+function queueHospitalAvailabilityNotice(hospital, unavailable) {
+  const callerText = unavailable
+    ? `${hospital.label}: Krankenhaus abgemeldet. Keine Patientenaufnahme moeglich.`
+    : `${hospital.label}: Krankenhaus wieder aufnahmebereit.`;
+  if (typeof queueNoticeCall === "function") {
+    queueNoticeCall({
+      callerName: `${hospital.label} Aufnahme`,
+      callerText,
+      location: hospital.label,
+      message: `19222-Anruf: ${hospital.label} ${unavailable ? "abgemeldet" : "wieder angemeldet"}.`
+    });
+  } else {
+    logCall(`${hospital.label}: ${callerText}`, unavailable ? "warn" : "call");
+  }
+}
+
 function initMap() {
   if (typeof L === "undefined") {
   el.map.innerHTML = '<div class="map-fallback">OpenStreetMap konnte nicht geladen werden. Mit Internetverbindung erscheint hier die Einsatzkarte.</div>';
@@ -1064,6 +1165,7 @@ function startClock() {
     state.minute = (state.minute + elapsedMinutes) % 1440;
     processCallRates();
     rollForeignVehicleAvailability();
+    rollHospitalAvailability();
     renderClock();
     if (typeof updateDynamicPatientStates === "function") updateDynamicPatientStates();
     if (state.incidents.some((incident) => incident.status !== "geschlossen")) {
@@ -1092,7 +1194,7 @@ function legacyReceiveCall(forcedType = null) {
   if (state.pendingCall) return;
   const templates = availableCallTemplates();
   if (!templates.length) {
-    logCall("Kein Einsatzkatalog geladen. Bitte Einsatzeditor oder incidents-data.json prüfen.", "warn");
+    logCall("Kein Einsatzkatalog geladen. Bitte Einsatzeditor oder incidents-dynamic.json pruefen.", "warn");
     return;
   }
   let templateIndex = weightedCallTemplateIndex(forcedType);
@@ -1137,6 +1239,38 @@ function resolveTemplateLocation(template) {
       locationPoiId: poi.id || "",
       locationPoiLabel: poi.label || "",
       callerText: replacePoiPlaceholder(template.callerText, poi)
+    };
+  }
+  if (template.locationMode === "address") {
+    const address = randomSyntheticStreetAddress();
+    if (!address) return resolveTemplateLocation({ ...template, locationMode: "random" });
+    return {
+      ...template,
+      location: address.label || address.address || "Adresse im Einsatzgebiet",
+      lat: address.lat,
+      lng: address.lng,
+      locationSource: address.source,
+      syntheticAddress: true
+    };
+  }
+  if (template.locationMode === "road") {
+    const roadPoint = randomImportedRoadPoint(template.locationRoadTypes);
+    if (!roadPoint) return resolveTemplateLocation({ ...template, locationMode: "random" });
+    return {
+      ...template,
+      location: roadPoint.label,
+      lat: roadPoint.lat,
+      lng: roadPoint.lng
+    };
+  }
+  if (template.locationMode === "outdoor") {
+    const outdoorPoint = randomImportedOutdoorPoint();
+    if (!outdoorPoint) return resolveTemplateLocation({ ...template, locationMode: "random" });
+    return {
+      ...template,
+      location: outdoorPoint.label,
+      lat: outdoorPoint.lat,
+      lng: outdoorPoint.lng
     };
   }
   if (template.locationMode === "random") {
@@ -1188,7 +1322,9 @@ function withDirectTransportDestination(template, destination) {
     lat: destination.lat,
     lng: destination.lng,
     type: (destination.categories || []).includes("hospital") ? "hospital" : "destination",
-    categories: destination.categories || []
+    categories: destination.categories || [],
+    source: destination.source || "",
+    roadId: destination.roadId || ""
   };
   return {
     ...template,
@@ -1241,6 +1377,8 @@ function weightedLocationChoice(candidates, origin) {
 function randomHomeDestinationNear(origin) {
   const originLat = Number.isFinite(origin?.lat) ? origin.lat : state.center.mapCenter[0];
   const originLng = Number.isFinite(origin?.lng) ? origin.lng : state.center.mapCenter[1];
+  const streetAddress = randomSyntheticStreetAddressNear({ lat: originLat, lng: originLng });
+  if (streetAddress) return { ...streetAddress, categories: ["home"] };
   const roll = Math.random();
   const distanceKm = roll < 0.82
     ? randomFloat(0.5, 15)
@@ -1255,7 +1393,8 @@ function randomHomeDestinationNear(origin) {
     address: "Wohnadresse",
     lat: point.lat,
     lng: point.lng,
-    categories: ["home"]
+    categories: ["home"],
+    source: "fallback-radius"
   };
 }
 
@@ -1307,6 +1446,259 @@ function randomPointInCoverage() {
     if (callPointInsideCoverage(point.lat, point.lng)) return { ...point, label: null };
   }
   return { lat: state.center.mapCenter[0], lng: state.center.mapCenter[1], label: nearestAddressLabel(state.center.mapCenter[0], state.center.mapCenter[1], defaultLocationLabel()) };
+}
+
+function importedOsmData() {
+  const data = state.center?.osmData || {};
+  return {
+    roads: Array.isArray(data.roads) ? data.roads : [],
+    outdoorAreas: Array.isArray(data.outdoorAreas) ? data.outdoorAreas : []
+  };
+}
+
+function randomSyntheticStreetAddress() {
+  const roadPoint = randomImportedRoadPoint(["urban"], { preferNamed: true });
+  if (!roadPoint) return null;
+  return syntheticStreetAddressFromRoadPoint(roadPoint);
+}
+
+function syntheticStreetAddressFromRoadPoint(roadPoint) {
+  const street = roadPoint.road?.name || roadPoint.road?.label || "Wohnstraße";
+  const houseNumber = randomHouseNumberForRoad(roadPoint.road);
+  const label = `${street} ${houseNumber}, ${nearestTownLabelForRoad()}`;
+  return {
+    id: makeId(`synthetic-address-${street}-${houseNumber}-${roadPoint.lat}-${roadPoint.lng}`),
+    label,
+    address: label,
+    lat: roadPoint.lat,
+    lng: roadPoint.lng,
+    roadId: roadPoint.road?.id || "",
+    source: "synthetic-road"
+  };
+}
+
+function randomSyntheticStreetAddressNear(origin) {
+  const originLat = Number.isFinite(origin?.lat) ? origin.lat : state.center.mapCenter[0];
+  const originLng = Number.isFinite(origin?.lng) ? origin.lng : state.center.mapCenter[1];
+  const roads = importedOsmData().roads
+    .filter((road) => Array.isArray(road.geometry) && road.geometry.length >= 2)
+    .filter((road) => roadLocationGroup(road) === "urban")
+    .filter(meaningfulRoadName);
+  if (!roads.length) return null;
+  const targetDistance = randomHomeDistanceKm();
+  const candidates = [];
+  for (let attempt = 0; attempt < 220; attempt += 1) {
+    const road = weightedRoadChoice(roads);
+    const point = randomPointOnLineGeometry(road.geometry);
+    if (!point || !callPointInsideCoverage(point.lat, point.lng)) continue;
+    const distance = mapDistance(originLat, originLng, point.lat, point.lng);
+    candidates.push({
+      roadPoint: { ...point, road },
+      distance,
+      weight: homeDestinationDistanceWeight(distance, targetDistance)
+    });
+  }
+  const picked = weightedChoice(candidates, "weight");
+  return picked ? syntheticStreetAddressFromRoadPoint(picked.roadPoint) : null;
+}
+
+function randomHomeDistanceKm() {
+  const roll = Math.random();
+  if (roll < 0.82) return randomFloat(0.5, 15);
+  if (roll < 0.96) return randomFloat(15, 50);
+  return randomFloat(50, 200);
+}
+
+function homeDestinationDistanceWeight(distanceKm, targetDistanceKm) {
+  if (!Number.isFinite(distanceKm) || distanceKm < 0.05) return 0;
+  const bucketWeight = distanceKm <= 15 ? 18 : distanceKm <= 50 ? 3 : 0.6;
+  const closeness = 1 / Math.pow(1 + Math.abs(distanceKm - targetDistanceKm), 1.35);
+  return bucketWeight * closeness;
+}
+
+function randomImportedRoadPoint(typeFilters = null, options = {}) {
+  const wanted = normalizeRoadTypeFilters(typeFilters);
+  const roads = importedOsmData().roads
+    .filter((road) => Array.isArray(road.geometry) && road.geometry.length >= 2)
+    .filter((road) => !wanted.length || wanted.includes(roadLocationGroup(road)))
+    .filter((road) => !options.preferNamed || meaningfulRoadName(road));
+  if (!roads.length) return null;
+  const weightedPoint = randomWeightedRoadPoint(roads, wanted);
+  if (weightedPoint) return weightedPoint;
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    const road = weightedRoadChoice(roads);
+    const point = randomPointOnLineGeometry(road.geometry);
+    if (point && callPointInsideCoverage(point.lat, point.lng)) {
+      return { ...point, label: roadLocationLabel(road), road };
+    }
+  }
+  return null;
+}
+
+function randomWeightedRoadPoint(roads, wanted) {
+  const weightedZonePoint = randomPointInWeightZones();
+  if (!weightedZonePoint) return null;
+  const nearby = roads.filter((road) => {
+    if (wanted.length && !wanted.includes(roadLocationGroup(road))) return false;
+    return road.geometry.some((point) => Array.isArray(point)
+      && Math.abs(point[1] - weightedZonePoint.lat) < 0.035
+      && Math.abs(point[0] - weightedZonePoint.lng) < 0.055);
+  });
+  if (!nearby.length) return null;
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const road = weightedRoadChoice(nearby);
+    const point = randomPointOnLineGeometry(road.geometry);
+    if (point && callPointInsideCoverage(point.lat, point.lng)) {
+      return { ...point, label: roadLocationLabel(road), road };
+    }
+  }
+  return null;
+}
+
+function normalizeRoadTypeFilters(typeFilters) {
+  const filters = Array.isArray(typeFilters) ? typeFilters : String(typeFilters || "").split(/[,;|]/);
+  return [...new Set(filters.map((item) => String(item).trim().toLowerCase()).filter(Boolean))];
+}
+
+function roadLocationGroup(road) {
+  const officialGroup = officialRoadLocationGroup(road);
+  if (officialGroup) return officialGroup;
+  const cls = String(road?.roadClass || "");
+  if (/motorway|trunk/.test(cls)) return "motorway";
+  if (/primary|secondary|unclassified/.test(cls)) return "rural";
+  if (cls === "tertiary") return "urban";
+  if (/residential|living_street/.test(cls)) return "urban";
+  return "other";
+}
+
+function officialRoadLocationGroup(road) {
+  const officialClass = String(road?.officialRoadClass || "");
+  if (officialClass === "motorway") return "motorway";
+  if (["federal", "state", "county"].includes(officialClass)) return "rural";
+  const refs = Array.isArray(road?.routeRefs) ? road.routeRefs.join(" ") : "";
+  const networks = Array.isArray(road?.routeNetworks) ? road.routeNetworks.join(" ") : "";
+  const value = `${networks} ${refs}`;
+  if (/\b(BAB|A\s*\d{1,3})\b/i.test(value)) return "motorway";
+  if (/\b(B|St|L|K|Kr|[A-ZÄÖÜ]{1,3})\s*\d{1,5}\b/.test(value)) return "rural";
+  return "";
+}
+
+function weightedRoadChoice(roads) {
+  const weighted = roads.map((road) => ({ road, weight: roadClassIncidentWeight(road) }));
+  const total = weighted.reduce((sum, entry) => sum + entry.weight, 0);
+  let roll = Math.random() * total;
+  for (const entry of weighted) {
+    roll -= entry.weight;
+    if (roll <= 0) return entry.road;
+  }
+  return roads.at(-1);
+}
+
+function roadClassIncidentWeight(road) {
+  if (road?.officialRoadClass === "county") return 1.6;
+  if (road?.officialRoadClass === "state") return 1.4;
+  if (road?.officialRoadClass === "federal") return 1.1;
+  if (road?.officialRoadClass === "motorway") return 0.9;
+  const cls = String(road?.roadClass || "");
+  if (cls === "residential") return 5;
+  if (cls === "living_street") return 4;
+  if (cls === "tertiary") return 3;
+  if (cls === "unclassified") return 2.4;
+  if (cls === "service") return meaningfulRoadName(road) ? 0.8 : 0.15;
+  if (cls === "secondary") return 1.4;
+  if (cls === "primary") return 1.1;
+  if (/motorway|trunk/.test(cls)) return 0.9;
+  if (/_link$/.test(cls)) return 0.25;
+  return 0.5;
+}
+
+function meaningfulRoadName(road) {
+  const name = String(road?.name || road?.label || "").trim();
+  return Boolean(name && !/^\d+$/.test(name) && !/^straße$/i.test(name));
+}
+
+function randomHouseNumberForRoad(road) {
+  const cls = String(road?.roadClass || "");
+  const max = cls === "living_street" ? 42 : cls === "tertiary" || cls === "unclassified" ? 160 : 110;
+  const base = randomInt(1, max);
+  return Math.random() < 0.18 ? `${base}${String.fromCharCode(97 + randomInt(0, 2))}` : String(base);
+}
+
+function randomImportedOutdoorPoint() {
+  const areas = importedOsmData().outdoorAreas
+    .filter((area) => Array.isArray(area.geometry) && area.geometry.length >= 3);
+  if (!areas.length) return null;
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const area = areas[randomInt(0, areas.length - 1)];
+    const point = randomPointInOsmArea(area.geometry);
+    if (point && callPointInsideCoverage(point.lat, point.lng)) {
+      return { ...point, label: outdoorLocationLabel(area) };
+    }
+  }
+  return null;
+}
+
+function randomPointOnLineGeometry(geometry) {
+  const segments = [];
+  for (let index = 1; index < geometry.length; index += 1) {
+    const a = geometry[index - 1];
+    const b = geometry[index];
+    if (!Array.isArray(a) || !Array.isArray(b)) continue;
+    const length = mapDistance(a[1], a[0], b[1], b[0]);
+    if (length > 0) segments.push({ a, b, length });
+  }
+  if (!segments.length) return null;
+  const total = segments.reduce((sum, segment) => sum + segment.length, 0);
+  let roll = Math.random() * total;
+  const segment = segments.find((item) => {
+    roll -= item.length;
+    return roll <= 0;
+  }) || segments.at(-1);
+  const t = Math.random();
+  return {
+    lat: segment.a[1] + (segment.b[1] - segment.a[1]) * t,
+    lng: segment.a[0] + (segment.b[0] - segment.a[0]) * t
+  };
+}
+
+function randomPointInOsmArea(geometry) {
+  const ring = closeOsmRing(geometry);
+  return randomPointInGeometry({ type: "Polygon", coordinates: [ring] });
+}
+
+function closeOsmRing(geometry) {
+  const ring = geometry.filter((point) => Array.isArray(point) && point.length >= 2);
+  if (!ring.length) return ring;
+  const first = ring[0];
+  const last = ring.at(-1);
+  if (Math.abs(first[0] - last[0]) < 0.000001 && Math.abs(first[1] - last[1]) < 0.000001) return ring;
+  return [...ring, first];
+}
+
+function roadLocationLabel(road) {
+  const name = road.ref && road.name ? `${road.ref} - ${road.name}` : (road.ref || road.name || road.label || "Straße");
+  return `${name}, Bereich ${nearestTownLabelForRoad()}`;
+}
+
+function outdoorLocationLabel(area) {
+  const label = area.label || "Outdoor-Bereich";
+  return `${label}, ${outdoorCategoryLabel(area.category)}`;
+}
+
+function nearestTownLabelForRoad() {
+  return state.center?.name || "Einsatzgebiet";
+}
+
+function outdoorCategoryLabel(category) {
+  const labels = {
+    forest: "Waldgebiet",
+    park: "Grünanlage",
+    sports: "Sportfläche",
+    water: "Gewässer",
+    open: "Freifläche",
+    cemetery: "Friedhof"
+  };
+  return labels[category] || "Outdoor";
 }
 
 function randomPointInWeightZones() {
@@ -1456,6 +1848,7 @@ function nearestAddressLabel(lat, lng, fallback = defaultLocationLabel()) {
 
 async function reverseGeocodeCall(call) {
   if (!call || !Number.isFinite(call.lat) || !Number.isFinite(call.lng) || !window.fetch) return;
+  if (call.locationPoiId || ["poi", "hospital"].includes(call.locationMode)) return;
   state.systemStatus.geocoding = "fallback";
   renderAdminStatusBar();
   try {
@@ -1480,7 +1873,8 @@ async function reverseGeocodeCall(call) {
 async function reverseGeocodeCallDestination(call) {
   const destination = call?.fixedDestination;
   if (!destination || !Number.isFinite(destination.lat) || !Number.isFinite(destination.lng) || !window.fetch) return;
-  if (!String(destination.label || "").startsWith("Wohnadresse")) return;
+  const syntheticDestination = destination.source === "synthetic-road";
+  if (!syntheticDestination && !String(destination.label || "").startsWith("Wohnadresse")) return;
   try {
     const response = await fetch(reverseGeocodeUrl(destination.lat, destination.lng), { headers: { accept: "application/json" } });
     if (!response.ok) return;
@@ -1594,14 +1988,6 @@ async function loadIncidentCatalog() {
     if (!response.ok) throw new Error("dynamic incident file unavailable");
     const catalog = await response.json();
     if (Array.isArray(catalog) && catalog.length) return catalog;
-  } catch {
-    // Legacy fallback below.
-  }
-  try {
-    const response = await fetch("incidents-data.json");
-    if (!response.ok) throw new Error("incident file unavailable");
-    const catalog = await response.json();
-    return Array.isArray(catalog) ? catalog : [];
   } catch {
     return [];
   }
@@ -1737,7 +2123,7 @@ function normalizeSearch(value) {
 }
 
 function callTypeTag(type) {
-  if (type === "transport" || type === "scheduled") return "19222";
+  if (type === "transport" || type === "scheduled" || type === "notice") return "19222";
   return "112";
 }
 
@@ -2158,6 +2544,7 @@ function createIncident(call) {
     required: patientProfile.requiredVehicles,
     signal: call.signal,
     priority: call.priority,
+    locationSource: call.locationSource || "",
     lat: Number.isFinite(call.lat) ? call.lat : state.center.mapCenter[0],
     lng: Number.isFinite(call.lng) ? call.lng : state.center.mapCenter[1],
     createdAtMinute: state.minute,
@@ -2262,7 +2649,7 @@ function applyPatientConditionReports(patients, patientConditions = {}) {
 function normalizePatients(call, fallbackDepartmentKey) {
   if (Array.isArray(call.patients) && call.patients.length) {
     return call.patients.map((patient, index) => {
-      const required = resolvePatientRequirement(patient.required || patient.options || [{ vehicles: patient.vehicles || ["RTW"], probability: 1 }]);
+      const required = hardRequiredVehicles(resolvePatientRequirement(patient.required || patient.options || [{ vehicles: patient.vehicles || ["RTW"], probability: 1 }]));
       const acuity = normalizePatientAcuity(patient.acuity || patient.patientAcuity || (call.type === "scheduled" ? "planned-transport" : "stable"));
       const effectiveRequired = acuity === "reanimation" ? ["RTW", "NEF"] : required;
       const refOnly = acuity !== "reanimation" && required.length > 0 && required.every((type) => type === "REF");
@@ -2289,7 +2676,7 @@ function normalizePatients(call, fallbackDepartmentKey) {
     });
   }
   const count = Math.max(1, Number(call.patientCount) || 1);
-  const baseRequired = normalizeRequiredVehicles(call.required?.length ? call.required : ["RTW"]);
+  const baseRequired = hardRequiredVehicles(call.required?.length ? call.required : ["RTW"]);
   const baseAcuity = normalizePatientAcuity(call.acuity || (call.type === "scheduled" ? "planned-transport" : "stable"));
   const effectiveBaseRequired = baseAcuity === "reanimation" ? ["RTW", "NEF"] : baseRequired;
   const baseRefOnly = baseAcuity !== "reanimation" && baseRequired.length > 0 && baseRequired.every((type) => type === "REF");
@@ -2349,8 +2736,12 @@ function resolvePatientRequirement(options) {
 }
 
 function aggregateRequiredVehicles(patients, fallback = ["RTW"]) {
-  const required = normalizeRequiredVehicles(patients.flatMap((patient) => patient.required || []));
-  return required.length ? required : normalizeRequiredVehicles(fallback);
+  const required = hardRequiredVehicles(patients.flatMap((patient) => patient.required || []));
+  return required.length ? required : hardRequiredVehicles(fallback);
+}
+
+function hardRequiredVehicles(required = []) {
+  return normalizeRequiredVehicles(required).filter((type) => !["HVO", "FR"].includes(type));
 }
 
 function applyElrdRequirement(required, call, patients = []) {

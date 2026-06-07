@@ -12,7 +12,7 @@ const state = {
 const el = Object.fromEntries([
   "search", "type-filter", "count", "list", "new", "save", "duplicate", "delete", "editor-title",
   "id", "title", "category", "type", "weight", "time-windows",
-  "caller-name", "caller-text", "location-mode", "poi-category-search", "poi-categories", "poi-selected",
+  "caller-name", "caller-text", "location-mode", "location-road-types-row", "poi-category-search", "poi-categories", "poi-selected",
   "poi-select-visible", "poi-clear", "poi-category-count", "poi-ids",
   "destination-mode", "destination-poi-probability-row", "destination-poi-probability",
   "destination-poi-category-search", "destination-poi-categories", "destination-poi-selected",
@@ -43,7 +43,10 @@ function bindEvents() {
   el.save.addEventListener("click", saveIncident);
   el.duplicate.addEventListener("click", duplicateIncident);
   el.delete.addEventListener("click", deleteCurrentIncident);
+  el.location_mode.addEventListener("change", updateLocationPoiControls);
+  document.querySelectorAll("input[name='ie-location-road-types']").forEach((input) => input.addEventListener("change", markDirty));
   el.destination_mode.addEventListener("change", updateDestinationPoiControls);
+  el.destination_poi_probability.addEventListener("input", updateDestinationPoiControls);
   el.poi_category_search.addEventListener("input", () => renderPoiCategorySelect());
   el.poi_select_visible.addEventListener("click", selectVisiblePoiCategories);
   el.poi_clear.addEventListener("click", clearPoiCategories);
@@ -165,12 +168,14 @@ function fillFormFromCurrent() {
   el.caller_name.value = call.callerName || "Anrufer";
   el.caller_text.value = call.callerText || "";
   el.location_mode.value = call.locationMode || "random";
+  setSelectedLocationRoadTypes(call.locationRoadTypes || (call.locationMode === "road" ? ["urban", "rural", "motorway"] : []));
   setSelectedPoiCategories(call.poiCategories || []);
   el.poi_ids.value = (call.poiIds || []).join(", ");
   el.destination_mode.value = call.destinationMode || "none";
   el.destination_poi_probability.value = Math.round((Number(call.destinationPoiProbability) || 0) * 100);
   setSelectedDestinationPoiCategories(call.destinationPoiCategories || []);
   el.destination_poi_ids.value = (call.destinationPoiIds || []).join(", ");
+  updateLocationPoiControls();
   updateDestinationPoiControls();
 }
 
@@ -191,6 +196,7 @@ function collectFormIntoCurrent() {
     callerName: el.caller_name.value.trim() || "Anrufer",
     callerText: el.caller_text.value.trim(),
     locationMode: el.location_mode.value,
+    locationRoadTypes: selectedLocationRoadTypes(),
     poiCategories: selectedPoiCategories(),
     poiIds: splitList(el.poi_ids.value),
     destinationMode: el.destination_mode.value,
@@ -563,6 +569,7 @@ function sanitizeDynamicIncident(input) {
     callerName: incident.call?.callerName || "Anrufer",
     callerText: incident.call?.callerText || incident.callerText || "",
     locationMode: incident.call?.locationMode || "random",
+    locationRoadTypes: listValue(incident.call?.locationRoadTypes),
     poiCategories: listValue(incident.call?.poiCategories),
     poiIds: listValue(incident.call?.poiIds),
     destinationMode: incident.call?.destinationMode || "none",
@@ -592,6 +599,7 @@ function legacyIncidentToDynamic(input) {
       callerName: first.callerName || input.callerName || "Anrufer",
       callerText: first.callerText || input.callerText || "",
       locationMode: first.locationMode || input.locationMode || "random",
+      locationRoadTypes: first.locationRoadTypes || input.locationRoadTypes || [],
       poiCategories: first.poiCategories || input.poiCategories || [],
       poiIds: first.poiIds || input.poiIds || [],
       destinationMode: first.destinationMode || input.destinationMode || "none",
@@ -775,6 +783,35 @@ function updateDestinationPoiControls() {
   el.destination_poi_probability.disabled = isFixedPoiTarget || isHomeTarget;
   el.destination_poi_probability.value = isFixedPoiTarget ? 100 : (isHomeTarget ? 0 : (el.destination_poi_probability.value || 0));
   el.destination_poi_probability_row.classList.toggle("disabled-field", isFixedPoiTarget || isHomeTarget);
+  const probability = clampPercent(el.destination_poi_probability.value);
+  const showPoiTargetControls = isFixedPoiTarget || (!isHomeTarget && probability > 0);
+  setHidden(el.destination_poi_category_search?.closest(".multi-select-box"), !showPoiTargetControls);
+  setHidden(el.destination_poi_ids?.closest("label"), !showPoiTargetControls);
+}
+
+function updateLocationPoiControls() {
+  const showPoiControls = el.location_mode.value === "poi";
+  setHidden(el.location_road_types_row, el.location_mode.value !== "road");
+  setHidden(el.poi_category_search?.closest(".multi-select-box"), !showPoiControls);
+  setHidden(el.poi_ids?.closest("label"), !showPoiControls);
+}
+
+function selectedLocationRoadTypes() {
+  if (el.location_mode.value !== "road") return [];
+  const selected = [...document.querySelectorAll("input[name='ie-location-road-types']:checked")].map((input) => input.value);
+  return selected.length ? selected : ["urban", "rural", "motorway"];
+}
+
+function setSelectedLocationRoadTypes(values = []) {
+  const selected = new Set((Array.isArray(values) ? values : String(values || "").split(/[,;|]/))
+    .map((value) => String(value).trim()).filter(Boolean));
+  document.querySelectorAll("input[name='ie-location-road-types']").forEach((input) => {
+    input.checked = selected.has(input.value);
+  });
+}
+
+function setHidden(element, hidden) {
+  if (element) element.hidden = Boolean(hidden);
 }
 
 function parseOptions(value, allowEmpty = false) {

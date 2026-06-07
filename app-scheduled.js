@@ -15,6 +15,7 @@ function createScheduledIncidentFromRate() {
     situationReport: plan.description,
     required: ["KTW"],
     signal: false,
+    locationSource: plan.origin.source || "",
     patientCount: 1,
     transportNeeded: true,
     fixedDestinationId: plan.fixedDestinationId || null,
@@ -126,13 +127,27 @@ function poiByCategories(categories) {
 }
 
 function randomScheduledAddress(fallback = "Adresse im Einsatzgebiet") {
+  if (typeof randomSyntheticStreetAddress === "function") {
+    const address = randomSyntheticStreetAddress();
+    if (address) {
+      return {
+        id: address.id || makeId(`scheduled-address-${state.absoluteMinute}-${Math.random()}`),
+        label: address.label || address.address || fallback,
+        address: address.address || address.label || fallback,
+        lat: address.lat,
+        lng: address.lng,
+        source: address.source || ""
+      };
+    }
+  }
   const point = randomPointInCoverage();
   return {
     id: makeId(`scheduled-address-${state.absoluteMinute}-${Math.random()}`),
     label: point.label && point.label !== defaultLocationLabel() ? point.label : fallback,
     address: point.label || fallback,
     lat: point.lat,
-    lng: point.lng
+    lng: point.lng,
+    source: point.source || ""
   };
 }
 
@@ -144,18 +159,19 @@ function destinationPoint(point) {
     lat: point.lat,
     lng: point.lng,
     type: point.type || ((point.categories || []).includes("hospital") ? "hospital" : "destination"),
-    categories: point.categories || []
+    categories: point.categories || [],
+    source: point.source || ""
   };
 }
 
 async function reverseGeocodeScheduledIncidentOrigin(incident) {
   if (!incident || !window.fetch) return;
-  if (String(incident.location || "").includes("Einsatzgebiet")) {
+  if (incident.locationSource || String(incident.location || "").includes("Einsatzgebiet")) {
     const label = await reverseGeocodeScheduledPoint(incident.lat, incident.lng);
     if (label) incident.location = label;
   }
   const destination = incident.patient?.fixedDestination;
-  if (destination && String(destination.label || "").includes("Einsatzgebiet")) {
+  if (destination && (destination.source || /Einsatzgebiet|Wohnadresse/i.test(String(destination.label || "")))) {
     const label = await reverseGeocodeScheduledPoint(destination.lat, destination.lng);
     if (label) {
       destination.label = label;

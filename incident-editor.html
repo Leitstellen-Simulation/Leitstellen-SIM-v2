@@ -101,10 +101,21 @@
               <label>Einsatzort-Modus
                 <select id="ie-location-mode">
                   <option value="random">zufällig im Einsatzgebiet</option>
+                  <option value="address">Wohnadresse / Strasse + Hausnummer</option>
+                  <option value="road">Strassenpool</option>
+                  <option value="outdoor">Wald / Outdoor / Freiflaeche</option>
                   <option value="hospital">Krankenhaus</option>
                   <option value="poi">POI</option>
                 </select>
               </label>
+            </div>
+            <div id="ie-location-road-types-row" class="multi-select-box compact">
+              <strong>Strassenarten</strong>
+              <div class="check-grid">
+                <label class="check-row"><input type="checkbox" name="ie-location-road-types" value="urban"> Innerorts auf Strasse</label>
+                <label class="check-row"><input type="checkbox" name="ie-location-road-types" value="rural"> Aussenorts auf Strasse</label>
+                <label class="check-row"><input type="checkbox" name="ie-location-road-types" value="motorway"> Autobahn / Schnellstrasse</label>
+              </div>
             </div>
             <label>Notruftext
               <textarea id="ie-caller-text" rows="4" placeholder="Mehrere Texte mit | trennen, Namen mit *Vorname*, *Nachname* oder *Name*"></textarea>

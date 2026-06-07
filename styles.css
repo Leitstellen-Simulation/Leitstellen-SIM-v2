@@ -1025,6 +1025,7 @@ label {
   background: #ffd65a;
   color: #5a3a00;
   box-shadow: inset 0 0 0 999px rgba(255, 214, 90, .1);
+  animation: tabDangerBlink 1.2s infinite;
 }
 
 .incident-list,
@@ -1360,6 +1361,12 @@ label {
   margin-top: 8px;
 }
 
+.incident-card.transport-pending {
+  border-color: #e0ad35;
+  background: #fffdf6;
+  animation: slowYellowPulse 1.4s ease-in-out infinite;
+}
+
 .transport-choice {
   display: grid;
   gap: 6px;
@@ -1368,6 +1375,67 @@ label {
   border: 1px solid #b8c7d4;
   border-radius: 8px;
   background: #f4f8fb;
+}
+
+#transport-destination-dialog {
+  width: min(980px, calc(100vw - 32px));
+  max-height: min(860px, calc(100vh - 32px));
+}
+
+.transport-destination-card {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.transport-destination-body {
+  display: grid;
+  gap: 10px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.transport-destination-summary,
+.transport-destination-notice {
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  border: 1px solid #e0ad35;
+  border-radius: 8px;
+  background: #fff7dd;
+}
+
+.transport-destination-notice {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.transport-destination-notice strong,
+.transport-destination-summary strong {
+  color: #463409;
+  font-size: 13px;
+}
+
+.transport-destination-notice span,
+.transport-destination-summary span {
+  color: #6d5518;
+  font-size: 12px;
+}
+
+.transport-destination-notice button {
+  margin: 0;
+  min-height: 30px;
+}
+
+.transport-choice-dialog {
+  margin-top: 0;
+  min-width: 0;
+}
+
+.transport-choice-dialog .hospital-choice {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .transport-choice-head,
@@ -1452,6 +1520,12 @@ label {
 .hospital-choice.unsuitable {
   border-color: rgba(194, 65, 65, .45);
   background: #fff1f1;
+}
+
+.hospital-choice.unavailable-hospital {
+  border-color: rgba(127, 29, 29, .75);
+  background: #7f1d1d;
+  color: #fff7ed;
 }
 
 .hospital-choice.foreign-hospital {
@@ -2342,6 +2416,11 @@ label {
   border-radius: 50%;
   outline: 2px solid rgba(255, 255, 255, .75);
   outline-offset: 2px;
+}
+
+.map-marker.hospital-unavailable {
+  background: #7f1d1d;
+  color: #fff7ed;
 }
 
 .map-marker.foreign-map-point {

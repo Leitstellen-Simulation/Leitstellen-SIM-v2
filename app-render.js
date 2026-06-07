@@ -1,10 +1,18 @@
 function renderAll() {
+  syncSpeedSelect();
   renderClock();
   renderMap();
   renderIncidents();
   renderVehicles();
   renderRadioAlerts();
   renderAdminStatusBar();
+  renderTransportDestinationDialogIfOpen();
+}
+
+function syncSpeedSelect() {
+  if (!el.speedSelect) return;
+  const value = String(state.speed || 1);
+  if (el.speedSelect.value !== value) el.speedSelect.value = value;
 }
 
 function renderRadioAlerts() {
@@ -170,8 +178,10 @@ function renderMap() {
   });
   state.center.hospitals.forEach((hospital) => {
     const foreignHospital = isForeignMapPoint(hospital);
+    const unavailable = hospitalIsUnavailable(hospital);
     const position = stackedMapPosition(hospital, markerSlots);
-    addMapMarker("hospitals", position.lat, position.lng, foreignHospital ? "FKH" : "KH", `hospital${foreignHospital ? " foreign-map-point" : ""}`, `<strong>${escapeHtml(hospital.label)}</strong><br>${foreignHospital ? "Fremdkrankenhaus<br>" : ""}${escapeHtml(hospital.address)}`);
+    const unavailableText = unavailable ? "Krankenhaus abgemeldet<br>" : "";
+    addMapMarker("hospitals", position.lat, position.lng, foreignHospital ? "FKH" : "KH", `hospital${foreignHospital ? " foreign-map-point" : ""}${unavailable ? " hospital-unavailable" : ""}`, `<strong>${escapeHtml(hospital.label)}</strong><br>${unavailableText}${foreignHospital ? "Fremdkrankenhaus<br>" : ""}${escapeHtml(hospital.address)}`);
   });
   state.incidents.filter((incident) => incident.status !== "geschlossen").forEach((incident) => {
     const lat = Number.isFinite(incident.lat) ? incident.lat : state.center.mapCenter[0];
@@ -254,14 +264,15 @@ function vehicleVisibleOnMap(vehicle) {
 }
 
 function incidentHasRadioAttention(incident) {
-  if (incident.assigned?.length && incident.assigned.every((id) => {
+  const hasTransportDestinationRequest = activeTransportRequests(incident).length > 0;
+  if (!hasTransportDestinationRequest && incident.assigned?.length && incident.assigned.every((id) => {
     const vehicle = state.vehicles.find((unit) => unit.id === id);
     return vehicle && [7, 8, 1, 2, 6].includes(vehicle.status);
   })) return false;
   return incident.assigned.some((id) => {
     const vehicle = state.vehicles.find((unit) => unit.id === id);
     return vehicle?.radioStatus === 5 || vehicle?.radioStatus === 0;
-  }) || activeTransportRequests(incident).length > 0 || missingVehicleTypesAtScene(incident).length > 0 || missingExternalServices(incident, "dispatch").length > 0;
+  }) || hasTransportDestinationRequest || missingVehicleTypesAtScene(incident).length > 0 || missingExternalServices(incident, "dispatch").length > 0;
 }
 
 function missingVehicleTypesAtScene(incident) {
@@ -488,6 +499,7 @@ function renderCoveragePins() {
 }
 
 function renderIncidents() {
+  const previousScrollTop = el.incidentList?.scrollTop ?? 0;
   const active = state.incidents.filter((incident) => incident.status !== "geschlossen");
   el.incidentCount.textContent = `${active.length} offen`;
   renderIncidentTabCounts(active);
@@ -504,6 +516,7 @@ function renderIncidents() {
   el.incidentList.className = "incident-list";
   el.incidentList.innerHTML = "";
   renderIncidentsCollapsible(visible);
+  restoreIncidentListScroll(previousScrollTop);
   return;
   visible.forEach((incident) => {
     const card = document.createElement("article");
@@ -607,9 +620,19 @@ function selectIncidentFromMapOrList(incident) {
   });
 }
 
+function restoreIncidentListScroll(scrollTop) {
+  if (!el.incidentList || !Number.isFinite(scrollTop)) return;
+  const restore = () => {
+    const maxScroll = Math.max(0, el.incidentList.scrollHeight - el.incidentList.clientHeight);
+    el.incidentList.scrollTop = Math.min(scrollTop, maxScroll);
+  };
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(restore);
+  else restore();
+}
+
 function incidentListBucket(incident) {
   if (incident.signal || incident.type === "emergency") return "emergency";
-  if (incident.type === "scheduled") return "scheduled";
+  if (incident.type === "scheduled" && !(incident.assigned || []).length) return "scheduled";
   return "transport";
 }
 
@@ -638,6 +661,7 @@ function renderIncidentTabCounts(active) {
 
 function incidentNeedsDispositionAttention(incident) {
   if (!incident.assigned?.length) return true;
+  if (activeTransportRequests(incident).length) return true;
   if (incident.assistanceDecision?.missing?.length) return true;
   return /^Nachforderung/i.test(incident.status || "");
 }
@@ -657,7 +681,7 @@ function renderIncidentsCollapsible(visible) {
   visible.forEach((incident) => {
     const isOpen = incident.id === state.selectedIncidentId;
     const card = document.createElement("article");
-    card.className = `incident-card ${isOpen ? "active" : ""} ${incidentHasRadioAttention(incident) ? "attention" : ""} ${incidentNeedsSlowAlert(incident) ? "slow-alert" : ""}`;
+    card.className = `incident-card ${isOpen ? "active" : ""} ${incidentHasRadioAttention(incident) ? "attention" : ""} ${incidentNeedsSlowAlert(incident) ? "slow-alert" : ""} ${activeTransportRequests(incident).length ? "transport-pending" : ""}`;
     const summary = document.createElement("button");
     summary.type = "button";
     summary.className = "incident-summary";
@@ -737,14 +761,8 @@ function renderIncidentsCollapsible(visible) {
     if (incident.itwSubstitutionDecision) details.append(renderItwSubstitutionDecision(incident));
     if (incident.elrdWaitDecision) details.append(renderElrdWaitDecision(incident));
 
-    activeTransportRequests(incident).forEach((request) => {
-      const transportBox = document.createElement("div");
-      transportBox.className = "transport-choice";
-      appendTransportRequestHeader(transportBox, incident, request);
-      appendForeignHospitalToggle(transportBox, incident, request);
-      appendHospitalChoices(transportBox, incident, request);
-      details.append(transportBox);
-    });
+    const transportRequests = activeTransportRequests(incident);
+    if (transportRequests.length) details.append(renderTransportDestinationNotice(incident, transportRequests));
 
     card.append(details);
     el.incidentList.append(card);
@@ -888,6 +906,7 @@ function assistanceDecisionPatients(incident, decisionMissing = []) {
 function appendAssistanceButtons(parent, incident, missing, patientId = null) {
   const patient = patientId ? (incident.patient?.patients || []).find((item) => item.id === patientId) : null;
   const reanimationLocked = patient?.acuity === "reanimation";
+  const dismissed = assistanceAlternativeDismissed(incident, patientId);
   if (missing.includes("ELRD")) {
     const button = document.createElement("button");
     button.type = "button";
@@ -895,7 +914,7 @@ function appendAssistanceButtons(parent, incident, missing, patientId = null) {
     button.addEventListener("click", () => openIncidentDialog(incident));
     parent.append(button);
   }
-  if (!reanimationLocked && missing.some(isDoctorRequirement)) {
+  if (!reanimationLocked && missing.some(isDoctorRequirement) && !dismissed.has("without-doctor")) {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = patientId
@@ -904,7 +923,7 @@ function appendAssistanceButtons(parent, incident, missing, patientId = null) {
     button.addEventListener("click", () => applyAssistanceAlternative(incident.id, "without-doctor", patientId));
     parent.append(button);
   }
-  if (!reanimationLocked && missing.includes("RTW")) {
+  if (!reanimationLocked && missing.includes("RTW") && !dismissed.has("without-rtw")) {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = patientId
@@ -920,15 +939,23 @@ function appendAssistanceButtons(parent, incident, missing, patientId = null) {
       ? "Für diesen Patienten nachfragen: Notarzt + KTW ausreichend?"
       : "Nachfragen: Notarzt + KTW ausreichend?";
     nefKtw.addEventListener("click", () => applyAssistanceAlternative(incident.id, "nef-ktw", patientId));
-    parent.append(nefKtw);
+    if (!dismissed.has("nef-ktw")) parent.append(nefKtw);
     const rtwOnly = document.createElement("button");
     rtwOnly.type = "button";
     rtwOnly.textContent = patientId
       ? "Für diesen Patienten nachfragen: RTW alleine ausreichend?"
       : "Nachfragen: RTW alleine ausreichend?";
     rtwOnly.addEventListener("click", () => applyAssistanceAlternative(incident.id, "rtw-only", patientId));
-    parent.append(rtwOnly);
+    if (!dismissed.has("rtw-only")) parent.append(rtwOnly);
   }
+}
+
+function assistanceAlternativeDismissed(incident, patientId = null) {
+  const dismissed = incident?.assistanceDecision?.dismissedAlternatives || {};
+  return new Set([
+    ...(dismissed.all || []),
+    ...(patientId ? dismissed[patientId] || [] : [])
+  ]);
 }
 
 function renderKtwHandoverDecision(incident) {
@@ -1074,6 +1101,7 @@ function applyAssistanceAlternative(incidentId, mode, patientId = null) {
   const affectedPatients = patient ? [patient] : (incident.patient?.patients || []).filter((item) => !item.completed && !item.transporting);
   if (affectedPatients.some((item) => item.acuity === "reanimation") && ["without-doctor", "without-rtw", "nef-ktw", "rtw-only"].includes(mode)) {
     logRadio(`Rueckfrage ${incident.keyword}: nicht moeglich, Reanimation erfordert RTW und NEF.`, "warn");
+    dismissAssistanceAlternative(incident, mode, patientId);
     renderAll();
     return;
   }
@@ -1081,6 +1109,7 @@ function applyAssistanceAlternative(incidentId, mode, patientId = null) {
   const accepted = Math.random() < chance;
   if (!accepted) {
     logRadio(`Rückfrage ${incident.keyword}: nicht möglich, Nachforderung bleibt bestehen.`, "warn");
+    dismissAssistanceAlternative(incident, mode, patientId);
     renderAll();
     return;
   }
@@ -1116,6 +1145,16 @@ function applyAssistanceAlternative(incidentId, mode, patientId = null) {
   logRadio(`Rückfrage ${incident.keyword}${patientText}: Alternative akzeptiert, Transport später mit Sondersignal.`, "radio");
   rescheduleSceneTreatment(incident);
   renderAll();
+}
+
+function dismissAssistanceAlternative(incident, mode, patientId = null) {
+  if (!incident?.assistanceDecision) return;
+  incident.assistanceDecision.dismissedAlternatives ||= {};
+  const key = patientId || "all";
+  incident.assistanceDecision.dismissedAlternatives[key] ||= [];
+  if (!incident.assistanceDecision.dismissedAlternatives[key].includes(mode)) {
+    incident.assistanceDecision.dismissedAlternatives[key].push(mode);
+  }
 }
 
 function removeRequirementFromPatient(patient, types) {
@@ -1239,6 +1278,93 @@ function activeTransportRequests(incident) {
   });
 }
 
+function renderTransportDestinationNotice(incident, requests = activeTransportRequests(incident)) {
+  const box = document.createElement("section");
+  box.className = "transport-destination-notice";
+  const patients = requests
+    .map((request) => (incident.patient?.patients || []).find((patient) => patient.id === request.patientId))
+    .filter(Boolean);
+  const label = requests.length === 1
+    ? `Transportziel fuer ${patients[0]?.label || "Patient"} erforderlich`
+    : `Transportziele fuer ${requests.length} Patienten erforderlich`;
+  const departments = [...new Set(requests.map((request) => {
+    const patient = (incident.patient?.patients || []).find((item) => item.id === request.patientId);
+    return request.requiredDepartment || patient?.requiredDepartment || "Fachrichtung nach Rueckmeldung";
+  }))];
+  box.innerHTML = `
+    <div>
+      <strong>${escapeHtml(label)}</strong>
+      <span>${escapeHtml(departments.join(" | "))}</span>
+    </div>
+  `;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = "Transportziel zuweisen";
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openTransportDestinationDialog(incident.id);
+  });
+  box.append(button);
+  return box;
+}
+
+function openTransportDestinationDialog(incidentId) {
+  const incident = state.incidents.find((item) => item.id === incidentId);
+  if (!incident || !el.transportDestinationDialog) return;
+  el.transportDestinationDialog.dataset.incidentId = incident.id;
+  renderTransportDestinationDialog(incident, activeTransportRequests(incident), true);
+  showDialog(el.transportDestinationDialog);
+}
+
+function renderTransportDestinationDialogIfOpen() {
+  if (!el.transportDestinationDialog?.open) return;
+  const incidentId = el.transportDestinationDialog.dataset.incidentId;
+  const incident = state.incidents.find((item) => item.id === incidentId);
+  if (!incident || incident.status === "geschlossen") {
+    el.transportDestinationDialog.close();
+    return;
+  }
+  const requests = activeTransportRequests(incident);
+  if (!requests.length) {
+    el.transportDestinationDialog.close();
+    return;
+  }
+  const renderKey = transportDestinationRenderKey(incident, requests);
+  if (el.transportDestinationDialog.dataset.renderKey === renderKey) return;
+  renderTransportDestinationDialog(incident, requests);
+}
+
+function renderTransportDestinationDialog(incident, requests = activeTransportRequests(incident), force = false) {
+  if (!el.transportDestinationBody) return;
+  const renderKey = transportDestinationRenderKey(incident, requests);
+  if (!force && el.transportDestinationDialog?.dataset.renderKey === renderKey) return;
+  if (el.transportDestinationDialog) el.transportDestinationDialog.dataset.renderKey = renderKey;
+  el.transportDestinationBody.innerHTML = "";
+  const summary = document.createElement("section");
+  summary.className = "transport-destination-summary";
+  summary.innerHTML = `
+    <strong>${escapeHtml(incident.keyword)}</strong>
+    <span>${escapeHtml(incident.location || "Einsatzort")} | ${requests.length} offene Zuweisung${requests.length === 1 ? "" : "en"}</span>
+  `;
+  el.transportDestinationBody.append(summary);
+  requests.forEach((request) => {
+    const section = document.createElement("section");
+    section.className = "transport-choice transport-choice-dialog";
+    appendTransportRequestHeader(section, incident, request);
+    appendForeignHospitalToggle(section, incident, request);
+    appendHospitalChoices(section, incident, request);
+    el.transportDestinationBody.append(section);
+  });
+}
+
+function transportDestinationRenderKey(incident, requests = activeTransportRequests(incident)) {
+  return [
+    incident?.id || "",
+    state.showForeignHospitalsInTransport ? "foreign" : "local",
+    ...requests.map((request) => `${request.id || ""}:${request.vehicleId || ""}:${request.patientId || ""}:${request.destinationChange ? "change" : "new"}`)
+  ].join("|");
+}
+
 function appendTransportRequestHeader(parent, incident, request = incident.transportRequest) {
   const patient = (incident.patient?.patients || []).find((item) => item.id === request?.patientId);
   const department = request?.requiredDepartment || patient?.requiredDepartment || "Fachrichtung nach Rückmeldung";
@@ -1275,8 +1401,11 @@ function appendHospitalChoices(parent, incident, request = incident.transportReq
   transportHospitalChoices(incident, request).forEach((hospital) => {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `${hospital.suitable ? "hospital-choice suitable" : "hospital-choice unsuitable"}${hospital.foreign ? " foreign-hospital" : ""}`;
-    button.textContent = `${hospital.foreign ? "Fremd-KH: " : ""}${hospital.label} (${hospital.distance.toFixed(1).replace(".", ",")} km)`;
+    const unavailable = hospitalIsUnavailable(hospital);
+    button.className = `${hospital.suitable ? "hospital-choice suitable" : "hospital-choice unsuitable"}${hospital.foreign ? " foreign-hospital" : ""}${unavailable ? " unavailable-hospital" : ""}`;
+    const prefix = hospital.foreign ? "Fremd-KH: " : "";
+    const suffix = unavailable ? " - abgemeldet" : "";
+    button.textContent = `${prefix}${hospital.label}${suffix} (${hospital.distance.toFixed(1).replace(".", ",")} km)`;
     button.addEventListener("click", (event) => {
       event.stopPropagation();
       handleHospitalChoice(incident, hospital, request);
@@ -1578,7 +1707,7 @@ function renderDialogVehicles(call, incident = null) {
     .filter((vehicle) => {
       if (assignedIds.has(vehicle.id)) return false;
       if (vehicle.foreign) return state.showForeignVehiclesInDialog && vehicle.status === 2 && isAlarmable(vehicle);
-      return isAlarmable(vehicle) || isPendingStatusC(vehicle);
+      return isAlarmable(vehicle) || isPendingStatusC(vehicle) || vehicle.status === 3;
     })
     .sort((a, b) => {
       const selectedDelta = Number(state.selectedDialogVehicleIds.has(b.id)) - Number(state.selectedDialogVehicleIds.has(a.id));

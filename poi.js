@@ -17,6 +17,14 @@ window.poiCategoryCatalog = [
   { key: "sports-centre", label: "Sportzentrum", importable: true },
   { key: "mall", label: "Einkaufszentrum", importable: true },
   { key: "hotel", label: "Hotel", importable: true },
+  { key: "pharmacy", label: "Apotheke", importable: true },
+  { key: "supermarket", label: "Supermarkt", importable: true },
+  { key: "restaurant", label: "Gastronomie", importable: true },
+  { key: "fuel", label: "Tankstelle", importable: true },
+  { key: "swimming-pool", label: "Schwimmbad", importable: true },
+  { key: "playground", label: "Spielplatz", importable: true },
+  { key: "industrial", label: "Industrie/Gewerbe", importable: true },
+  { key: "bus-stop", label: "ÖPNV-Haltestelle", importable: true },
   { key: "public", label: "Öffentlicher Ort", importable: false },
   { key: "home", label: "Wohnadresse", importable: false }
 ];

@@ -13,15 +13,41 @@ const TRANSPORT_VEHICLE_TYPES = ["KTW", "RTW", "RTH", "ITH", "ITW"];
 const ROAD_TRANSPORT_REQUIREMENT_TYPES = ["KTW", "RTW", "ITW"];
 const STABILIZER_VEHICLE_TYPES = ["HVO", "FR"];
 const DETERIORATION_SUPPORT_VEHICLE_TYPES = ["HVO", "FR", "ELRD"];
+const SUPPORT_GROUP_LOCKOUT_MINUTES = 45;
 
 function simMinuteNow() {
   return Number.isFinite(state.absoluteMinute) ? state.absoluteMinute : state.minute;
+}
+
+function supportGroupLockRemainingMinutes(groupState) {
+  const until = Number(groupState?.lockedUntilAbsoluteMinute);
+  if (!Number.isFinite(until)) return 0;
+  const remaining = Math.ceil(until - simMinuteNow());
+  if (remaining <= 0 && groupState) {
+    groupState.lockedUntilAbsoluteMinute = null;
+    if (groupState.status === "locked") groupState.status = "bereit";
+    return 0;
+  }
+  return remaining;
 }
 
 function alarmSupportGroup(groupId) {
   const group = (state.center?.supportGroups || []).find((item) => item.id === groupId);
   if (!group) return;
   const groupState = supportGroupState(group.id);
+  const lockRemaining = supportGroupLockRemainingMinutes(groupState);
+  if (lockRemaining > 0) {
+    logRadio(`${group.label || group.id}: UGRD/SEG nach Nichtausruecken noch ${lockRemaining} min gesperrt.`, "urgent");
+    renderSupportGroupDialog();
+    return;
+  }
+  const activeIds = (groupState.activeVehicleIds || []).filter((id) => state.vehicles.some((vehicle) => vehicle.id === id));
+  groupState.activeVehicleIds = activeIds;
+  if (groupState.status === "alarmed" || (groupState.pending || 0) > 0 || activeIds.length) {
+    logRadio(`${group.label || group.id}: UGRD/SEG ist bereits alarmiert oder einsatzbereit.`, "warn");
+    renderSupportGroupDialog();
+    return;
+  }
   groupState.status = "alarmed";
   groupState.pending ||= 0;
   groupState.activeVehicleIds ||= [];
@@ -45,13 +71,16 @@ function alarmSupportGroup(groupId) {
       state.vehicles.push(vehicle);
       groupState.activeVehicleIds.push(vehicle.id);
       logRadio(`${vehicle.name}: Status 1 - UGRD/SEG einsatzbereit.`, "radio");
+      logRadio(`${vehicle.name}: Status 5 - Einsatzklar, Fzg ${vehicle.shortName || vehicle.name}, Frage Einsatzauftrag?`, "radio");
       renderAll();
       renderSupportGroupDialog();
     }, simulationDelay(delay));
   });
   scheduleTimeout(() => {
     if (groupState.status === "alarmed" && !(groupState.activeVehicleIds || []).length && !(groupState.pending || 0)) {
-      logRadio(`${group.label || group.id}: UGRD/SEG nicht ausgerückt - keine Rückmeldung innerhalb der maximalen Ausrückzeit.`, "urgent");
+      groupState.status = "locked";
+      groupState.lockedUntilAbsoluteMinute = simMinuteNow() + SUPPORT_GROUP_LOCKOUT_MINUTES;
+      logRadio(`${group.label || group.id}: UGRD/SEG nicht ausgerueckt - fuer ${SUPPORT_GROUP_LOCKOUT_MINUTES} min gesperrt.`, "urgent");
       renderSupportGroupDialog();
     }
   }, simulationDelay(Number(group.maxResponseMinutes) || 15));
@@ -147,6 +176,9 @@ function removeSupportGroupVehicle(vehicleId) {
   const groupState = supportGroupState(vehicle.supportGroupId);
   groupState.activeVehicleIds = (groupState.activeVehicleIds || []).filter((id) => id !== vehicle.id);
   state.vehicles = state.vehicles.filter((unit) => unit.id !== vehicle.id);
+  if (groupState.status === "standdown" && !(groupState.activeVehicleIds || []).length && !(groupState.pending || 0)) {
+    groupState.status = "bereit";
+  }
   logRadio(`${vehicle.name}: UGRD/SEG eingerueckt, wieder ausser Dienst.`, "radio");
   renderAll();
   renderSupportGroupDialog();
@@ -658,6 +690,7 @@ function startResponse(vehicleId) {
   const incident = state.incidents.find((item) => item.id === vehicle.nextIncidentId);
   if (!incident) return;
 
+  cancelVehicleRoute(vehicle);
   vehicle.status = 3;
   vehicle.statusText = "auf Anfahrt";
   vehicle.coveragePointId = null;
@@ -1342,9 +1375,10 @@ function patientEffectiveRequiredTypes(patient) {
   const requiredTypes = patient.rthTransportMode === "rth-transport"
     ? (patient.required || []).filter((type) => !ROAD_TRANSPORT_REQUIREMENT_TYPES.includes(type))
     : (patient.required || []);
+  const hardRequiredTypes = requiredTypes.filter((type) => !isStabilizerVehicle(type));
   return patient.acuity !== "reanimation" && (patient.doctorCareCompleted || patientCanDropDoctorRequirement(patient))
-    ? requiredTypes.filter((type) => !isDoctorRequirement(type))
-    : requiredTypes;
+    ? hardRequiredTypes.filter((type) => !isDoctorRequirement(type))
+    : hardRequiredTypes;
 }
 
 function missingRequiredTypesForResources(requiredTypes, resources, coverageFn) {
@@ -1401,7 +1435,8 @@ function isDeteriorationSupportVehicle(type) {
 function patientHasAnyResourceAtScene(patient) {
   return (patient?.assignedVehicles || [])
     .map((id) => state.vehicles.find((vehicle) => vehicle.id === id))
-    .some((vehicle) => vehicle?.status === 4);
+    .some((vehicle) => vehicle?.status === 4)
+    || patientHasStabilizerAtIncidentScene(patient);
 }
 
 function patientHasDoctorAtScene(patient) {
@@ -1414,6 +1449,14 @@ function patientHasRtwAtScene(patient) {
   return (patient?.assignedVehicles || [])
     .map((id) => state.vehicles.find((vehicle) => vehicle.id === id))
     .some((vehicle) => vehicle?.status === 4 && vehicle.type === "RTW");
+}
+
+function patientHasStabilizerAtIncidentScene(patient) {
+  const incident = incidentForPatient(patient);
+  if (!incident) return false;
+  return (incident.assigned || [])
+    .map((id) => state.vehicles.find((vehicle) => vehicle.id === id))
+    .some((vehicle) => vehicle?.status === 4 && vehicle.incidentId === incident.id && isStabilizerVehicle(vehicle.type));
 }
 
 function patientMissingTypes(patient) {
@@ -1466,9 +1509,12 @@ function maybeRequestAdditionalResources(vehicle, incident, options = {}) {
   const needsElrd = missing.includes("ELRD");
   if (![...missing, ...missingServices].length) return [];
   if (!needsDoctor && !needsSceneTransport && !needsAdditionalTransport && !needsTransport && !needsRef && !refNeedsTransport && !needsElrd && !missingServices.length) return [];
+  const uncoveredAfterCurrentVehicle = missingAfterCurrentVehicle.length < missing.length
+    ? missingAfterCurrentVehicle
+    : missing;
   const allMissing = options.asPartOfReport
-    ? [...missing, ...missingServices]
-    : [...(needsAdditionalTransport && !needsDoctor ? missingAfterCurrentVehicle : missing), ...missingServices];
+    ? [...uncoveredAfterCurrentVehicle, ...missingServices]
+    : [...(needsAdditionalTransport && !needsDoctor ? missingAfterCurrentVehicle : uncoveredAfterCurrentVehicle), ...missingServices];
   if (options.asPartOfReport) {
     incident.status = "Nachforderung";
     incident.assistanceDecision = {
@@ -1626,6 +1672,7 @@ function handleRthTransportReadiness(vehicle, incident, patient) {
   const rtw = rtwAtSceneForPatient(patient);
   if (!patient.required?.some(isDoctorRequirement)) return false;
   patient.rthTransportMode ||= chooseRthTransportMode(patient);
+  if (patient.acuity === "reanimation") patient.rthTransportMode = "joint-rtw-rth";
   if (patient.rthTransportMode !== "rth-transport" && !rtw && patientRequiresRoadTransportWithRth(patient)) {
     if (vehicle.id === rth.id) {
       maybeRequestAdditionalResources(vehicle, incident);
@@ -1674,6 +1721,7 @@ function patientRequiresRoadTransportWithRth(patient) {
 }
 
 function chooseRthTransportMode(patient) {
+  if (patient?.acuity === "reanimation") return "joint-rtw-rth";
   const roll = Math.random();
   if (patientRequiresDoctorAccompaniment(patient)) {
     return roll < .5 ? "rth-transport" : "joint-rtw-rth";
@@ -2260,7 +2308,7 @@ function beginTransport(incidentId, hospitalId, vehicleId = null, requestId = nu
   vehicle.statusText = `Transport zu ${hospital.label}`;
   logRadio(`${vehicle.name}: Status 7, Transportziel ${hospital.label}${destinationChange ? " nach Zielortwechsel" : ""}.`, "radio");
   if (!hospitalSuitableForIncident(hospital, incident, request)) {
-    scheduleSecondaryTransfer(incident, hospital);
+    scheduleSecondaryTransfer(incident, hospital, hospitalIsUnavailable(hospital) ? "unavailable" : "unsuitable");
   }
   renderAll();
   const signal = destinationChange ? Boolean(request?.previousSignal) : transportUsesSignal(vehicle, incident);
@@ -2542,22 +2590,24 @@ function arriveAtTransportDestination(vehicleId) {
   }, simulationDelay(handoverMinutes()));
 }
 
-function scheduleSecondaryTransfer(sourceIncident, hospital) {
+function scheduleSecondaryTransfer(sourceIncident, hospital, reason = "unsuitable") {
   if (sourceIncident.secondaryTransferScheduled) return;
+  if (reason === "unavailable" && Math.random() >= 0.5) return;
   sourceIncident.secondaryTransferScheduled = true;
-  const delayMinutes = randomInt(30, 75);
+  const delayMinutes = reason === "unavailable" ? randomInt(15, 60) : randomInt(30, 75);
   scheduleTimeout(() => {
-    const transfer = buildSecondaryTransferCall(sourceIncident, hospital);
+    const transfer = buildSecondaryTransferCall(sourceIncident, hospital, reason);
     if (typeof queueIncomingCall === "function") queueIncomingCall(transfer);
     else state.pendingCall = transfer;
-    logRadio(`Folgetransport wegen ungeeigneter Zielklinik angelegt: ${hospital.label}.`, "warn");
+    logRadio(`${reason === "unavailable" ? "Folgetransport wegen abgemeldeter Zielklinik" : "Folgetransport wegen ungeeigneter Zielklinik"} angelegt: ${hospital.label}.`, "warn");
     renderAll();
   }, simulationDelay(delayMinutes));
 }
 
-function buildSecondaryTransferCall(sourceIncident, hospital) {
+function buildSecondaryTransferCall(sourceIncident, hospital, reason = "unsuitable") {
   const patient = sourceIncident.patient?.patients?.[0] || sourceIncident.patient || {};
-  const required = [...(patient.required?.length ? patient.required : sourceIncident.required || ["RTW"])];
+  const ktwSufficient = reason === "unavailable" && Math.random() < 0.5;
+  const required = ktwSufficient ? ["KTW"] : [...(patient.required?.length ? patient.required : sourceIncident.required || ["RTW"])];
   const critical = required.some(isDoctorRequirement) || sourceIncident.patient?.condition === "kritisch";
   const keyword = required.every((type) => type === "KTW")
     ? "RD KTP - Verlegung"
@@ -2565,12 +2615,15 @@ function buildSecondaryTransferCall(sourceIncident, hospital) {
   const defaults = keywordDefaults[keyword] || { type: "transport", required, signal: critical };
   const requiredText = required.length ? required.join(", ") : "Transportmittel";
   const department = sourceIncident.patient?.requiredDepartment || patient.requiredDepartment || "geeignete Fachrichtung";
+  const callerText = reason === "unavailable"
+    ? `Hallo, Klinik ${hospital.label}, wir sind momentan abgemeldet und koennen den Patienten nicht uebernehmen. Wir brauchen bitte einmal ${requiredText}. Benoetige Krankenhaus-Zuweisung mit Fachrichtung: ${department}`
+    : `Hallo, Klinik ${hospital.label}, ihr habt uns vorhin einen Patienten gebracht, den wir nicht behandeln koennen. Wir brauchen bitte einmal ${requiredText}. Benoetige Krankenhaus-Zuweisung mit Fachrichtung: ${department}`;
   return {
     id: makeId(),
     type: defaults.type,
     keyword,
     callerName: `${hospital.label} Aufnahme`,
-    callerText: `Hallo, Klinik ${hospital.label}, ihr habt uns vorhin einen Patienten gebracht, den wir nicht behandeln koennen. Wir brauchen bitte einmal ${requiredText}. Benoetige Krankenhaus-Zuweisung mit Fachrichtung: ${department}`,
+    callerText,
     location: hospital.label,
     lat: hospital.lat,
     lng: hospital.lng,
@@ -3388,6 +3441,7 @@ function nearestHospitals(incident, request = incident.transportRequest, options
 }
 
 function hospitalSuitableForIncident(hospital, incident, request = incident.transportRequest) {
+  if (hospitalIsUnavailable(hospital)) return false;
   const keys = requiredDepartmentKeysForTransport(incident, request).map(normalizeDepartmentKey);
   if (!keys.length || keys.includes("none")) return true;
   if (hospital.pediatricOnly && !keys.includes("pediatrics")) return false;
@@ -3411,7 +3465,7 @@ function missingVehicleTypes(incident) {
     .map((id) => state.vehicles.find((unit) => unit.id === id))
     .filter((vehicle) => vehicle && ![6].includes(vehicle.status));
   return missingRequiredTypesForResources(
-    incident.required || [],
+    (incident.required || []).filter((type) => !isStabilizerVehicle(type)),
     assigned,
     (vehicle, requiredTypes) => requiredTypes.filter((type) => vehicleSatisfiesRequirement(vehicle.type, type))
   );

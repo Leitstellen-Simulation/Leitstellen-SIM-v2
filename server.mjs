@@ -13,16 +13,20 @@ const usesExternalDataDir = dataRoot !== root;
 const defaultMapsDir = join(root, "maps");
 const incidentCatalogFileName = process.env.DISPATCH_INCIDENTS_FILE || "incidents-dynamic.json";
 const defaultIncidentsFile = join(root, incidentCatalogFileName);
-const legacyIncidentsFile = join(root, "incidents-data.json");
 const mapsDir = join(dataRoot, "maps");
 const incidentsFile = join(dataRoot, incidentCatalogFileName);
 const syncMetaFile = join(dataRoot, "startup-sync.json");
-const maxBodyBytes = 2_000_000;
+const maxBodyBytes = 180_000_000;
 const adminPassword = process.env.DISPATCH_ADMIN_PASSWORD || "XXX112XXX";
 const openRouterApiKey = process.env.OPENROUTER_API_KEY || "OPENROUTER_API_KEY_HIER_EINTRAGEN";
 const openRouterModel = process.env.OPENROUTER_MODEL || "deepseek/deepseek-v4-pro";
 const openRouterReferer = process.env.OPENROUTER_SITE_URL || "http://127.0.0.1:4173";
 const openRouterAppName = process.env.OPENROUTER_APP_NAME || "Leitstellen-SIM";
+const overpassEndpoints = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass.openstreetmap.ru/api/interpreter"
+];
 const types = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -31,7 +35,8 @@ const types = {
 };
 const startupSyncState = {
   mapConflicts: [],
-  incidentMerge: null
+  incidentMerge: null,
+  incidentConflicts: []
 };
 
 const server = createServer(async (request, response) => {
@@ -59,6 +64,10 @@ const server = createServer(async (request, response) => {
     }
     if (url.pathname === "/api/osm-pois") {
       await handleOsmPoiApi(request, response);
+      return;
+    }
+    if (url.pathname === "/api/osm-data") {
+      await handleOsmDataApi(request, response);
       return;
     }
     if (url.pathname === "/api/boundary-search") {
@@ -115,17 +124,31 @@ async function seedDefaultMaps() {
   await mkdir(mapsDir, { recursive: true });
 
   const syncMeta = await readSyncMeta();
+  let metaChanged = false;
   const existingFiles = new Set((await readdir(mapsDir)).filter((file) => file.endsWith(".json")));
   const defaultFiles = (await readdir(defaultMapsDir)).filter((file) => file.endsWith(".json"));
   for (const file of defaultFiles) {
     const sourceFile = join(defaultMapsDir, file);
     const targetFile = join(mapsDir, file);
+    const bundledHash = await jsonFileHash(sourceFile);
     if (!existingFiles.has(file)) {
       await copyDefaultFile(sourceFile, targetFile);
+      syncMeta.mapHashes[file] = bundledHash;
+      metaChanged = true;
       continue;
     }
-    if (await jsonFilesEqual(sourceFile, targetFile)) continue;
-    const bundledHash = await jsonFileHash(sourceFile);
+    const targetHash = await jsonFileHash(targetFile).catch(() => null);
+    if (targetHash === bundledHash) {
+      syncMeta.mapHashes[file] = bundledHash;
+      metaChanged = true;
+      continue;
+    }
+    if (syncMeta.mapHashes?.[file] && targetHash === syncMeta.mapHashes[file]) {
+      await copyDefaultFile(sourceFile, targetFile);
+      syncMeta.mapHashes[file] = bundledHash;
+      metaChanged = true;
+      continue;
+    }
     if (syncMeta.mapIgnores?.[file] === bundledHash) continue;
     const bundled = await readJsonFile(sourceFile).catch(() => null);
     const local = await readJsonFile(targetFile).catch(() => null);
@@ -137,19 +160,11 @@ async function seedDefaultMaps() {
       bundledHash
     });
   }
+  if (metaChanged) await writeSyncMeta(syncMeta);
 }
 
 async function copyDefaultFile(sourceFile, targetFile) {
   await writeFile(targetFile, await readFile(sourceFile, "utf8"), "utf8");
-}
-
-async function jsonFilesEqual(leftFile, rightFile) {
-  try {
-    const [left, right] = await Promise.all([readJsonFile(leftFile), readJsonFile(rightFile)]);
-    return stableJsonString(left) === stableJsonString(right);
-  } catch {
-    return false;
-  }
 }
 
 function stableJsonString(value) {
@@ -162,13 +177,13 @@ async function jsonFileHash(file) {
 }
 
 async function readSyncMeta() {
-  if (!existsSync(syncMetaFile)) return { mapIgnores: {} };
+  if (!existsSync(syncMetaFile)) return { mapIgnores: {}, mapHashes: {}, incidentHashes: {}, incidentIgnores: {} };
   const meta = await readJsonFile(syncMetaFile).catch(() => ({}));
-  return { mapIgnores: {}, ...meta };
+  return { mapIgnores: {}, mapHashes: {}, incidentHashes: {}, incidentIgnores: {}, ...meta };
 }
 
 async function writeSyncMeta(meta) {
-  await writeJsonFile(syncMetaFile, { mapIgnores: {}, ...meta });
+  await writeJsonFile(syncMetaFile, { mapIgnores: {}, mapHashes: {}, incidentHashes: {}, incidentIgnores: {}, ...meta });
 }
 
 function sortJsonValue(value) {
@@ -181,29 +196,74 @@ function sortJsonValue(value) {
 }
 
 async function mergeDefaultIncidents() {
-  const bundledFile = existsSync(defaultIncidentsFile)
-    ? defaultIncidentsFile
-    : existsSync(legacyIncidentsFile)
-      ? legacyIncidentsFile
-      : null;
+  const bundledFile = existsSync(defaultIncidentsFile) ? defaultIncidentsFile : null;
   if (!bundledFile) return;
+  const syncMeta = await readSyncMeta();
   if (!existsSync(incidentsFile)) {
     await copyDefaultFile(bundledFile, incidentsFile);
+    const bundled = await readJsonFile(bundledFile).catch(() => []);
+    if (Array.isArray(bundled)) {
+      syncMeta.incidentHashes = incidentHashMap(bundled);
+      await writeSyncMeta(syncMeta);
+    }
     startupSyncState.incidentMerge = { added: "initial", total: null };
     return;
   }
   const bundled = await readJsonFile(bundledFile).catch(() => []);
   const local = await readJsonFile(incidentsFile).catch(() => []);
   if (!Array.isArray(bundled) || !Array.isArray(local)) return;
-  const localIds = new Set(local.map((incident) => incident?.id).filter(Boolean));
-  const additions = bundled.filter((incident) => incident?.id && !localIds.has(incident.id));
-  if (!additions.length) {
-    startupSyncState.incidentMerge = { added: 0, total: local.length };
-    return;
-  }
-  const merged = [...local, ...additions];
-  await writeJsonFile(incidentsFile, merged);
-  startupSyncState.incidentMerge = { added: additions.length, total: merged.length };
+  const bundledById = new Map(bundled.filter((incident) => incident?.id).map((incident) => [incident.id, incident]));
+  const localById = new Map(local.filter((incident) => incident?.id).map((incident) => [incident.id, incident]));
+  const bundledHashes = incidentHashMap(bundled);
+  let added = 0;
+  let updated = 0;
+  let changed = false;
+  const merged = local.map((incident) => {
+    if (!incident?.id) return incident;
+    const bundledIncident = bundledById.get(incident.id);
+    if (!bundledIncident) return incident;
+    const bundledHash = bundledHashes[incident.id];
+    const localHash = jsonValueHash(incident);
+    if (localHash === bundledHash) {
+      syncMeta.incidentHashes[incident.id] = bundledHash;
+      return incident;
+    }
+    if (syncMeta.incidentHashes?.[incident.id] && localHash === syncMeta.incidentHashes[incident.id]) {
+      syncMeta.incidentHashes[incident.id] = bundledHash;
+      updated += 1;
+      changed = true;
+      return bundledIncident;
+    }
+    if (syncMeta.incidentIgnores?.[incident.id] !== bundledHash) {
+      startupSyncState.incidentConflicts.push({
+        id: incident.id,
+        localTitle: incident.title || incident.keyword || incident.id,
+        bundledTitle: bundledIncident.title || bundledIncident.keyword || incident.id,
+        bundledHash
+      });
+    }
+    return incident;
+  });
+  bundled.forEach((incident) => {
+    if (!incident?.id || localById.has(incident.id)) return;
+    merged.push(incident);
+    syncMeta.incidentHashes[incident.id] = bundledHashes[incident.id];
+    added += 1;
+    changed = true;
+  });
+  if (changed) await writeJsonFile(incidentsFile, merged);
+  await writeSyncMeta(syncMeta);
+  startupSyncState.incidentMerge = { added, updated, conflicts: startupSyncState.incidentConflicts.length, total: merged.length };
+}
+
+function incidentHashMap(incidents) {
+  return Object.fromEntries((incidents || [])
+    .filter((incident) => incident?.id)
+    .map((incident) => [incident.id, jsonValueHash(incident)]));
+}
+
+function jsonValueHash(value) {
+  return createHash("sha256").update(stableJsonString(value)).digest("hex");
 }
 
 async function serveStaticFile(request, response, url) {
@@ -502,6 +562,46 @@ const osmPoiCategories = {
     label: "Hotel",
     queries: ['["tourism"="hotel"]', '["tourism"="motel"]', '["tourism"="guest_house"]'],
     matchAny: [[{ key: "tourism", value: "hotel" }], [{ key: "tourism", value: "motel" }], [{ key: "tourism", value: "guest_house" }]]
+  },
+  pharmacy: {
+    label: "Apotheke",
+    queries: ['["amenity"="pharmacy"]', '["healthcare"="pharmacy"]'],
+    matchAny: [[{ key: "amenity", value: "pharmacy" }], [{ key: "healthcare", value: "pharmacy" }]]
+  },
+  supermarket: {
+    label: "Supermarkt",
+    queries: ['["shop"="supermarket"]', '["shop"="convenience"]'],
+    matchAny: [[{ key: "shop", value: "supermarket" }], [{ key: "shop", value: "convenience" }]]
+  },
+  restaurant: {
+    label: "Gastronomie",
+    queries: ['["amenity"="restaurant"]', '["amenity"="fast_food"]', '["amenity"="cafe"]', '["amenity"="bar"]'],
+    matchAny: [[{ key: "amenity", value: "restaurant" }], [{ key: "amenity", value: "fast_food" }], [{ key: "amenity", value: "cafe" }], [{ key: "amenity", value: "bar" }]]
+  },
+  fuel: {
+    label: "Tankstelle",
+    queries: ['["amenity"="fuel"]'],
+    matchAny: [[{ key: "amenity", value: "fuel" }]]
+  },
+  "swimming-pool": {
+    label: "Schwimmbad",
+    queries: ['["leisure"="swimming_pool"]', '["sport"="swimming"]'],
+    matchAny: [[{ key: "leisure", value: "swimming_pool" }], [{ key: "sport", value: "swimming" }]]
+  },
+  playground: {
+    label: "Spielplatz",
+    queries: ['["leisure"="playground"]'],
+    matchAny: [[{ key: "leisure", value: "playground" }]]
+  },
+  industrial: {
+    label: "Industrie/Gewerbe",
+    queries: ['["landuse"="industrial"]', '["landuse"="commercial"]', '["industrial"]'],
+    matchAny: [[{ key: "landuse", value: "industrial" }], [{ key: "landuse", value: "commercial" }], [{ key: "industrial", regex: /.+/ }]]
+  },
+  "bus-stop": {
+    label: "ÖPNV-Haltestelle",
+    queries: ['["highway"="bus_stop"]', '["public_transport"="platform"]'],
+    matchAny: [[{ key: "highway", value: "bus_stop" }], [{ key: "public_transport", value: "platform" }]]
   }
 };
 
@@ -522,27 +622,356 @@ async function handleOsmPoiApi(request, response) {
     sendJson(response, { error: "invalid coverage area" }, 400);
     return;
   }
-  const query = buildOverpassPoiQuery(categories, selectors);
-  try {
-    const overpassResponse = await fetch("https://overpass-api.de/api/interpreter", {
-      method: "POST",
-      headers: {
-        "content-type": "application/x-www-form-urlencoded; charset=utf-8",
-        "user-agent": "Leitstellen-SIM-v2 local POI import"
-      },
-      body: new URLSearchParams({ data: query }),
-      signal: AbortSignal.timeout(30000)
-    });
-    if (!overpassResponse.ok) {
-      sendJson(response, { error: "overpass unavailable" }, 502);
-      return;
+  const byId = new Map();
+  const warnings = [];
+  for (const chunk of chunkArray(categories, 5)) {
+    const query = buildOverpassPoiQuery(chunk, selectors);
+    try {
+      const data = await fetchOverpassJson(query, "Leitstellen-SIM-v2 local POI import", 35000);
+      normalizeOsmPoiElements(data.elements || [], chunk).forEach((poi) => {
+        const existing = byId.get(poi.id);
+        if (existing) existing.categories = [...new Set([...(existing.categories || []), ...(poi.categories || [])])];
+        else byId.set(poi.id, poi);
+      });
+    } catch (error) {
+      warnings.push(`${chunk.join(", ")}: ${error.message || "Overpass nicht erreichbar"}`);
     }
-    const data = await overpassResponse.json();
-    const poi = normalizeOsmPoiElements(data.elements || [], categories);
-    sendJson(response, { poi, count: poi.length, categories });
-  } catch {
-    sendJson(response, { error: "overpass unavailable" }, 502);
   }
+  const poi = [...byId.values()].sort((a, b) => a.label.localeCompare(b.label, "de"));
+  if (!poi.length && warnings.length) {
+    sendJson(response, { error: "overpass unavailable", warnings }, 502);
+    return;
+  }
+  sendJson(response, { poi, count: poi.length, categories, warnings });
+}
+
+async function handleOsmDataApi(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, { error: "method not allowed" }, 405);
+    return;
+  }
+  const payload = await readJsonBody(request, response, {});
+  if (!payload) return;
+  const layers = new Set((payload.layers || []).map((item) => String(item)));
+  if (!layers.size) {
+    sendJson(response, { error: "no layers selected" }, 400);
+    return;
+  }
+  const selectors = overpassSpatialSelectors(payload);
+  if (!selectors.length) {
+    sendJson(response, { error: "invalid coverage area" }, 400);
+    return;
+  }
+  const coveragePolygons = importPolygons(payload);
+  const result = { roads: [], outdoorAreas: [] };
+  const warnings = [];
+  for (const layer of layers) {
+    const layerSet = new Set([layer]);
+    const query = buildOverpassDataQuery(layerSet, selectors);
+    if (!query) continue;
+    try {
+      const data = await fetchOverpassJson(query, "Leitstellen-SIM-v2 local OSM data import", 50000);
+      const normalized = normalizeOsmDataElements(data.elements || [], layerSet);
+      result.roads.push(...normalized.roads);
+      result.outdoorAreas.push(...normalized.outdoorAreas);
+    } catch (error) {
+      console.error("[OSM Datenimport]", layer, error?.message || error);
+      warnings.push(`${layer}: ${error.message || "Overpass nicht erreichbar"}`);
+    }
+  }
+  result.roads = uniqueById(result.roads).sort((a, b) => a.label.localeCompare(b.label, "de"));
+  result.outdoorAreas = uniqueById(result.outdoorAreas).sort((a, b) => a.label.localeCompare(b.label, "de"));
+  if (!result.roads.length && !result.outdoorAreas.length && warnings.length) {
+    sendJson(response, { error: "overpass unavailable", warnings }, 502);
+    return;
+  }
+  sendJson(response, { ...result, layers: [...layers], warnings });
+}
+
+async function fetchOverpassJson(query, userAgent, timeoutMs) {
+  const errors = [];
+  for (const endpoint of overpassEndpoints) {
+    try {
+      const overpassResponse = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded; charset=utf-8",
+          "user-agent": userAgent
+        },
+        body: new URLSearchParams({ data: query }),
+        signal: AbortSignal.timeout(timeoutMs)
+      });
+      if (!overpassResponse.ok) {
+        errors.push(`${endpoint}: HTTP ${overpassResponse.status}`);
+        continue;
+      }
+      return await overpassResponse.json();
+    } catch (error) {
+      errors.push(`${endpoint}: ${error.message || error}`);
+    }
+  }
+  throw new Error(errors.join(" | ") || "Overpass nicht erreichbar");
+}
+
+async function fetchOverpassJsonWithRetry(query, userAgent, timeoutMs, retries = 1) {
+  let lastError = null;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      return await fetchOverpassJson(query, userAgent, timeoutMs);
+    } catch (error) {
+      lastError = error;
+      if (attempt < retries) await sleep(2000 + attempt * 2500);
+    }
+  }
+  throw lastError || new Error("Overpass nicht erreichbar");
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function chunkArray(items, size) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) chunks.push(items.slice(index, index + size));
+  return chunks;
+}
+
+function buildOverpassDataQuery(layers, selectors) {
+  const parts = [];
+  if (layers.has("roads")) {
+    const roadFilter = '["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"]';
+    selectors.forEach((selector) => {
+      parts.push(`way${roadFilter}${selector};`);
+      parts.push(`relation["route"="road"]${selector};`);
+    });
+  }
+  if (layers.has("outdoor")) {
+    const outdoorFilters = [
+      '["landuse"~"^(forest|grass|meadow|recreation_ground|cemetery)$"]',
+      '["natural"~"^(wood|grassland|heath|scrub|water|beach)$"]',
+      '["leisure"~"^(park|nature_reserve|pitch|playground|garden|sports_centre)$"]'
+    ];
+    selectors.forEach((selector) => {
+      outdoorFilters.forEach((filter) => {
+        parts.push(`way${filter}${selector};`);
+        parts.push(`relation${filter}${selector};`);
+      });
+    });
+  }
+  if (!parts.length) return "";
+  const output = "out body center geom";
+  return `[out:json][timeout:40];(${parts.join("")});${output};`;
+}
+
+function boundsFromImportPayload(payload) {
+  const polygonBounds = boundsFromPolygons(payload);
+  if (polygonBounds) return polygonBounds;
+  const bounds = payload.bounds || {};
+  const south = Number(bounds.south);
+  const west = Number(bounds.west);
+  const north = Number(bounds.north);
+  const east = Number(bounds.east);
+  if ([south, west, north, east].every(Number.isFinite) && south < north && west < east) return { south, west, north, east };
+  return null;
+}
+
+function boundsFromPolygons(payload) {
+  const polygons = Array.isArray(payload.polygons) && payload.polygons.length
+    ? payload.polygons
+    : (Array.isArray(payload.polygon) ? [payload.polygon] : []);
+  const points = polygons.flatMap((polygon) => Array.isArray(polygon) ? polygon : [])
+    .map((point) => ({ lat: Number(point.lat), lng: Number(point.lng) }))
+    .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+  if (!points.length) return null;
+  return {
+    south: Math.min(...points.map((point) => point.lat)),
+    west: Math.min(...points.map((point) => point.lng)),
+    north: Math.max(...points.map((point) => point.lat)),
+    east: Math.max(...points.map((point) => point.lng))
+  };
+}
+
+function tileBounds(bounds, latStep, lngStep) {
+  const tiles = [];
+  for (let south = bounds.south; south < bounds.north; south += latStep) {
+    for (let west = bounds.west; west < bounds.east; west += lngStep) {
+      tiles.push({
+        south: roundCoord(south),
+        west: roundCoord(west),
+        north: roundCoord(Math.min(bounds.north, south + latStep)),
+        east: roundCoord(Math.min(bounds.east, west + lngStep))
+      });
+    }
+  }
+  return tiles.slice(0, 260);
+}
+
+function normalizeOsmDataElements(elements, layers) {
+  const roads = [];
+  const outdoorAreas = [];
+  const roadRoutesByWayId = layers.has("roads") ? osmRoadRoutesByWayId(elements) : new Map();
+  elements.forEach((element) => {
+    const tags = element.tags || {};
+    if (layers.has("roads") && tags.highway && Array.isArray(element.geometry) && element.geometry.length >= 2) {
+      const routeInfo = roadRoutesByWayId.get(String(element.id)) || {};
+      roads.push({
+        id: `road-${element.type}-${element.id}`,
+        label: osmRoadLabel(tags),
+        roadClass: tags.highway,
+        ref: tags.ref || "",
+        name: tags.name || "",
+        routeNetworks: routeInfo.networks || [],
+        routeRefs: routeInfo.refs || [],
+        officialRoadClass: routeInfo.officialRoadClass || "",
+        geometry: compressOsmGeometry(element.geometry),
+        source: "osm",
+        osmType: element.type,
+        osmId: element.id
+      });
+    }
+    if (layers.has("outdoor") && osmOutdoorCategory(tags) && Array.isArray(element.geometry) && element.geometry.length >= 3) {
+      outdoorAreas.push({
+        id: `outdoor-${element.type}-${element.id}`,
+        label: tags.name || osmOutdoorCategoryLabel(tags),
+        category: osmOutdoorCategory(tags),
+        geometry: compressOsmGeometry(element.geometry),
+        source: "osm",
+        osmType: element.type,
+        osmId: element.id
+      });
+    }
+  });
+  return {
+    roads: uniqueById(roads).sort((a, b) => a.label.localeCompare(b.label, "de")),
+    outdoorAreas: uniqueById(outdoorAreas).sort((a, b) => a.label.localeCompare(b.label, "de"))
+  };
+}
+
+function osmRoadRoutesByWayId(elements) {
+  const byWayId = new Map();
+  elements.forEach((element) => {
+    const tags = element.tags || {};
+    if (element.type !== "relation" || tags.route !== "road" || !Array.isArray(element.members)) return;
+    const route = normalizeRoadRoute(tags);
+    element.members
+      .filter((member) => member?.type === "way" && Number.isFinite(Number(member.ref)))
+      .forEach((member) => {
+        const key = String(member.ref);
+        const current = byWayId.get(key) || { networks: [], refs: [], officialClasses: [] };
+        if (route.network) current.networks.push(route.network);
+        if (route.ref) current.refs.push(route.ref);
+        if (route.officialRoadClass) current.officialClasses.push(route.officialRoadClass);
+        byWayId.set(key, current);
+      });
+  });
+  return new Map([...byWayId.entries()].map(([wayId, info]) => {
+    const officialClasses = [...new Set(info.officialClasses)].filter(Boolean);
+    return [wayId, {
+      networks: [...new Set(info.networks)].filter(Boolean),
+      refs: [...new Set(info.refs)].filter(Boolean),
+      officialRoadClass: strongestOfficialRoadClass(officialClasses)
+    }];
+  }));
+}
+
+function normalizeRoadRoute(tags) {
+  const network = String(tags.network || "").trim();
+  const ref = String(tags.ref || "").trim();
+  const text = `${network} ${ref} ${tags.name || ""}`.trim();
+  return {
+    network,
+    ref,
+    officialRoadClass: officialRoadClassFromRouteText(text)
+  };
+}
+
+function officialRoadClassFromRouteText(text) {
+  const value = String(text || "").trim();
+  if (/\b(BAB|A\s*\d{1,3})\b/i.test(value)) return "motorway";
+  if (/\b(B\s*\d{1,4})\b/i.test(value)) return "federal";
+  if (/\b(St|Staatsstra(?:sse|ße)|L|Landesstra(?:sse|ße))\s*\d{1,5}\b/i.test(value)) return "state";
+  if (/\b(K|Kr|Kreisstra(?:sse|ße)|[A-ZÄÖÜ]{1,3})\s*\d{1,5}\b/.test(value)) return "county";
+  return "";
+}
+
+function strongestOfficialRoadClass(classes) {
+  const order = ["motorway", "federal", "state", "county"];
+  return order.find((item) => classes.includes(item)) || "";
+}
+
+function uniqueById(items) {
+  return [...new Map(items.map((item) => [item.id, item])).values()];
+}
+
+function osmElementPoint(element) {
+  const lat = Number(element.lat ?? element.center?.lat);
+  const lng = Number(element.lon ?? element.center?.lon);
+  if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
+  if (Array.isArray(element.geometry) && element.geometry.length) {
+    const valid = element.geometry
+      .map((point) => ({ lat: Number(point.lat), lng: Number(point.lon) }))
+      .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+    if (valid.length) {
+      return {
+        lat: valid.reduce((sum, point) => sum + point.lat, 0) / valid.length,
+        lng: valid.reduce((sum, point) => sum + point.lng, 0) / valid.length
+      };
+    }
+  }
+  return null;
+}
+
+function compressOsmGeometry(geometry) {
+  return geometry
+    .map((point) => [roundCoord(point.lon), roundCoord(point.lat)])
+    .filter(([lng, lat]) => Number.isFinite(lng) && Number.isFinite(lat));
+}
+
+function roundCoord(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.round(number * 1_000_000) / 1_000_000 : null;
+}
+
+function osmRoadLabel(tags) {
+  const ref = tags.ref || "";
+  const name = tags.name || "";
+  if (ref && name) return `${ref} - ${name}`;
+  return ref || name || roadClassLabel(tags.highway);
+}
+
+function roadClassLabel(value) {
+  const labels = {
+    motorway: "Autobahn",
+    trunk: "Schnellstraße",
+    primary: "Bundesstraße",
+    secondary: "Staats-/Landstraße",
+    tertiary: "Kreisstraße",
+    residential: "Wohnstraße",
+    service: "Zufahrt"
+  };
+  return labels[value] || "Straße";
+}
+
+function osmOutdoorCategory(tags) {
+  if (["forest"].includes(tags.landuse) || ["wood"].includes(tags.natural)) return "forest";
+  if (["park", "nature_reserve", "garden"].includes(tags.leisure)) return "park";
+  if (["pitch", "sports_centre"].includes(tags.leisure)) return "sports";
+  if (["water"].includes(tags.natural)) return "water";
+  if (["grass", "meadow", "recreation_ground"].includes(tags.landuse) || ["grassland", "heath", "scrub", "beach"].includes(tags.natural)) return "open";
+  if (tags.landuse === "cemetery") return "cemetery";
+  return "";
+}
+
+function osmOutdoorCategoryLabel(tags) {
+  const labels = {
+    forest: "Waldgebiet",
+    park: "Park / Grünanlage",
+    sports: "Sportfläche",
+    water: "Gewässer",
+    open: "Freifläche",
+    cemetery: "Friedhof"
+  };
+  return labels[osmOutdoorCategory(tags)] || "Outdoor-Fläche";
 }
 
 function buildOverpassPoiQuery(categories, selectors) {
@@ -572,6 +1001,35 @@ function overpassSpatialSelectors(payload) {
     return [`(${south},${west},${north},${east})`];
   }
   return [];
+}
+
+function importPolygons(payload) {
+  const polygons = Array.isArray(payload.polygons) && payload.polygons.length
+    ? payload.polygons
+    : (Array.isArray(payload.polygon) ? [payload.polygon] : []);
+  return polygons
+    .map((polygon) => (Array.isArray(polygon) ? polygon : [])
+      .map((point) => ({ lat: Number(point.lat), lng: Number(point.lng) }))
+      .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng)))
+    .filter((polygon) => polygon.length >= 3);
+}
+
+function pointInsideAnyImportPolygon(lat, lng, polygons) {
+  if (!polygons.length) return true;
+  return polygons.some((polygon) => pointInsidePolygonLatLng(lat, lng, polygon));
+}
+
+function pointInsidePolygonLatLng(lat, lng, polygon) {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].lng;
+    const yi = polygon[i].lat;
+    const xj = polygon[j].lng;
+    const yj = polygon[j].lat;
+    const intersects = ((yi > lat) !== (yj > lat)) && (lng < ((xj - xi) * (lat - yi)) / ((yj - yi) || 1e-12) + xi);
+    if (intersects) inside = !inside;
+  }
+  return inside;
 }
 
 function overpassPolygonSelector(polygon) {
@@ -686,9 +1144,7 @@ async function handleIncidentsApi(request, response) {
       ? incidentsFile
       : existsSync(defaultIncidentsFile)
         ? defaultIncidentsFile
-        : existsSync(legacyIncidentsFile)
-          ? legacyIncidentsFile
-          : null;
+        : null;
     if (!sourceFile) return sendJson(response, []);
     const incidents = await readJsonFile(sourceFile);
     sendJson(response, Array.isArray(incidents) ? incidents : []);
@@ -706,7 +1162,7 @@ async function handleIncidentsApi(request, response) {
 }
 
 async function handleStartupSyncApi(request, response) {
-  if (!usesExternalDataDir) return sendJson(response, { mapConflicts: [], incidentMerge: null });
+  if (!usesExternalDataDir) return sendJson(response, { mapConflicts: [], incidentMerge: null, incidentConflicts: [] });
   if (request.method === "GET") {
     sendJson(response, startupSyncState);
     return;
@@ -714,29 +1170,80 @@ async function handleStartupSyncApi(request, response) {
   if (request.method === "POST") {
     const body = await readJsonBody(request, response, {});
     if (!body) return;
+    if (body.type === "incident") {
+      await handleIncidentSyncChoice(body);
+      sendJson(response, startupSyncState);
+      return;
+    }
     if (body.type !== "map") return sendJson(response, { error: "unsupported sync type" }, 400);
     const conflict = startupSyncState.mapConflicts.find((item) => item.id === body.id || item.file === body.file);
     if (!conflict) return sendJson(response, startupSyncState);
     const action = String(body.action || "local").toLowerCase();
     const sourceFile = join(defaultMapsDir, conflict.file);
     const targetFile = join(mapsDir, conflict.file);
+    const meta = await readSyncMeta();
     if (action === "bundled" || action === "neu") {
       await copyDefaultFile(sourceFile, targetFile);
+      meta.mapHashes[conflict.file] = conflict.bundledHash || await jsonFileHash(sourceFile);
     } else if (action === "both" || action === "beide") {
       const bundled = await readJsonFile(sourceFile);
       const copy = await uniqueMapCopy(bundled);
       await writeJsonFile(mapFilePath(copy.id), copy);
-    } else {
-      const meta = await readSyncMeta();
-      meta.mapIgnores ||= {};
       meta.mapIgnores[conflict.file] = conflict.bundledHash || await jsonFileHash(sourceFile);
-      await writeSyncMeta(meta);
+    } else {
+      meta.mapIgnores[conflict.file] = conflict.bundledHash || await jsonFileHash(sourceFile);
     }
+    await writeSyncMeta(meta);
     startupSyncState.mapConflicts = startupSyncState.mapConflicts.filter((item) => item !== conflict);
     sendJson(response, startupSyncState);
     return;
   }
   notFound(response);
+}
+
+async function handleIncidentSyncChoice(body) {
+  const conflict = startupSyncState.incidentConflicts.find((item) => item.id === body.id);
+  if (!conflict || !existsSync(defaultIncidentsFile) || !existsSync(incidentsFile)) return;
+  const action = String(body.action || "local").toLowerCase();
+  const [bundled, local] = await Promise.all([
+    readJsonFile(defaultIncidentsFile).catch(() => []),
+    readJsonFile(incidentsFile).catch(() => [])
+  ]);
+  if (!Array.isArray(bundled) || !Array.isArray(local)) return;
+  const bundledIncident = bundled.find((incident) => incident?.id === conflict.id);
+  if (!bundledIncident) return;
+  const meta = await readSyncMeta();
+  let next = local;
+  if (action === "bundled" || action === "neu") {
+    next = local.map((incident) => incident?.id === conflict.id ? bundledIncident : incident);
+    meta.incidentHashes[conflict.id] = conflict.bundledHash || jsonValueHash(bundledIncident);
+    delete meta.incidentIgnores[conflict.id];
+  } else if (action === "both" || action === "beide") {
+    next = [...local, uniqueIncidentCopy(bundledIncident, local)];
+    meta.incidentIgnores[conflict.id] = conflict.bundledHash || jsonValueHash(bundledIncident);
+  } else {
+    meta.incidentIgnores[conflict.id] = conflict.bundledHash || jsonValueHash(bundledIncident);
+  }
+  await writeJsonFile(incidentsFile, next);
+  await writeSyncMeta(meta);
+  startupSyncState.incidentConflicts = startupSyncState.incidentConflicts.filter((item) => item !== conflict);
+}
+
+function uniqueIncidentCopy(incident, existingIncidents = []) {
+  const existingIds = new Set(existingIncidents.map((item) => item?.id).filter(Boolean));
+  const baseId = safeId(incident.id || incident.title || "einsatz");
+  for (let version = 2; version < 100; version += 1) {
+    const id = safeId(`${baseId}-v${version}`);
+    if (existingIds.has(id)) continue;
+    return {
+      ...incident,
+      id,
+      title: `${incident.title || incident.keyword || "Einsatz"} v${version}`,
+      keyword: incident.keyword ? `${incident.keyword} v${version}` : incident.keyword
+    };
+  }
+  const id = safeId(`${baseId}-${Date.now()}`);
+  return { ...incident, id, title: `${incident.title || incident.keyword || "Einsatz"} Kopie` };
 }
 
 async function uniqueMapCopy(map) {
@@ -916,7 +1423,7 @@ function incidentGenerationSystemPrompt(mode = "emergency", variationCount = 1) 
 - Verwende RTW/NEF/RTH nur passend zur Lage, REF nur bei eindeutig ambulanten/niedrigprioren Lagen.`;
   const variationRules = variationCount > 1
     ? `Erzeuge genau ${variationCount} Varianten im variants-Array.
-- Alle Varianten muessen denselben callerName, callerText, locationMode, poiCategories, destinationMode, destinationPoiProbability und destinationPoiCategories nutzen.
+- Alle Varianten muessen denselben callerName, callerText, locationMode, locationRoadTypes, poiCategories, destinationMode, destinationPoiProbability und destinationPoiCategories nutzen.
 - Variieren sollen nur report, situationReport und patients. Die medizinische Bandbreite soll realistisch sein, z.B. bei Brustschmerz von muskuloskelettal/Intercostalneuralgie bis ACS/Myokardinfarkt.
 - Keine getrennten Anruftexte pro Variante, keine unterschiedlichen POI-/Zielmodi pro Variante.`
     : `Erzeuge genau 1 Variante im variants-Array.`;
@@ -937,8 +1444,9 @@ JSON-Schema:
     "weight": 1,
     "callerName": "Anrufer",
     "callerText": "Notruftext, mehrere Varianten mit | trennen",
-    "locationMode": "random|hospital|poi",
-    "poiCategories": ["practice|dentist|dialysis|nursing-home|school|kindergarten|university|railway-station|fire-station|police|townhall|church|cinema|sports-centre|mall|hotel|public|home"],
+    "locationMode": "random|address|road|outdoor|hospital|poi",
+    "locationRoadTypes": ["urban|rural|motorway"],
+    "poiCategories": ["practice|dentist|dialysis|nursing-home|school|kindergarten|university|railway-station|fire-station|police|townhall|church|cinema|sports-centre|mall|hotel|pharmacy|supermarket|restaurant|fuel|swimming-pool|playground|industrial|bus-stop|public|home"],
     "destinationMode": "none|poi|home",
     "destinationPoiProbability": 0,
     "destinationPoiCategories": ["practice|dentist|dialysis|nursing-home|hospital"],
@@ -975,7 +1483,9 @@ ${variationRules}
 - recommendedVehicles ist optional fuer HVO/FR bei Reanimation, Bewusstlosigkeit oder RD-2-Bewusstsein; diese Fahrzeuge stabilisieren nur und sind keine Pflichtfahrzeuge.
 - NEF/RTH nur bei kritisch, Bewusstlosigkeit, Reanimation, schwerem Trauma, Geburt/Kind kritisch oder Notarztbegleitung.
 - destinationMode poi nur fuer Fahrten zu Arztpraxis, Zahnarztpraxis, Dialyse, Altenheim oder Krankenhaus als festes Ziel. Heimfahrt nach Hause ist destinationMode home.
-- locationMode poi nur wenn der Einsatz sinnvoll an einer echten POI-Kategorie startet. Wohnadresse/Privatadresse ist locationMode random.
+- locationMode address fuer Wohnadressen/Privatadressen. Das erzeugt eine plausible Hausnummer an einer importierten Wohnstrasse.
+- locationMode road fuer Verkehrsunfaelle oder Ereignisse auf Verkehrswegen. locationRoadTypes dann passend setzen: urban fuer innerorts, rural fuer Land-/Bundesstrassen ausserorts, motorway fuer Autobahn/Schnellstrasse. Bei generischen VU mehrere Werte kombinieren.
+- locationMode outdoor fuer Wald/Feld/Park/Sportflaeche, poi nur wenn der Einsatz sinnvoll an einer echten POI-Kategorie startet. Wenn unsicher: random.
 - report und situationReport beschreiben die Lage nach Erkundung, nicht dass der Transport bereits abgeschlossen ist.
 - Setze requiredServices nur wenn FW/POL wirklich vor Transport erforderlich sind.
 - Keine Koordinaten, keine IDs, keine Kommentare.`;
@@ -1011,13 +1521,15 @@ function normalizeGeneratedIncidents(input, fallbackTitle, mode = "emergency", v
   const category = enumValue(input.category, ["Herz/Kreislauf", "Atmung", "Trauma", "Neuro/Psych", "Sonstiges", "Krankentransport"], type === "transport" || type === "scheduled" ? "Krankentransport" : "Sonstiges");
   const poiCategories = allowedList(sourceVariant.poiCategories, allowedOriginPoiCategories());
   const destinationPoiCategories = allowedList(sourceVariant.destinationPoiCategories, allowedDestinationPoiCategories());
-  const locationMode = enumValue(sourceVariant.locationMode, ["random", "hospital", "poi"], "random");
+  const locationMode = enumValue(sourceVariant.locationMode, ["random", "address", "road", "outdoor", "hospital", "poi"], "random");
   const destinationMode = enumValue(sourceVariant.destinationMode, ["none", "poi", "home"], "none");
   const effectiveLocationMode = locationMode === "poi" && !poiCategories.length ? "random" : locationMode;
+  const locationRoadTypes = normalizeRoadTypeList(sourceVariant.locationRoadTypes);
   const common = {
     callerName: stringValue(sourceVariant.callerName, 60) || "Anrufer",
     callerText: stringValue(sourceVariant.callerText, 900) || "Hallo, ich brauche bitte Hilfe.",
     locationMode: effectiveLocationMode,
+    locationRoadTypes: effectiveLocationMode === "road" ? locationRoadTypes : [],
     poiCategories,
     poiIds: [],
     destinationPoiCategories,
@@ -1043,6 +1555,7 @@ function normalizeGeneratedIncidents(input, fallbackTitle, mode = "emergency", v
       callerName: common.callerName,
       callerText: common.callerText,
       locationMode: common.locationMode,
+      locationRoadTypes: common.locationRoadTypes,
       poiCategories: common.poiCategories,
       poiIds: common.poiIds,
       destinationMode: effectiveDestinationMode,
@@ -1175,6 +1688,11 @@ function allowedList(value, allowed, fallback = []) {
     .map((item) => String(item || "").trim())
     .filter((item) => allowed.includes(item));
   return result.length ? [...new Set(result)] : fallback;
+}
+
+function normalizeRoadTypeList(value) {
+  const result = allowedList(value, ["urban", "rural", "motorway"]);
+  return result.length ? result : ["urban", "rural", "motorway"];
 }
 
 function allowedDepartmentKeys() {
