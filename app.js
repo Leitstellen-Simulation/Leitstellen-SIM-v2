@@ -389,15 +389,17 @@ async function handleStartupSyncPrompts() {
       }
     }
     for (const conflict of sync?.mapConflicts || []) {
-      const choice = window.prompt(
-        `Neue gebuendelte Version fuer Karte "${conflict.localName}" gefunden.\n\n` +
-        "Was soll passieren?\n" +
-        "lokal = lokale Karte behalten\n" +
-        "neu = gebuendelte Version uebernehmen\n" +
-        "beide = beide behalten (neue als v2 anlegen)",
-        "beide"
-      );
-      const action = String(choice || "lokal").trim().toLowerCase();
+      const action = await requestStartupSyncChoice({
+        title: "Karten-Synchronisierung",
+        heading: `Neue Version fuer "${conflict.localName}"`,
+        message: `Die installierte App enthaelt eine neuere gebuendelte Version der Karte "${conflict.bundledName || conflict.localName}". Was soll passieren?`,
+        defaultAction: "beide",
+        actions: [
+          { value: "lokal", label: "Lokal behalten", hint: "Deine lokale Karte bleibt unveraendert." },
+          { value: "neu", label: "Neue uebernehmen", hint: "Die lokale Karte wird durch die gebuendelte Version ersetzt." },
+          { value: "beide", label: "Beide behalten", hint: "Die neue Version wird als zusaetzliche Karte angelegt." }
+        ]
+      });
       if (!["lokal", "neu", "beide", "bundled", "both"].includes(action)) continue;
       await fetch("/api/startup-sync", {
         method: "POST",
@@ -407,15 +409,17 @@ async function handleStartupSyncPrompts() {
       if (action !== "lokal") changedMaps = true;
     }
     for (const conflict of sync?.incidentConflicts || []) {
-      const choice = window.prompt(
-        `Neue gebuendelte Version fuer Einsatz "${conflict.localTitle}" gefunden.\n\n` +
-        "Was soll passieren?\n" +
-        "lokal = lokalen Einsatz behalten\n" +
-        "neu = gebuendelte Version uebernehmen\n" +
-        "beide = beide behalten (neue Version als Kopie anlegen)",
-        "lokal"
-      );
-      const action = String(choice || "lokal").trim().toLowerCase();
+      const action = await requestStartupSyncChoice({
+        title: "Einsatzkatalog-Synchronisierung",
+        heading: `Neue Version fuer "${conflict.localTitle}"`,
+        message: `Die installierte App enthaelt eine neuere Version dieses Einsatzes ("${conflict.bundledTitle || conflict.localTitle}"). Was soll passieren?`,
+        defaultAction: "lokal",
+        actions: [
+          { value: "lokal", label: "Lokal behalten", hint: "Deine lokale Einsatzvariante bleibt unveraendert." },
+          { value: "neu", label: "Neue uebernehmen", hint: "Die lokale Variante wird durch die gebuendelte Version ersetzt." },
+          { value: "beide", label: "Beide behalten", hint: "Die gebuendelte Version wird als Kopie ergaenzt." }
+        ]
+      });
       if (!["lokal", "neu", "beide", "bundled", "both"].includes(action)) continue;
       await fetch("/api/startup-sync", {
         method: "POST",
@@ -429,6 +433,54 @@ async function handleStartupSyncPrompts() {
   } catch (error) {
     console.warn("Startup-Synchronisierung nicht verfuegbar", error);
   }
+}
+
+function requestStartupSyncChoice({ title, heading, message, defaultAction = "lokal", actions = [] }) {
+  return new Promise((resolve) => {
+    const dialog = document.createElement("dialog");
+    dialog.className = "modal small-modal startup-sync-dialog";
+    const form = document.createElement("form");
+    form.method = "dialog";
+    form.className = "modal-card startup-sync-card";
+    const header = document.createElement("header");
+    header.className = "modal-header";
+    header.innerHTML = `<h2>${escapeHtml(title || "Synchronisierung")}</h2>`;
+    const body = document.createElement("div");
+    body.className = "modal-body startup-sync-body";
+    body.innerHTML = `
+      <strong>${escapeHtml(heading || "Neue gebuendelte Version gefunden")}</strong>
+      <p>${escapeHtml(message || "Wie soll die lokale Datei synchronisiert werden?")}</p>
+    `;
+    const actionBox = document.createElement("div");
+    actionBox.className = "startup-sync-actions";
+    actions.forEach((action) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.value = action.value;
+      button.className = action.value === defaultAction ? "primary-action" : "";
+      button.innerHTML = `<strong>${escapeHtml(action.label)}</strong>${action.hint ? `<small>${escapeHtml(action.hint)}</small>` : ""}`;
+      button.addEventListener("click", () => {
+        cleanup(action.value);
+      });
+      actionBox.append(button);
+    });
+    body.append(actionBox);
+    form.append(header, body);
+    dialog.append(form);
+    document.body.append(dialog);
+    dialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      cleanup(defaultAction);
+    });
+    dialog.addEventListener("close", () => cleanup(defaultAction), { once: true });
+    const cleanup = (value) => {
+      if (!dialog.isConnected) return;
+      const action = String(value || defaultAction || "lokal").trim().toLowerCase();
+      dialog.remove();
+      resolve(action);
+    };
+    showDialog(dialog);
+  });
 }
 
 async function reloadMapOptionsAfterSync() {
@@ -2542,6 +2594,7 @@ function createIncident(call) {
     callerName: call.callerName,
     note: call.note || "",
     required: patientProfile.requiredVehicles,
+    noElrd: Boolean(call.noElrd),
     signal: call.signal,
     priority: call.priority,
     locationSource: call.locationSource || "",

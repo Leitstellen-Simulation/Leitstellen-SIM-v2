@@ -2584,6 +2584,10 @@ label {
   width: min(420px, calc(100vw - 28px));
 }
 
+.startup-sync-dialog {
+  width: min(560px, calc(100vw - 28px));
+}
+
 .modal::backdrop {
   background: rgba(9, 18, 27, .34);
 }
@@ -3270,6 +3274,41 @@ label {
   border: 1px solid #d2dce6;
   border-radius: 8px;
   background: #fff;
+}
+
+.startup-sync-body {
+  display: grid;
+  gap: 10px;
+}
+
+.startup-sync-body > strong {
+  font-size: 15px;
+}
+
+.startup-sync-body p {
+  margin: 0;
+  color: #3d4b58;
+  line-height: 1.35;
+}
+
+.startup-sync-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.startup-sync-actions button {
+  display: grid;
+  gap: 3px;
+  justify-items: start;
+  min-height: 46px;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.startup-sync-actions small {
+  color: inherit;
+  opacity: .78;
+  font-weight: 600;
 }
 
 .boundary-import-box {

@@ -16,6 +16,7 @@ const defaultIncidentsFile = join(root, incidentCatalogFileName);
 const mapsDir = join(dataRoot, "maps");
 const incidentsFile = join(dataRoot, incidentCatalogFileName);
 const syncMetaFile = join(dataRoot, "startup-sync.json");
+const startupSyncMetaVersion = 2;
 const maxBodyBytes = 180_000_000;
 const adminPassword = process.env.DISPATCH_ADMIN_PASSWORD || "XXX112XXX";
 const openRouterApiKey = process.env.OPENROUTER_API_KEY || "OPENROUTER_API_KEY_HIER_EINTRAGEN";
@@ -177,13 +178,21 @@ async function jsonFileHash(file) {
 }
 
 async function readSyncMeta() {
-  if (!existsSync(syncMetaFile)) return { mapIgnores: {}, mapHashes: {}, incidentHashes: {}, incidentIgnores: {} };
+  const empty = { syncMetaVersion: startupSyncMetaVersion, mapIgnores: {}, mapHashes: {}, incidentHashes: {}, incidentIgnores: {} };
+  if (!existsSync(syncMetaFile)) return empty;
   const meta = await readJsonFile(syncMetaFile).catch(() => ({}));
-  return { mapIgnores: {}, mapHashes: {}, incidentHashes: {}, incidentIgnores: {}, ...meta };
+  if (meta.syncMetaVersion !== startupSyncMetaVersion) {
+    return {
+      ...empty,
+      mapHashes: meta.mapHashes || {},
+      incidentHashes: meta.incidentHashes || {}
+    };
+  }
+  return { ...empty, ...meta };
 }
 
 async function writeSyncMeta(meta) {
-  await writeJsonFile(syncMetaFile, { mapIgnores: {}, mapHashes: {}, incidentHashes: {}, incidentIgnores: {}, ...meta });
+  await writeJsonFile(syncMetaFile, { syncMetaVersion: startupSyncMetaVersion, mapIgnores: {}, mapHashes: {}, incidentHashes: {}, incidentIgnores: {}, ...meta });
 }
 
 function sortJsonValue(value) {

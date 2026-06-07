@@ -898,9 +898,31 @@ function assistanceDecisionPatients(incident, decisionMissing = []) {
     .filter((patient) => !patient.completed && !patient.transporting)
     .map((patient) => ({
       patient,
-      missing: patientMissingTypes(patient).filter((type) => decisionTypes.has(type))
+      missing: patientMissingTypes(patient).filter((type) => type !== "ELRD" && decisionTypes.has(type))
     }))
     .filter((entry) => entry.missing.length);
+}
+
+function applyNoElrdDecision(incidentId) {
+  const incident = state.incidents.find((item) => item.id === incidentId);
+  if (!incident) return;
+  incident.noElrd = true;
+  incident.required = (incident.required || []).filter((type) => type !== "ELRD");
+  if (incident.patient?.requiredVehicles) {
+    incident.patient.requiredVehicles = incident.patient.requiredVehicles.filter((type) => type !== "ELRD");
+  }
+  if (incident.assistanceDecision?.missing) {
+    incident.assistanceDecision.missing = incident.assistanceDecision.missing.filter((type) => type !== "ELRD");
+    if (!incident.assistanceDecision.missing.length) {
+      incident.assistanceDecision = null;
+      incident.assistanceRequested = false;
+      if (incident.status === "Nachforderung" || incident.status === "Nachforderung offen") {
+        incident.status = missingVehicleTypesForDispatch(incident).length ? "in Bearbeitung" : "vor Ort";
+      }
+    }
+  }
+  logRadio(`${incident.keyword}: ELRD nicht erforderlich.`, "radio");
+  renderAll();
 }
 
 function appendAssistanceButtons(parent, incident, missing, patientId = null) {
@@ -913,6 +935,11 @@ function appendAssistanceButtons(parent, incident, missing, patientId = null) {
     button.textContent = "ELRD nachalarmieren";
     button.addEventListener("click", () => openIncidentDialog(incident));
     parent.append(button);
+    const noElrd = document.createElement("button");
+    noElrd.type = "button";
+    noElrd.textContent = "Kein ELRD erforderlich";
+    noElrd.addEventListener("click", () => applyNoElrdDecision(incident.id));
+    parent.append(noElrd);
   }
   if (!reanimationLocked && missing.some(isDoctorRequirement) && !dismissed.has("without-doctor")) {
     const button = document.createElement("button");
