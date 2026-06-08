@@ -15,17 +15,33 @@ function abortVehicleMission(vehicleId) {
   const vehicle = state.vehicles.find((unit) => unit.id === vehicleId);
   if (!vehicle || vehicle.status !== 3) return;
   const incident = state.incidents.find((item) => item.id === vehicle.incidentId);
+  const station = state.center.stations.find((item) => item.id === vehicle.stationId);
   cancelVehicleRoute(vehicle);
   clearDispatchTimer(vehicle);
+  releasePatientAssignment(vehicle);
   vehicle.coverageDispatch = null;
+  vehicle.coveragePointId = null;
+  vehicle.coveragePoint = null;
   vehicle.status = 1;
-  vehicle.statusText = "frei nach Einsatzabbruch";
+  vehicle.statusText = station ? "frei nach Einsatzabbruch, rueckt ein" : "frei nach Einsatzabbruch";
+  vehicle.incidentId = null;
+  vehicle.patientId = null;
+  vehicle.nextIncidentId = null;
+  vehicle.previousIncidentId = null;
+  vehicle.pendingDispatchUntil = null;
+  vehicle.pendingDispatchDelay = null;
+  vehicle.dispatchTimer = null;
+  vehicle.dispatchHandler = null;
+  vehicle.pendingTransportRequest = null;
+  vehicle.pendingAssistanceRequest = null;
+  vehicle.pendingSituationReport = null;
   if (incident) {
     incident.assigned = incident.assigned.filter((id) => id !== vehicle.id);
     incident.status = incident.assigned.length ? "in Bearbeitung" : "offen";
   }
   logRadio(`${vehicle.name}: Leitstellenstatus E, Einsatzabbruch bestätigt.`, "warn");
   renderAll();
+  if (station) driveVehicleTo(vehicle, station, { signal: false, phase: "station" }, () => returnToStation(vehicle.id));
 }
 
 function openCoverageDialog() {

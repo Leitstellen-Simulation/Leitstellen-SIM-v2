@@ -43,13 +43,20 @@ function updateShiftStates() {
   let changed = false;
   state.vehicles.forEach((vehicle) => {
     const inShift = vehicleInShift(vehicle);
+    const preShiftActive = vehiclePreShiftActive(vehicle);
+    const effectiveInShift = inShift || preShiftActive;
     const canShiftChange = vehicleCanShiftChangeAtStation(vehicle);
-    const shouldWarn = !inShift && vehicle.status !== 6 && !canShiftChange;
+    if (inShift && (vehicle.preShiftActiveUntilAbsoluteMinute || vehicle.preShiftRejectedStartKey)) {
+      vehicle.preShiftActiveUntilAbsoluteMinute = null;
+      vehicle.preShiftRejectedStartKey = null;
+      changed = true;
+    }
+    const shouldWarn = !effectiveInShift && vehicle.status !== 6 && !canShiftChange;
     if (vehicle.shiftWarning !== shouldWarn) {
       vehicle.shiftWarning = shouldWarn;
       changed = true;
     }
-    if (!inShift && canShiftChange) {
+    if (!effectiveInShift && canShiftChange) {
       vehicle.status = 6;
       vehicle.radioContext = "shift-end";
       vehicle.radioStatus = 6;
@@ -76,6 +83,15 @@ function updateShiftStates() {
 
 function vehicleInShift(vehicle) {
   return vehicleShiftIntervals(vehicle).some((interval) => interval.active);
+}
+
+function renderSimMinuteNow() {
+  return Number.isFinite(state.absoluteMinute) ? state.absoluteMinute : state.minute;
+}
+
+function vehiclePreShiftActive(vehicle) {
+  const until = Number(vehicle?.preShiftActiveUntilAbsoluteMinute);
+  return vehicle?.status !== 6 && Number.isFinite(until) && renderSimMinuteNow() < until;
 }
 
 function vehicleCanShiftChangeAtStation(vehicle) {
@@ -256,11 +272,24 @@ function isForeignMapPoint(point) {
 }
 
 function stationAvailableVehicles(station) {
-  return state.vehicles.filter((vehicle) => vehicle.stationId === station.id && vehicle.status === 2 && !vehicle.nextIncidentId);
+  return state.vehicles.filter((vehicle) => vehicle.stationId === station.id && vehicle.status === 2 && !vehicle.nextIncidentId && !vehicle.coveragePoint && !vehicle.coverageDispatch && vehicleAtHomeStation(vehicle));
 }
 
 function vehicleVisibleOnMap(vehicle) {
-  return Boolean(vehicle.coveragePoint || vehicle.routeMeta || vehicle.route?.length || [3, 7].includes(vehicle.status));
+  return Boolean(vehicle.coveragePoint || vehicle.routeMeta || vehicle.route?.length || [3, 7].includes(vehicle.status) || (vehicle.status !== 2 && vehicleAwayFromStation(vehicle)));
+}
+
+function vehicleAwayFromStation(vehicle) {
+  if (!vehicle || vehicle.status === 6) return false;
+  return !vehicleAtHomeStation(vehicle);
+}
+
+function vehicleAtHomeStation(vehicle) {
+  const station = state.center.stations.find((item) => item.id === vehicle.stationId);
+  if (!station) return false;
+  if (String(vehicle.statusText || "").toLowerCase().includes("wache")) return true;
+  if (!Number.isFinite(vehicle.lat) || !Number.isFinite(vehicle.lng) || !Number.isFinite(station.lat) || !Number.isFinite(station.lng)) return false;
+  return mapDistance(vehicle.lat, vehicle.lng, station.lat, station.lng) < .75;
 }
 
 function incidentHasRadioAttention(incident) {
@@ -1945,6 +1974,36 @@ function nextShiftChangeText(vehicle) {
   return starts[0] ? `Dienstbeginn in ${starts[0].minutes} min` : "";
 }
 
+function upcomingFirstShiftStart(vehicle, windowMinutes = 20) {
+  if (!vehicle || vehicle.foreign || vehicle.status !== 6 || vehicle.status6Reason) return null;
+  const intervals = vehicleShiftIntervals(vehicle).filter((interval) => interval.valid && interval.label !== "24h");
+  if (!intervals.length) return null;
+  const now = Math.floor(state.minute) % 1440;
+  const dayStarts = intervals
+    .map((interval) => shiftStartMinuteFromLabel(interval.label))
+    .filter((start) => Number.isFinite(start))
+    .sort((a, b) => a - b);
+  const next = intervals
+    .map((interval) => ({ label: interval.label, start: shiftStartMinuteFromLabel(interval.label) }))
+    .filter((item) => Number.isFinite(item.start))
+    .map((item) => ({ ...item, minutes: (item.start - now + 1440) % 1440 }))
+    .filter((item) => item.minutes > 0 && item.minutes <= windowMinutes)
+    .sort((a, b) => a.minutes - b.minutes)[0];
+  if (!next) return null;
+  if (dayStarts.length && next.start !== dayStarts[0]) return null;
+  return {
+    ...next,
+    key: `${next.label}:${next.start}`,
+    probability: preShiftAvailabilityProbability(next.minutes, windowMinutes)
+  };
+}
+
+function preShiftAvailabilityProbability(minutesUntilStart, windowMinutes = 20) {
+  if (minutesUntilStart <= 1) return .9;
+  const progress = (windowMinutes - minutesUntilStart) / Math.max(1, windowMinutes - 1);
+  return Math.max(.2, Math.min(.9, .2 + progress * .7));
+}
+
 function shiftStartMinuteFromLabel(label) {
   const start = String(label || "").split("-")[0];
   if (!start) return NaN;
@@ -1968,19 +2027,18 @@ function renderVehicles() {
   sorted.forEach((vehicle) => {
     const displayName = vehicle.shortName || vehicle.name;
     const isOpen = vehicle.id === state.selectedVehicleId;
+    const preShiftNotice = preShiftNoticeForVehicle(vehicle);
     const row = document.createElement("article");
-    row.className = `vehicle-row ${isOpen ? "active" : ""} ${vehicle.shiftWarning ? "shift-warning" : ""}`;
+    row.className = `vehicle-row ${isOpen ? "active" : ""} ${vehicle.shiftWarning ? "shift-warning" : ""} ${preShiftNotice ? "pre-shift-available" : ""}`;
     const summary = document.createElement("button");
     summary.type = "button";
     summary.className = "vehicle-summary";
     summary.innerHTML = `
+      <em class="vehicle-status-strip status-${vehicleDisplayStatus(vehicle)}">${vehicleDisplayStatus(vehicle)}</em>
       <strong>${escapeHtml(displayName)}</strong>
       <span class="vehicle-type-label vehicle-type-${escapeHtml(vehicle.type)}">${escapeHtml(vehicle.type)}</span>
-      <span class="vehicle-station-shift">
-        <span>${escapeHtml(vehicle.station)}</span>
-        ${currentShiftBadgeHtml(vehicle)}
-      </span>
-      <em class="status-pill status-${vehicleDisplayStatus(vehicle)}">${vehicleDisplayStatus(vehicle)}</em>
+      <span class="vehicle-station-name">${escapeHtml(vehicle.station)}</span>
+      <span class="vehicle-shift-summary">${currentShiftBadgeHtml(vehicle)}${shiftSummaryBadgesHtml(vehicle)}</span>
     `;
     summary.addEventListener("click", () => {
       state.selectedVehicleId = isOpen ? null : vehicle.id;
@@ -1993,6 +2051,7 @@ function renderVehicles() {
       appendTextBlock(details, "p", `${vehicle.statusText}${vehicle.radioMessage ? ` | ${vehicle.radioMessage}` : ""}`);
       if (vehicle.shortName && vehicle.shortName !== vehicle.name) appendTextBlock(details, "p", `FRN: ${vehicle.name}`);
       details.append(renderVehicleShiftInfo(vehicle));
+      if (preShiftNotice) appendTextBlock(details, "p", preShiftNotice.text);
       if (vehicle.shiftWarning) appendTextBlock(details, "p", "Schichtende überschritten, Wechsel erst an der Wache möglich.");
       const actions = document.createElement("div");
       actions.className = "vehicle-actions";
@@ -2004,6 +2063,7 @@ function renderVehicles() {
       if (vehicle.radioStatus === 0) addVehicleAction(actions, "dringenden Sprechwunsch annehmen", () => sendSpeechPrompt(vehicle.id));
       if (vehicle.status === 1) addVehicleAction(actions, "Status H", () => sendVehicleHome(vehicle.id));
       if (vehicle.status === 3) addVehicleAction(actions, "Einsatzabbruch (E)", () => abortVehicleMission(vehicle.id));
+      if (preShiftNotice?.actionable) addVehicleAction(actions, "Anruf vor Schichtbeginn?", () => askPreShiftAvailability(vehicle.id));
       if (vehicle.status === 7 && !vehicle.boundTransportVehicleId) addVehicleAction(actions, "Zielort ändern", () => changeTransportDestination(vehicle.id));
       if (vehicle.supportGroupId) addVehicleAction(actions, "UGRD einruecken", () => recallSupportGroupVehicle(vehicle.id));
       if (canReleaseAccompanyingDoctor(vehicle)) addVehicleAction(actions, "abkömmlich frei", () => releaseAccompanyingDoctor(vehicle.id));
@@ -2021,11 +2081,26 @@ function currentShiftBadgeHtml(vehicle) {
   const active = intervals.find((interval) => interval.active);
   const notice = shiftNoticeForVehicle(vehicle);
   const label = notice?.text || active?.label || "ausser Dienst";
-  const toneClass = notice?.type === "ending" ? " shift-current-ending"
-    : notice?.type === "overtime" ? " shift-current-expired"
-      : active ? ""
-        : " shift-current-inactive";
+  let toneClass = active ? "" : " shift-current-inactive";
+  if (notice?.type === "ending") toneClass = " shift-current-ending";
+  if (notice?.type === "overtime") toneClass = " shift-current-expired";
+  if (notice?.type === "pre-start") toneClass = " shift-current-prestart";
   return `<small class="shift-current${toneClass}">${escapeHtml(label)}</small>`;
+}
+
+function shiftSummaryBadgesHtml(vehicle) {
+  const intervals = vehicleShiftIntervals(vehicle).filter((interval) => interval.valid);
+  if (!intervals.length || intervals.some((interval) => interval.label === "24h")) return "";
+  const chips = intervals.map((interval) => {
+    const classes = [
+      "shift-summary-chip",
+      interval.active ? "active" : "inactive",
+      interval.endingSoon ? "ending" : "",
+      vehicle.shiftWarning && interval.expired ? "expired" : ""
+    ].filter(Boolean).join(" ");
+    return `<small class="${classes}">${escapeHtml(interval.label)}</small>`;
+  }).join("");
+  return `<span class="shift-summary-list">${chips}</span>`;
 }
 
 function shiftNoticeForVehicle(vehicle) {
@@ -2033,20 +2108,68 @@ function shiftNoticeForVehicle(vehicle) {
   const intervals = vehicleShiftIntervals(vehicle);
   const active = intervals.find((interval) => interval.active);
   const expired = shiftExpiredMinutes(vehicle);
+  if (vehiclePreShiftActive(vehicle)) {
+    return {
+      type: "pre-start",
+      text: "vorzeitig ausgerueckt"
+    };
+  }
   if (vehicle.shiftWarning) {
     return {
       type: "overtime",
       text: expired !== null ? `Überstunden: Schichtende vor ${expired} min` : "Überstunden: Schichtende überschritten"
     };
   }
+  const preShiftNotice = preShiftNoticeForVehicle(vehicle);
+  if (preShiftNotice) {
+    return {
+      type: "pre-start",
+      text: `Beginn: ${preShiftNotice.minutes} min`
+    };
+  }
   if (active?.endingSoon) {
     const minutes = shiftMinutesUntilEnd(Math.floor(state.minute) % 1440, shiftEndMinuteFromLabel(active.label));
     return {
       type: "ending",
-      text: Number.isFinite(minutes) ? `Bald Feierabend in ${minutes} min` : "Bald Feierabend"
+      text: Number.isFinite(minutes) ? `Feierabend: ${minutes} min` : "Feierabend"
     };
   }
   return null;
+}
+
+function preShiftNoticeForVehicle(vehicle) {
+  const next = upcomingFirstShiftStart(vehicle);
+  if (!next) return null;
+  const rejected = vehicle.preShiftRejectedStartKey === next.key;
+  return {
+    ...next,
+    actionable: !rejected,
+    text: rejected
+      ? `Dienstbeginn in ${next.minutes} min, vorzeitiger Anruf bereits abgelehnt.`
+      : `Dienstbeginn in ${next.minutes} min, vorzeitige Indienstnahme ${Math.round(next.probability * 100)}% wahrscheinlich.`
+  };
+}
+
+function askPreShiftAvailability(vehicleId) {
+  const vehicle = state.vehicles.find((unit) => unit.id === vehicleId);
+  const notice = preShiftNoticeForVehicle(vehicle);
+  if (!vehicle || !notice?.actionable) return;
+  if (Math.random() < notice.probability) {
+    vehicle.status = 2;
+    vehicle.statusText = "vorzeitig auf Wache";
+    vehicle.radioStatus = 5;
+    vehicle.radioContext = "shift-start";
+    vehicle.radioMessage = `${vehicle.shortName || vehicle.name} an Wache ${vehicle.station} vorzeitig einsatzklar`;
+    vehicle.awaitingSpeechPrompt = false;
+    vehicle.preShiftActiveUntilAbsoluteMinute = renderSimMinuteNow() + notice.minutes;
+    vehicle.preShiftRejectedStartKey = null;
+    logRadio(`${vehicle.name}: Status 5 - Sprechwunsch zur vorzeitigen Indienstmeldung.`, "radio");
+  } else {
+    vehicle.preShiftRejectedStartKey = notice.key;
+    vehicle.statusText = `ausser Dienst, Dienstbeginn in ${notice.minutes} min`;
+    logRadio(`${vehicle.name}: Vor Schichtbeginn nicht moeglich, melden uns puenktlich an.`, "warn");
+  }
+  renderAll();
 }
 
 function shiftEndMinuteFromLabel(label) {
