@@ -15,10 +15,12 @@
   },
   editingId: null,
   editingUnits: [],
+  editingUnitId: null,
   pinMode: false,
   coverageMarkers: [],
   importedPoiResults: [],
   importedOsmData: null,
+  failedOsmTiles: [],
   osmImportRunning: false,
   osmImportPauseAfterTile: false,
   osmImportAbort: false,
@@ -30,6 +32,7 @@
   pointListFilter: "station",
   editingSupportGroupId: null,
   editingSupportUnits: [],
+  editingSupportUnitId: null,
   showPoiMarkers: false,
   map: null,
   coverageLayer: null,
@@ -44,12 +47,12 @@ const el = Object.fromEntries([
   "pediatric-only", "poi-section", "poi-category-search", "poi-categories", "coverage", "use-bounds", "apply-coverage",
   "boundary-query", "search-boundaries", "replace-boundaries", "add-boundaries", "clear-coverage", "boundary-status", "boundary-results",
   "cancel-weight", "weight-query", "weight-factor", "search-weight-boundaries", "add-weight-zones", "weight-status", "weight-results", "weight-zone-list",
-  "osm-poi-categories", "import-roads", "import-outdoor", "import-pois", "pause-osm-import", "abort-osm-import", "apply-imported-pois", "show-address-diagnostics", "show-all-road-diagnostics", "osm-poi-status", "osm-poi-preview",
+  "osm-poi-categories", "osm-select-all-poi", "osm-clear-poi", "osm-only-roads", "import-roads", "import-outdoor", "import-pois", "retry-osm-failed", "pause-osm-import", "abort-osm-import", "apply-imported-pois", "show-address-diagnostics", "show-all-road-diagnostics", "osm-poi-status", "osm-poi-preview",
   "show-poi-markers", "point-filter-stations", "point-filter-hospitals", "point-filter-poi", "point-filter-support",
   "set-pin", "edit-coverage-pins", "add-coverage-pin",
-  "unit-type", "unit-name", "unit-short", "unit-shift", "unit-responder-availability", "add-unit", "units-list",
+  "unit-type", "unit-name", "unit-short", "unit-shift", "unit-responder-availability", "add-unit", "cancel-unit-edit", "units-list",
   "support-dialog", "support-title", "cancel-support", "support-name", "support-station", "support-availability", "support-min", "support-max",
-  "support-unit-type", "support-unit-name", "support-unit-short", "support-unit-availability", "add-support-unit", "support-units-list", "save-support",
+  "support-unit-type", "support-unit-name", "support-unit-short", "support-unit-availability", "add-support-unit", "cancel-support-unit-edit", "support-units-list", "save-support",
   "use-center", "add", "new", "save", "points", "saved", "map"
 ].map((id) => [id.replaceAll("-", "_"), document.querySelector(`#se-${id}`)]));
 
@@ -85,6 +88,7 @@ function init() {
   el.set_pin.addEventListener("click", beginPinMode);
   el.add.addEventListener("click", savePoint);
   el.add_unit.addEventListener("click", addUnit);
+  el.cancel_unit_edit.addEventListener("click", cancelUnitEdit);
   el.new_station.addEventListener("click", () => startPointEdit("station"));
   el.new_hospital.addEventListener("click", () => startPointEdit("hospital"));
   el.new_poi.addEventListener("click", () => startPointEdit("poi"));
@@ -94,9 +98,14 @@ function init() {
   el.search_weight_boundaries.addEventListener("click", searchWeightBoundaries);
   el.add_weight_zones.addEventListener("click", addSelectedWeightZones);
   el.add_support_unit.addEventListener("click", addSupportUnit);
+  el.cancel_support_unit_edit.addEventListener("click", cancelSupportUnitEdit);
   el.save_support.addEventListener("click", saveSupportGroup);
+  el.osm_select_all_poi.addEventListener("click", () => setOsmPoiSelection(true));
+  el.osm_clear_poi.addEventListener("click", () => setOsmPoiSelection(false));
+  el.osm_only_roads.addEventListener("click", selectOnlyOsmRoads);
   el.poi_category_search.addEventListener("input", () => renderPoiCategorySelect());
   el.import_pois.addEventListener("click", importOsmPois);
+  el.retry_osm_failed.addEventListener("click", retryFailedOsmTiles);
   el.pause_osm_import.addEventListener("click", () => {
     state.osmImportPauseAfterTile = true;
     el.pause_osm_import.textContent = "Pausiert nach Schritt...";
@@ -546,13 +555,25 @@ async function geocodeAddress() {
 
 function addUnit() {
   if (el.type.value !== "station") return;
+  const unit = unitFromForm();
+  if (state.editingUnitId) {
+    state.editingUnits = state.editingUnits.map((item) => item.id === state.editingUnitId ? { ...unit, id: item.id } : item);
+  } else {
+    state.editingUnits.push(unit);
+  }
+  resetUnitForm();
+  syncCountsFromUnits();
+  renderUnits();
+}
+
+function unitFromForm() {
   const type = el.unit_type.value;
   const name = el.unit_name.value.trim() || `${type} ${state.editingUnits.length + 1}`;
   const availability = el.unit_responder_availability.value === ""
     ? undefined
     : availabilityPercentToProbability(el.unit_responder_availability.value);
-  state.editingUnits.push({
-    id: makeId(`${type}-${name}-${Date.now()}`),
+  return {
+    id: state.editingUnitId || makeId(`${type}-${name}-${Date.now()}`),
     type,
     name,
     fullName: name,
@@ -561,13 +582,37 @@ function addUnit() {
     ...(type === "HVO" || type === "FR"
       ? availability === undefined ? {} : { responderAvailabilityProbability: availability }
       : availability === undefined ? {} : { availabilityProbability: availability })
-  });
+  };
+}
+
+function startUnitEdit(unitId) {
+  const unit = state.editingUnits.find((item) => item.id === unitId);
+  if (!unit) return;
+  state.editingUnitId = unit.id;
+  el.unit_type.value = unit.type || "RTW";
+  el.unit_name.value = unit.name || unit.fullName || "";
+  el.unit_short.value = unit.shortName || "";
+  el.unit_shift.value = unit.shift || "";
+  const availability = unit.responderAvailabilityProbability ?? unit.availabilityProbability;
+  el.unit_responder_availability.value = availability === undefined ? "" : probabilityToPercent(availability);
+  el.add_unit.textContent = "Fahrzeug speichern";
+  el.cancel_unit_edit.hidden = false;
+  renderUnits();
+}
+
+function cancelUnitEdit() {
+  resetUnitForm();
+  renderUnits();
+}
+
+function resetUnitForm() {
+  state.editingUnitId = null;
   el.unit_name.value = "";
   el.unit_short.value = "";
   el.unit_shift.value = "";
   el.unit_responder_availability.value = "";
-  syncCountsFromUnits();
-  renderUnits();
+  el.add_unit.textContent = "Fahrzeug hinzufügen";
+  el.cancel_unit_edit.hidden = true;
 }
 
 function renderUnits() {
@@ -582,7 +627,7 @@ function renderUnits() {
   }
   state.editingUnits.forEach((unit) => {
     const row = document.createElement("article");
-    row.className = "unit-row";
+    row.className = `unit-row${state.editingUnitId === unit.id ? " editing" : ""}`;
     const responderAvailability = unit.responderAvailabilityProbability !== undefined
       ? ` | Ausrücken ${probabilityToPercent(unit.responderAvailabilityProbability)}%`
       : "";
@@ -590,15 +635,23 @@ function renderUnits() {
       ? ` | Verfügbar ${probabilityToPercent(unit.availabilityProbability)}%`
       : "";
     row.innerHTML = `<div><strong>${escapeHtml(unit.shortName)}</strong><span>${escapeHtml(unit.name)} | ${escapeHtml(unit.type)}${unit.shift ? ` | ${escapeHtml(unit.shift)}` : ""}${responderAvailability}${foreignAvailability}</span></div>`;
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = "Entfernen";
-    button.addEventListener("click", () => {
+    const actions = document.createElement("div");
+    actions.className = "unit-row-actions";
+    const editButton = document.createElement("button");
+    editButton.type = "button";
+    editButton.textContent = "Bearbeiten";
+    editButton.addEventListener("click", () => startUnitEdit(unit.id));
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.textContent = "Entfernen";
+    removeButton.addEventListener("click", () => {
+      if (state.editingUnitId === unit.id) resetUnitForm();
       state.editingUnits = state.editingUnits.filter((item) => item.id !== unit.id);
       syncCountsFromUnits();
       renderUnits();
     });
-    row.append(button);
+    actions.append(editButton, removeButton);
+    row.append(actions);
     el.units_list.append(row);
   });
 }
@@ -606,6 +659,7 @@ function renderUnits() {
 function startSupportGroupEdit(group = null) {
   state.editingSupportGroupId = group?.id || null;
   state.editingSupportUnits = (group?.units || []).map((unit) => ({ ...unit }));
+  resetSupportUnitForm();
   el.support_title.textContent = group ? "UGRD/SEG bearbeiten" : "Neue UGRD/SEG";
   el.support_name.value = group?.label || "";
   el.support_availability.value = probabilityToPercent(group?.availabilityProbability ?? 0.75);
@@ -628,20 +682,54 @@ function renderSupportStationOptions(selectedId = "") {
 }
 
 function addSupportUnit() {
+  const unit = supportUnitFromForm();
+  if (state.editingSupportUnitId) {
+    state.editingSupportUnits = state.editingSupportUnits.map((item) => item.id === state.editingSupportUnitId ? { ...unit, id: item.id } : item);
+  } else {
+    state.editingSupportUnits.push(unit);
+  }
+  resetSupportUnitForm();
+  renderSupportUnits();
+}
+
+function supportUnitFromForm() {
   const type = el.support_unit_type.value || "RTW";
   const name = el.support_unit_name.value.trim() || `${type} Hintergrund`;
-  state.editingSupportUnits.push({
-    id: makeId(`${type}-${name}-${Date.now()}`),
+  return {
+    id: state.editingSupportUnitId || makeId(`${type}-${name}-${Date.now()}`),
     type,
     name,
     fullName: name,
     shortName: el.support_unit_short.value.trim() || name,
     availabilityProbability: el.support_unit_availability.value === "" ? undefined : availabilityPercentToProbability(el.support_unit_availability.value)
-  });
+  };
+}
+
+function startSupportUnitEdit(unitId) {
+  const unit = state.editingSupportUnits.find((item) => item.id === unitId);
+  if (!unit) return;
+  state.editingSupportUnitId = unit.id;
+  el.support_unit_type.value = unit.type || "RTW";
+  el.support_unit_name.value = unit.name || unit.fullName || "";
+  el.support_unit_short.value = unit.shortName || "";
+  el.support_unit_availability.value = unit.availabilityProbability === undefined ? "" : probabilityToPercent(unit.availabilityProbability);
+  el.add_support_unit.textContent = "Fahrzeug speichern";
+  el.cancel_support_unit_edit.hidden = false;
+  renderSupportUnits();
+}
+
+function cancelSupportUnitEdit() {
+  resetSupportUnitForm();
+  renderSupportUnits();
+}
+
+function resetSupportUnitForm() {
+  state.editingSupportUnitId = null;
   el.support_unit_name.value = "";
   el.support_unit_short.value = "";
   el.support_unit_availability.value = "";
-  renderSupportUnits();
+  el.add_support_unit.textContent = "Fahrzeug hinzufügen";
+  el.cancel_support_unit_edit.hidden = true;
 }
 
 function renderSupportUnits() {
@@ -652,16 +740,24 @@ function renderSupportUnits() {
   }
   state.editingSupportUnits.forEach((unit) => {
     const row = document.createElement("article");
-    row.className = "unit-row";
+    row.className = `unit-row${state.editingSupportUnitId === unit.id ? " editing" : ""}`;
     row.innerHTML = `<span>${escapeHtml(unit.type)} | ${escapeHtml(unit.name)}${unit.availabilityProbability !== undefined ? ` | ${probabilityToPercent(unit.availabilityProbability)}%` : ""}</span>`;
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = "Entfernen";
-    button.addEventListener("click", () => {
+    const actions = document.createElement("div");
+    actions.className = "unit-row-actions";
+    const editButton = document.createElement("button");
+    editButton.type = "button";
+    editButton.textContent = "Bearbeiten";
+    editButton.addEventListener("click", () => startSupportUnitEdit(unit.id));
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.textContent = "Entfernen";
+    removeButton.addEventListener("click", () => {
+      if (state.editingSupportUnitId === unit.id) resetSupportUnitForm();
       state.editingSupportUnits = state.editingSupportUnits.filter((item) => item.id !== unit.id);
       renderSupportUnits();
     });
-    row.append(button);
+    actions.append(editButton, removeButton);
+    row.append(actions);
     el.support_units_list.append(row);
   });
 }
@@ -811,7 +907,7 @@ function updateVehicleInputs() {
   el.foreign_point.disabled = el.type.value === "poi";
   el.foreign_availability_row.hidden = el.type.value !== "station";
   el.foreign_availability.disabled = el.type.value !== "station";
-  [el.rtw, el.ktw, el.nef, el.ref, el.rth, el.elrd, el.unit_type, el.unit_name, el.unit_short, el.unit_shift, el.add_unit].forEach((input) => {
+  [el.rtw, el.ktw, el.nef, el.ref, el.rth, el.elrd, el.unit_type, el.unit_name, el.unit_short, el.unit_shift, el.unit_responder_availability, el.add_unit, el.cancel_unit_edit].forEach((input) => {
     input.disabled = disabled;
   });
   el.hospital_section.open = el.type.value === "hospital";
@@ -992,6 +1088,7 @@ function fillPointForm(point) {
     ...(unit.availabilityProbability !== undefined ? { availabilityProbability: unit.availabilityProbability } : {}),
     ...(unit.responderAvailabilityProbability !== undefined ? { responderAvailabilityProbability: unit.responderAvailabilityProbability } : {})
   }));
+  resetUnitForm();
   renderDepartmentChecks(point.departments || []);
   el.pediatric_only.checked = Boolean(point.pediatricOnly);
   el.hospital_unavailable_probability.value = probabilityToPercent(point.unavailableProbability, 0);
@@ -1173,6 +1270,7 @@ function clearPointFields() {
   el.foreign_availability.value = 50;
   el.hospital_unavailable_probability.value = 0;
   state.editingUnits = [];
+  resetUnitForm();
   syncCountsFromUnits();
   renderDepartmentChecks();
   el.pediatric_only.checked = false;
@@ -1229,6 +1327,18 @@ function renderOsmImportCategories() {
     });
 }
 
+function setOsmPoiSelection(checked) {
+  el.osm_poi_categories.querySelectorAll("input[type='checkbox']").forEach((input) => {
+    input.checked = checked;
+  });
+}
+
+function selectOnlyOsmRoads() {
+  el.import_roads.checked = true;
+  el.import_outdoor.checked = false;
+  setOsmPoiSelection(false);
+}
+
 function selectedOsmImportCategories() {
   return [...el.osm_poi_categories.querySelectorAll("input:checked")].map((input) => input.value);
 }
@@ -1256,8 +1366,10 @@ async function importOsmPois() {
   state.osmImportRunning = true;
   state.osmImportPauseAfterTile = false;
   state.osmImportAbort = false;
+  state.failedOsmTiles = [];
   state.importedPoiResults = [];
   state.importedOsmData = emptyImportedOsmData();
+  updateRetryFailedOsmButton();
   setOsmImportStatus("OSM wird abgefragt...");
   try {
     const poiData = { poi: [] };
@@ -1265,36 +1377,14 @@ async function importOsmPois() {
     const warnings = [];
     for (const layer of layers) {
       if (state.osmImportAbort) break;
-      setOsmImportStatus(`OSM wird abgefragt: ${osmLayerLabel(layer)}...`);
-      const response = await fetch("/api/osm-data", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...payload, layers: [layer], categories: [] })
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) warnings.push(`${osmLayerLabel(layer)}: ${data.error || "fehlgeschlagen"}`);
-      else {
-        const normalized = normalizeImportedOsmData(data);
-        osmData.roads.push(...normalized.roads);
-        osmData.outdoorAreas.push(...normalized.outdoorAreas);
-        warnings.push(...(data.warnings || []));
-      }
-      state.importedOsmData = {
-        roads: uniqueByImportId(osmData.roads),
-        outdoorAreas: uniqueByImportId(osmData.outdoorAreas)
-      };
-      updateAddressDiagnosticsToggle();
-      renderOsmImportPreview();
-      renderOsmAddressTileOverlay();
-      el.apply_imported_pois.disabled = !osmImportHasResults();
-      await pauseOsmImportStep();
+      await importOsmDataLayerWithProgress(layer, payload, osmData, warnings);
       if (state.osmImportAbort || state.osmImportPauseAfterTile) break;
     }
     const categoryChunks = chunkArray(categories, 4);
     for (let index = 0; index < categoryChunks.length; index += 1) {
       if (state.osmImportAbort || state.osmImportPauseAfterTile) break;
       const chunk = categoryChunks[index];
-      setOsmImportStatus(`OSM wird abgefragt: POI ${index + 1}/${categoryChunks.length}...`);
+      setOsmImportStatus(`OSM wird abgefragt: POI ${index + 1}/${categoryChunks.length} (${state.importedPoiResults.length + poiData.poi.length} POI bisher)...`);
       const response = await fetch("/api/osm-pois", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -1306,6 +1396,9 @@ async function importOsmPois() {
         poiData.poi.push(...(Array.isArray(data.poi) ? data.poi : []));
         warnings.push(...(data.warnings || []));
       }
+      state.importedPoiResults = uniqueByImportId(Array.isArray(poiData.poi) ? poiData.poi : []);
+      renderOsmImportPreview();
+      el.apply_imported_pois.disabled = !osmImportHasResults();
       await pauseOsmImportStep();
     }
     state.importedPoiResults = uniqueByImportId(Array.isArray(poiData.poi) ? poiData.poi : []);
@@ -1331,12 +1424,188 @@ async function importOsmPois() {
   } finally {
     state.osmImportRunning = false;
     el.import_pois.disabled = false;
+    updateRetryFailedOsmButton();
     el.pause_osm_import.disabled = true;
     el.abort_osm_import.disabled = true;
     el.pause_osm_import.textContent = "Nach Schritt pausieren";
     el.abort_osm_import.textContent = "Abbrechen";
     el.import_pois.textContent = "OSM suchen";
   }
+}
+
+async function importOsmDataLayerWithProgress(layer, payload, osmData, warnings) {
+  const tiles = osmDataProgressTiles(payload);
+  const layerLabel = osmLayerLabel(layer);
+  if (!tiles.length) {
+    setOsmImportStatus(`OSM wird abgefragt: ${layerLabel}...`);
+    const response = await fetch("/api/osm-data", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...payload, layers: [layer], categories: [] })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) warnings.push(`${layerLabel}: ${data.error || "fehlgeschlagen"}`);
+    else mergeOsmDataLayerResponse(data, osmData, warnings);
+    updateOsmDataProgressPreview(osmData);
+    return;
+  }
+
+  let failedTiles = 0;
+  for (let index = 0; index < tiles.length; index += 1) {
+    if (state.osmImportAbort || state.osmImportPauseAfterTile) break;
+    const tile = tiles[index];
+    setOsmImportStatus(`${layerLabel}: Kachel ${index + 1}/${tiles.length}, ${osmDataProgressText(osmData)}...`);
+    const response = await fetch("/api/osm-data", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ...payload,
+        layers: [layer],
+        categories: [],
+        bounds: tile,
+        forceBoundsSelector: true
+      })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      failedTiles += 1;
+      state.failedOsmTiles.push({ layer, layerLabel, tile, index, total: tiles.length, payload });
+      warnings.push(`${layerLabel} Kachel ${index + 1}/${tiles.length}: ${data.error || "fehlgeschlagen"}`);
+    } else {
+      mergeOsmDataLayerResponse(data, osmData, warnings);
+    }
+    updateOsmDataProgressPreview(osmData);
+    updateRetryFailedOsmButton();
+    setOsmImportStatus(`${layerLabel}: Kachel ${index + 1}/${tiles.length} fertig, ${osmDataProgressText(osmData)}${failedTiles ? `, ${failedTiles} fehlgeschlagen` : ""}.`);
+    await pauseOsmImportStep(1000);
+  }
+}
+
+async function retryFailedOsmTiles() {
+  if (!state.failedOsmTiles.length || state.osmImportRunning) return;
+  state.osmImportRunning = true;
+  state.osmImportPauseAfterTile = false;
+  state.osmImportAbort = false;
+  el.import_pois.disabled = true;
+  el.retry_osm_failed.disabled = true;
+  el.pause_osm_import.disabled = false;
+  el.abort_osm_import.disabled = false;
+  el.pause_osm_import.textContent = "Nach Schritt pausieren";
+  el.abort_osm_import.textContent = "Abbrechen";
+  const osmData = normalizeImportedOsmData(state.importedOsmData);
+  const warnings = [];
+  const retryTiles = [...state.failedOsmTiles];
+  state.failedOsmTiles = [];
+  try {
+    for (let index = 0; index < retryTiles.length; index += 1) {
+      if (state.osmImportAbort || state.osmImportPauseAfterTile) {
+        state.failedOsmTiles.push(...retryTiles.slice(index));
+        break;
+      }
+      const item = retryTiles[index];
+      setOsmImportStatus(`${item.layerLabel}: Retry ${index + 1}/${retryTiles.length} (urspr. Kachel ${item.index + 1}/${item.total}), ${osmDataProgressText(osmData)}...`);
+      const response = await fetch("/api/osm-data", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ...item.payload,
+          layers: [item.layer],
+          categories: [],
+          bounds: item.tile,
+          forceBoundsSelector: true
+        })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        state.failedOsmTiles.push(item);
+        warnings.push(`${item.layerLabel} Retry ${index + 1}/${retryTiles.length}: ${data.error || "fehlgeschlagen"}`);
+      } else {
+        mergeOsmDataLayerResponse(data, osmData, warnings);
+      }
+      updateOsmDataProgressPreview(osmData);
+      updateRetryFailedOsmButton();
+      setOsmImportStatus(`${item.layerLabel}: Retry ${index + 1}/${retryTiles.length} fertig, ${osmDataProgressText(osmData)}${state.failedOsmTiles.length ? `, ${state.failedOsmTiles.length} weiter fehlgeschlagen` : ""}.`);
+      await pauseOsmImportStep(1000);
+    }
+    const label = state.osmImportAbort
+      ? "Retry abgebrochen"
+      : state.osmImportPauseAfterTile
+        ? "Retry pausiert"
+        : "Retry abgeschlossen";
+    setOsmImportStatus(warnings.length
+      ? `${label}: ${osmImportStatusText("gefunden")} Noch fehlgeschlagen: ${state.failedOsmTiles.length}.`
+      : `${label}: ${osmImportStatusText("gefunden")}`);
+  } catch (error) {
+    setOsmImportStatus(error.message || "Retry fehlgeschlagen.", true);
+  } finally {
+    state.osmImportRunning = false;
+    el.import_pois.disabled = false;
+    el.pause_osm_import.disabled = true;
+    el.abort_osm_import.disabled = true;
+    el.pause_osm_import.textContent = "Nach Schritt pausieren";
+    el.abort_osm_import.textContent = "Abbrechen";
+    updateRetryFailedOsmButton();
+  }
+}
+
+function updateRetryFailedOsmButton() {
+  if (!el.retry_osm_failed) return;
+  const count = state.failedOsmTiles.length;
+  el.retry_osm_failed.disabled = state.osmImportRunning || count === 0;
+  el.retry_osm_failed.textContent = count ? `Fehlgeschlagene erneut (${count})` : "Fehlgeschlagene erneut";
+}
+
+function mergeOsmDataLayerResponse(data, osmData, warnings) {
+  const normalized = normalizeImportedOsmData(data);
+  osmData.roads.push(...normalized.roads);
+  osmData.outdoorAreas.push(...normalized.outdoorAreas);
+  warnings.push(...(data.warnings || []));
+}
+
+function updateOsmDataProgressPreview(osmData) {
+  state.importedOsmData = {
+    roads: uniqueByImportId(osmData.roads),
+    outdoorAreas: uniqueByImportId(osmData.outdoorAreas)
+  };
+  updateAddressDiagnosticsToggle();
+  renderOsmImportPreview();
+  renderOsmAddressTileOverlay();
+  el.apply_imported_pois.disabled = !osmImportHasResults();
+}
+
+function osmDataProgressText(osmData) {
+  const roads = uniqueByImportId(osmData.roads).length;
+  const outdoor = uniqueByImportId(osmData.outdoorAreas).length;
+  return `${roads} Straßen, ${outdoor} Outdoor-Flächen`;
+}
+
+function osmDataProgressTiles(payload) {
+  const bounds = importBoundsForTiles(payload);
+  if (!bounds) return [];
+  const polygons = Array.isArray(payload.polygons) ? payload.polygons : [];
+  const tiles = tileBoundsForOsmProgress(bounds, 0.18, 0.18);
+  const filtered = polygons.length ? tiles.filter((tile) => tileIntersectsAnyPolygon(tile, polygons)) : tiles;
+  return filtered.length > 1 ? filtered : [];
+}
+
+function tileBoundsForOsmProgress(bounds, latStep, lngStep) {
+  const south = Number(bounds?.south);
+  const west = Number(bounds?.west);
+  const north = Number(bounds?.north);
+  const east = Number(bounds?.east);
+  if (![south, west, north, east].every(Number.isFinite) || south >= north || west >= east) return [];
+  const tiles = [];
+  for (let tileSouth = south; tileSouth < north; tileSouth += latStep) {
+    for (let tileWest = west; tileWest < east; tileWest += lngStep) {
+      tiles.push({
+        south: roundImportCoord(tileSouth),
+        west: roundImportCoord(tileWest),
+        north: roundImportCoord(Math.min(north, tileSouth + latStep)),
+        east: roundImportCoord(Math.min(east, tileWest + lngStep))
+      });
+    }
+  }
+  return tiles;
 }
 
 function osmLayerLabel(layer) {
@@ -1420,6 +1689,17 @@ function tileIntersectsPolygon(tile, polygon) {
   ];
   if (probes.some((point) => pointInsidePolygon(point.lat, point.lng, polygon))) return true;
   return polygon.some((point) => pointInsideTile(point, tile));
+}
+
+function pointInsideTile(point, tile) {
+  const lat = Number(point?.lat);
+  const lng = Number(point?.lng);
+  return Number.isFinite(lat)
+    && Number.isFinite(lng)
+    && lat >= tile.south
+    && lat <= tile.north
+    && lng >= tile.west
+    && lng <= tile.east;
 }
 
 function pointInsidePolygon(lat, lng, polygon) {

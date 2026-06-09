@@ -50,9 +50,15 @@
               <label class="check-row"><input id="se-import-outdoor" type="checkbox" checked> Wald / Outdoor / Freiflächen</label>
             </div>
             <strong>POI-Kategorien</strong>
+            <div class="osm-import-shortcuts">
+              <button id="se-osm-select-all-poi" type="button">Alle POI</button>
+              <button id="se-osm-clear-poi" type="button">Keine POI</button>
+              <button id="se-osm-only-roads" type="button">Nur Straßen</button>
+            </div>
             <div id="se-osm-poi-categories" class="check-grid osm-poi-grid"></div>
             <div class="editor-actions">
               <button id="se-import-pois" type="button">OSM suchen</button>
+              <button id="se-retry-osm-failed" type="button" disabled>Fehlgeschlagene erneut</button>
               <button id="se-pause-osm-import" type="button" disabled>Nach Schritt pausieren</button>
               <button id="se-abort-osm-import" type="button" disabled>Abbrechen</button>
               <button id="se-apply-imported-pois" class="primary-action" type="button" disabled>Treffer übernehmen</button>
@@ -191,6 +197,7 @@
                 <label>Schichtzeit <input id="se-unit-shift" placeholder="7-19, 19-7"></label>
                 <label>Ausrück-/Fremdwachenverfügbarkeit (%) <input id="se-unit-responder-availability" type="number" min="0" max="100" step="5" placeholder="100"></label>
                 <button id="se-add-unit" type="button">Fahrzeug hinzufügen</button>
+                <button id="se-cancel-unit-edit" type="button" hidden>Bearbeitung abbrechen</button>
                 <div id="se-units-list" class="unit-list"></div>
               </div>
             </section>
@@ -241,6 +248,7 @@
                 <label>Funkrufname kurz <input id="se-support-unit-short" placeholder="RK R 71/70"></label>
                 <label>eigene Verfügbarkeit (%) <input id="se-support-unit-availability" type="number" min="0" max="100" step="5" placeholder="optional"></label>
                 <button id="se-add-support-unit" type="button">Fahrzeug hinzufügen</button>
+                <button id="se-cancel-support-unit-edit" type="button" hidden>Bearbeitung abbrechen</button>
                 <div id="se-support-units-list" class="unit-list"></div>
               </div>
             </section>

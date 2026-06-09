@@ -1892,6 +1892,11 @@ label {
 .vehicle-station-name {
   align-self: center;
   min-width: 0;
+  white-space: normal !important;
+  word-break: normal;
+  overflow-wrap: normal;
+  hyphens: none;
+  line-height: 1.15;
 }
 
 .vehicle-shift-summary {
@@ -3314,6 +3319,19 @@ label {
   background: #fff;
 }
 
+.osm-import-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  margin: 4px 0 6px;
+}
+
+.osm-import-shortcuts button {
+  min-height: 26px;
+  padding: 0 6px;
+  font-size: 12px;
+}
+
 .disabled-field {
   opacity: .58;
 }
@@ -3469,10 +3487,28 @@ label {
   background: white;
 }
 
+.unit-row.editing {
+  border-color: #2d75b8;
+  background: #edf6ff;
+}
+
 .unit-row span {
   display: block;
   margin-top: 2px;
   color: var(--muted);
+  font-size: 12px;
+}
+
+.unit-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.unit-row-actions button {
+  min-height: 24px;
+  padding: 0 6px;
   font-size: 12px;
 }
 

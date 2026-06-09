@@ -675,12 +675,8 @@ async function handleOsmDataApi(request, response) {
   const result = { roads: [], outdoorAreas: [] };
   const warnings = [];
   for (const layer of layers) {
-    const layerSet = new Set([layer]);
-    const query = buildOverpassDataQuery(layerSet, selectors);
-    if (!query) continue;
     try {
-      const data = await fetchOverpassJson(query, "Leitstellen-SIM-v2 local OSM data import", 50000);
-      const normalized = normalizeOsmDataElements(data.elements || [], layerSet);
+      const normalized = await fetchOsmDataLayer(layer, payload, selectors, coveragePolygons);
       result.roads.push(...normalized.roads);
       result.outdoorAreas.push(...normalized.outdoorAreas);
     } catch (error) {
@@ -695,6 +691,54 @@ async function handleOsmDataApi(request, response) {
     return;
   }
   sendJson(response, { ...result, layers: [...layers], warnings });
+}
+
+async function fetchOsmDataLayer(layer, payload, selectors, coveragePolygons) {
+  const layerSet = new Set([layer]);
+  const bounds = boundsFromImportPayload(payload);
+  const useTiledImport = !payload.forceBoundsSelector && bounds && shouldUseTiledOsmDataImport(selectors, coveragePolygons);
+  if (!useTiledImport) {
+    const query = buildOverpassDataQuery(layerSet, selectors);
+    if (!query) return { roads: [], outdoorAreas: [] };
+    const data = await fetchOverpassJson(query, "Leitstellen-SIM-v2 local OSM data import", 50000);
+    const normalized = normalizeOsmDataElements(data.elements || [], layerSet);
+    return payload.forceBoundsSelector ? filterOsmDataToPolygons(normalized, coveragePolygons) : normalized;
+  }
+
+  const result = { roads: [], outdoorAreas: [] };
+  const tiles = tileBounds(bounds, 0.18, 0.18)
+    .filter((tile) => tileTouchesImportPolygons(tile, coveragePolygons));
+  const maxTiles = 120;
+  const selectedTiles = tiles.slice(0, maxTiles);
+  const tileWarnings = [];
+  for (let index = 0; index < selectedTiles.length; index += 1) {
+    const tile = selectedTiles[index];
+    const selector = `(${tile.south},${tile.west},${tile.north},${tile.east})`;
+    const query = buildOverpassDataQuery(layerSet, [selector]);
+    try {
+      const data = await fetchOverpassJsonWithRetry(query, "Leitstellen-SIM-v2 local OSM tiled data import", 35000, 1);
+      const normalized = filterOsmDataToPolygons(normalizeOsmDataElements(data.elements || [], layerSet), coveragePolygons);
+      result.roads.push(...normalized.roads);
+      result.outdoorAreas.push(...normalized.outdoorAreas);
+      await sleep(1000);
+    } catch (error) {
+      tileWarnings.push(`${index + 1}/${selectedTiles.length}: ${error.message || "Overpass nicht erreichbar"}`);
+      if (tileWarnings.length >= 8 && !result.roads.length && !result.outdoorAreas.length) throw new Error(tileWarnings.join(" | "));
+    }
+  }
+  if (tiles.length > maxTiles) tileWarnings.push(`nur ${maxTiles}/${tiles.length} Kacheln abgefragt`);
+  const normalizedResult = {
+    roads: uniqueById(result.roads).sort((a, b) => a.label.localeCompare(b.label, "de")),
+    outdoorAreas: uniqueById(result.outdoorAreas).sort((a, b) => a.label.localeCompare(b.label, "de"))
+  };
+  if (!normalizedResult.roads.length && !normalizedResult.outdoorAreas.length && tileWarnings.length) throw new Error(tileWarnings.join(" | "));
+  return normalizedResult;
+}
+
+function shouldUseTiledOsmDataImport(selectors, polygons) {
+  const selectorLength = selectors.join("").length;
+  const pointCount = polygons.reduce((sum, polygon) => sum + polygon.length, 0);
+  return selectorLength > 60000 || pointCount > 2500;
 }
 
 async function fetchOverpassJson(query, userAgent, timeoutMs) {
@@ -815,6 +859,33 @@ function tileBounds(bounds, latStep, lngStep) {
   return tiles.slice(0, 260);
 }
 
+function tileTouchesImportPolygons(tile, polygons) {
+  if (!polygons.length) return true;
+  const corners = [
+    { lat: tile.south, lng: tile.west },
+    { lat: tile.south, lng: tile.east },
+    { lat: tile.north, lng: tile.west },
+    { lat: tile.north, lng: tile.east },
+    { lat: (tile.south + tile.north) / 2, lng: (tile.west + tile.east) / 2 }
+  ];
+  if (corners.some((point) => pointInsideAnyImportPolygon(point.lat, point.lng, polygons))) return true;
+  return polygons.some((polygon) => polygon.some((point) => (
+    point.lat >= tile.south && point.lat <= tile.north && point.lng >= tile.west && point.lng <= tile.east
+  )));
+}
+
+function filterOsmDataToPolygons(data, polygons) {
+  if (!polygons.length) return data;
+  return {
+    roads: (data.roads || []).filter((road) => geometryTouchesImportPolygons(road.geometry, polygons)),
+    outdoorAreas: (data.outdoorAreas || []).filter((area) => geometryTouchesImportPolygons(area.geometry, polygons))
+  };
+}
+
+function geometryTouchesImportPolygons(geometry, polygons) {
+  return (geometry || []).some(([lng, lat]) => pointInsideAnyImportPolygon(lat, lng, polygons));
+}
+
 function normalizeOsmDataElements(elements, layers) {
   const roads = [];
   const outdoorAreas = [];
@@ -822,15 +893,15 @@ function normalizeOsmDataElements(elements, layers) {
   elements.forEach((element) => {
     const tags = element.tags || {};
     if (layers.has("roads") && tags.highway && Array.isArray(element.geometry) && element.geometry.length >= 2) {
-      const routeInfo = roadRoutesByWayId.get(String(element.id)) || {};
+      const routeInfo = roadRoutesByWayId.get(String(element.id)) || normalizeRoadRoute(tags);
       roads.push({
         id: `road-${element.type}-${element.id}`,
         label: osmRoadLabel(tags),
         roadClass: tags.highway,
         ref: tags.ref || "",
         name: tags.name || "",
-        routeNetworks: routeInfo.networks || [],
-        routeRefs: routeInfo.refs || [],
+        routeNetworks: routeInfo.networks || (routeInfo.network ? [routeInfo.network] : []),
+        routeRefs: routeInfo.refs || (routeInfo.ref ? [routeInfo.ref] : []),
         officialRoadClass: routeInfo.officialRoadClass || "",
         geometry: compressOsmGeometry(element.geometry),
         source: "osm",
@@ -994,6 +1065,16 @@ function buildOverpassPoiQuery(categories, selectors) {
 }
 
 function overpassSpatialSelectors(payload) {
+  if (payload.forceBoundsSelector) {
+    const bounds = payload.bounds || {};
+    const south = Number(bounds.south);
+    const west = Number(bounds.west);
+    const north = Number(bounds.north);
+    const east = Number(bounds.east);
+    if ([south, west, north, east].every(Number.isFinite) && south < north && west < east) {
+      return [`(${south},${west},${north},${east})`];
+    }
+  }
   const polygons = Array.isArray(payload.polygons) && payload.polygons.length
     ? payload.polygons
     : (Array.isArray(payload.polygon) ? [payload.polygon] : []);
