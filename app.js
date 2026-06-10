@@ -47,6 +47,7 @@ const state = {
   editorPoints: [],
   editingMapPointId: null,
   selectedDialogVehicleIds: new Set(),
+  dialogVehicleTypeFilter: "all",
   dialogRoutes: new Map(),
   dialogTravelTimes: new Map(),
   dialogTravelTimeRequests: new Set(),
@@ -143,6 +144,7 @@ const el = {
   incidentNote: document.querySelector("#incident-note"),
   incidentPatientConditions: document.querySelector("#incident-patient-conditions"),
   incidentMapButton: document.querySelector("#incident-map-button"),
+  closeIncidentDialog: document.querySelector("#close-incident-dialog"),
   dialogVehicleList: document.querySelector("#dialog-vehicle-list"),
   editorDialog: document.querySelector("#editor-dialog"),
   editorType: document.querySelector("#editor-type"),
@@ -166,6 +168,7 @@ const el = {
   coverageList: document.querySelector("#coverage-list"),
   radioAlerts: document.querySelector("#radio-alerts"),
   callDispositionDialog: document.querySelector("#call-disposition-dialog"),
+  callDispositionClose: document.querySelector("#call-disposition-close"),
   callDispositionText: document.querySelector("#call-disposition-text"),
   callFwButton: document.querySelector("#call-fw-button"),
   callPolButton: document.querySelector("#call-pol-button"),
@@ -200,6 +203,9 @@ el.callCreateButton.addEventListener("click", () => {
   el.callDispositionDialog.close();
 });
 el.callDispositionDialog.addEventListener("close", handleCallDispositionClosed);
+el.callDispositionClose?.addEventListener("click", () => {
+  if (el.callDispositionDialog.open) el.callDispositionDialog.close("cancel");
+});
 el.speedSelect.addEventListener("change", setSpeed);
 el.pauseButton.addEventListener("click", togglePause);
 el.endShiftButton.addEventListener("click", endShift);
@@ -211,6 +217,9 @@ el.closeSupportGroupDialog?.addEventListener("click", () => el.supportGroupDialo
 el.closeTransportDestinationDialog?.addEventListener("click", () => el.transportDestinationDialog?.close());
 el.vehicleSort.addEventListener("change", renderVehicles);
 el.incidentMapButton.addEventListener("click", showPendingCallOnMap);
+el.closeIncidentDialog?.addEventListener("click", () => {
+  if (el.incidentDialog.open) el.incidentDialog.close("cancel");
+});
 el.incidentForm.addEventListener("submit", submitIncidentDialog);
 el.incidentKeyword.addEventListener("change", renderDispositionSuggestion);
 el.incidentKeyword.addEventListener("focus", () => showKeywordOptions(el.incidentKeyword.value));
@@ -235,6 +244,7 @@ el.addMapPointButton.addEventListener("click", addEditorPoint);
 el.newMapButton.addEventListener("click", createBlankMap);
 el.saveMapButton.addEventListener("click", saveCurrentMap);
 makeDialogDraggable(el.incidentDialog);
+makeDialogDraggable(el.callDispositionDialog);
 
 populateKeywordSelectGrouped();
 loadCenterOptions().then(startFromStartupOptions);
@@ -1029,6 +1039,7 @@ function createVehicleFromStationUnit(station, stationIndex, unit, unitIndex) {
     incidentId: null,
     radioStatus: null,
     radioMessage: "",
+    pendingRadioMessage: "",
     awaitingSpeechPrompt: false,
     waitingForSpeechPrompt: false,
     pendingTransportRequest: null,
@@ -2190,7 +2201,7 @@ function legacyRenderPendingCallActions() {
   reopenButton.textContent = "Dispositionsfenster öffnen";
   reopenButton.addEventListener("click", () => {
     renderCallDisposition();
-    showDialog(el.callDispositionDialog);
+    showFloatingDialog(el.callDispositionDialog, { width: 560 });
   });
   const rejectButton = document.createElement("button");
   rejectButton.type = "button";
@@ -2269,7 +2280,7 @@ function openIncidentDialog(source = null) {
   document.querySelector("#create-alarm-button").textContent = incident ? "Speichern & weitere alarmieren" : "Erstellen & alarmieren";
   renderDispositionSuggestion();
   renderDialogVehicles(call, incident);
-  showDialog(el.incidentDialog);
+  showFloatingDialog(el.incidentDialog, { width: 620 });
 }
 
 function renderIncidentCallText(source) {
@@ -2382,15 +2393,22 @@ function applyDispositionSuggestion() {
   if (!defaults || !source) return;
   const incident = state.editingIncidentId ? state.incidents.find((item) => item.id === state.editingIncidentId) : null;
   const unavailableIds = new Set(incident?.assigned || []);
+  const redispatchWarnings = [];
   state.selectedDialogVehicleIds = new Set();
   setIncidentSignal(defaults.signal ? "yes" : "no");
   setIncidentSupportServices(defaults.requiredServices || []);
   addElrdToRequiredForDialog(defaults.required || [], source).forEach((type) => {
-    const vehicle = nearestDispositionVehicle(source, type, unavailableIds);
+    const vehicle = nearestDispositionVehicle(source, type, unavailableIds, { allowStatus3WithoutSignal: Boolean(defaults.signal) });
     if (!vehicle) return;
     state.selectedDialogVehicleIds.add(vehicle.id);
     unavailableIds.add(vehicle.id);
+    if (vehicle.status === 3 || vehicleCanBeRedispatchedBeforeResponse(vehicle)) redispatchWarnings.push(redispatchWarningText(vehicle));
   });
+  if (redispatchWarnings.length) {
+    const message = `Warnung: Folgende Fahrzeuge sind bereits ohne SoSi auf Anfahrt und werden durch den Vorschlag umdisponiert:\n\n${redispatchWarnings.join("\n")}`;
+    window.alert(message);
+    logRadio(message.replaceAll("\n", " "), "warn");
+  }
   renderDialogVehicles(source, incident);
 }
 
@@ -2473,19 +2491,45 @@ function dialogPatientsForConditionEditor(source) {
   }));
 }
 
-function nearestDispositionVehicle(call, type, unavailableIds) {
+function nearestDispositionVehicle(call, type, unavailableIds, options = {}) {
   const exact = nearestFreeVehicleOfType(call, type, unavailableIds);
   if (exact) return exact;
+  const redispatchExact = options.allowStatus3WithoutSignal
+    ? nearestRedispatchableStatus3VehicleOfType(call, type, unavailableIds)
+    : null;
+  if (redispatchExact) return redispatchExact;
   if (type === "NEF") {
-    return nearestFreeVehicleOfType(call, "VEF", unavailableIds)
-      || nearestFreeVehicleOfType(call, "RTH", unavailableIds)
-      || nearestFreeVehicleOfType(call, "ITH", unavailableIds)
-      || nearestFreeVehicleOfType(call, "ITW", unavailableIds);
+    return nearestFreeOrRedispatchVehicleOfType(call, "VEF", unavailableIds, options)
+      || nearestFreeOrRedispatchVehicleOfType(call, "RTH", unavailableIds, options)
+      || nearestFreeOrRedispatchVehicleOfType(call, "ITH", unavailableIds, options)
+      || nearestFreeOrRedispatchVehicleOfType(call, "ITW", unavailableIds, options);
   }
-  if (type === "KTW") return nearestFreeVehicleOfType(call, "RTW", unavailableIds) || nearestFreeVehicleOfType(call, "ITW", unavailableIds);
-  if (type === "RTW") return nearestFreeVehicleOfType(call, "ITW", unavailableIds);
-  if (type === "RTH") return nearestFreeVehicleOfType(call, "ITH", unavailableIds);
+  if (type === "KTW") return nearestFreeOrRedispatchVehicleOfType(call, "RTW", unavailableIds, options) || nearestFreeOrRedispatchVehicleOfType(call, "ITW", unavailableIds, options);
+  if (type === "RTW") return nearestFreeOrRedispatchVehicleOfType(call, "ITW", unavailableIds, options);
+  if (type === "RTH") return nearestFreeOrRedispatchVehicleOfType(call, "ITH", unavailableIds, options);
   return null;
+}
+
+function nearestFreeOrRedispatchVehicleOfType(call, type, unavailableIds, options = {}) {
+  return nearestFreeVehicleOfType(call, type, unavailableIds)
+    || (options.allowStatus3WithoutSignal ? nearestRedispatchableStatus3VehicleOfType(call, type, unavailableIds) : null);
+}
+
+function nearestRedispatchableStatus3VehicleOfType(call, type, unavailableIds) {
+  return state.vehicles
+    .filter((vehicle) => vehicle.type === type
+      && (vehicle.status === 3 || vehicleCanBeRedispatchedBeforeResponse(vehicle))
+      && !vehicle.foreign
+      && !unavailableIds.has(vehicle.id)
+      && !vehicle.routeMeta?.signal
+      && !vehicle.dispatchSignal)
+    .sort((a, b) => distanceToCall(a, call) - distanceToCall(b, call))[0] || null;
+}
+
+function redispatchWarningText(vehicle) {
+  const previous = state.incidents.find((item) => item.id === vehicle.incidentId || item.id === vehicle.nextIncidentId);
+  const status = vehicleCanBeRedispatchedBeforeResponse(vehicle) ? "Status C" : `Status ${vehicle.status}`;
+  return `- ${vehicle.shortName || vehicle.name} (${status})${previous ? ` von ${previous.keyword}` : ""}`;
 }
 
 function formatDisposition(required = [], services = []) {

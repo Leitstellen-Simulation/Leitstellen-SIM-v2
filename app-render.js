@@ -276,6 +276,7 @@ function stationAvailableVehicles(station) {
 }
 
 function vehicleVisibleOnMap(vehicle) {
+  if ([4, 8].includes(vehicle?.status)) return false;
   return Boolean(vehicle.coveragePoint || vehicle.routeMeta || vehicle.route?.length || [3, 7].includes(vehicle.status) || (vehicle.status !== 2 && vehicleAwayFromStation(vehicle)));
 }
 
@@ -1723,6 +1724,7 @@ function renderDialogVehicles(call, incident = null) {
   el.dialogVehicleList.innerHTML = "";
   const assignedIds = new Set(incident?.assigned || []);
   const unavailableIds = new Set([...assignedIds, ...state.selectedDialogVehicleIds]);
+  renderDialogVehicleTypeFilter(call, incident);
   renderQuickVehicleButtons(call, unavailableIds, incident);
   const foreignToggle = document.createElement("label");
   foreignToggle.className = "foreign-vehicle-toggle";
@@ -1762,6 +1764,7 @@ function renderDialogVehicles(call, incident = null) {
   const vehicles = state.vehicles
     .filter((vehicle) => {
       if (assignedIds.has(vehicle.id)) return false;
+      if (state.dialogVehicleTypeFilter !== "all" && vehicle.type !== state.dialogVehicleTypeFilter) return false;
       if (vehicle.foreign) return state.showForeignVehiclesInDialog && vehicle.status === 2 && isAlarmable(vehicle);
       return isAlarmable(vehicle) || isPendingStatusC(vehicle) || vehicle.status === 3;
     })
@@ -1810,6 +1813,35 @@ function renderDialogVehicles(call, incident = null) {
       el.dialogVehicleList.append(row);
       if (autoTravelTimeIds.has(vehicle.id)) requestDialogTravelTime(vehicle, call);
     });
+}
+
+function renderDialogVehicleTypeFilter(call, incident = null) {
+  const wrapper = document.createElement("section");
+  wrapper.className = "dialog-vehicle-filter";
+  const label = document.createElement("label");
+  label.textContent = "Fahrzeugklasse";
+  const select = document.createElement("select");
+  const types = ["all", ...vehicleTypeFilterOptions()];
+  types.forEach((type) => {
+    const option = document.createElement("option");
+    option.value = type;
+    option.textContent = type === "all" ? "Alle" : type;
+    select.append(option);
+  });
+  select.value = types.includes(state.dialogVehicleTypeFilter) ? state.dialogVehicleTypeFilter : "all";
+  select.addEventListener("change", () => {
+    state.dialogVehicleTypeFilter = select.value;
+    renderDialogVehicles(call, incident);
+  });
+  label.append(select);
+  wrapper.append(label);
+  el.dialogVehicleList.append(wrapper);
+}
+
+function vehicleTypeFilterOptions() {
+  const preferred = ["RTW", "KTW", "NEF", "VEF", "REF", "ITW", "RTH", "ITH", "ELRD", "HVO", "FR"];
+  const existing = new Set(state.vehicles.map((vehicle) => vehicle.type).filter(Boolean));
+  return preferred.filter((type) => existing.has(type));
 }
 
 function isPendingStatusC(vehicle) {
@@ -1952,7 +1984,7 @@ function nearestFreeVehicleOfType(call, type, assignedIds) {
 function nearestFreeVehicleOfTypes(call, types, assignedIds) {
   const typeSet = new Set(types);
   return state.vehicles
-    .filter((vehicle) => !vehicle.foreign && !assignedIds.has(vehicle.id) && isAlarmable(vehicle) && typeSet.has(vehicle.type))
+    .filter((vehicle) => !vehicle.foreign && !assignedIds.has(vehicle.id) && !vehicle.nextIncidentId && isAlarmable(vehicle) && typeSet.has(vehicle.type))
     .sort((a, b) => distanceToCall(a, call) - distanceToCall(b, call))[0];
 }
 

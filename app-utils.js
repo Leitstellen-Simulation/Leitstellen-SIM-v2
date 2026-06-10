@@ -126,6 +126,49 @@ function showDialog(dialog) {
   }
 }
 
+function showFloatingDialog(dialog, options = {}) {
+  if (!dialog) return;
+  if (dialog.open) return;
+  if (typeof dialog.show === "function") dialog.show();
+  else dialog.setAttribute("open", "");
+  dialog.classList.add("floating-dialog");
+  positionFloatingDialog(dialog, options);
+}
+
+function positionFloatingDialog(dialog, options = {}) {
+  const card = dialog?.querySelector(".modal-card");
+  if (!dialog || !card) return;
+  const width = Math.min(
+    options.width || dialog.dataset.floatingWidth || dialog.getBoundingClientRect().width || 820,
+    window.innerWidth - 28
+  );
+  dialog.style.width = `${Math.max(320, width)}px`;
+  card.style.width = "100%";
+  card.style.maxWidth = "100%";
+  card.style.left = "";
+  card.style.top = "";
+  card.classList.remove("draggable-modal");
+
+  const anchor = options.anchorSelector || options.anchor
+    ? options.anchor || document.querySelector(options.anchorSelector)
+    : null;
+  const anchorRect = anchor?.getBoundingClientRect() || {
+    left: 0,
+    top: 0,
+    width: window.innerWidth,
+    height: window.innerHeight
+  };
+  const dialogRect = dialog.getBoundingClientRect();
+  const estimatedHeight = Math.min(
+    dialogRect.height || card.getBoundingClientRect().height || 520,
+    window.innerHeight - 28
+  );
+  const left = Math.max(14, Math.min(window.innerWidth - width - 14, anchorRect.left + (anchorRect.width - width) / 2));
+  const top = Math.max(14, Math.min(window.innerHeight - estimatedHeight - 14, anchorRect.top + (anchorRect.height - estimatedHeight) / 2));
+  dialog.style.left = `${left}px`;
+  dialog.style.top = `${top}px`;
+}
+
 function makeDialogDraggable(dialog) {
   const card = dialog?.querySelector(".modal-card");
   const header = dialog?.querySelector(".modal-header");
@@ -140,6 +183,8 @@ function makeDialogDraggable(dialog) {
     offsetX = event.clientX - rect.left;
     offsetY = event.clientY - rect.top;
     card.classList.add("draggable-modal");
+    card.style.width = `${rect.width}px`;
+    card.style.maxWidth = `${rect.width}px`;
     card.style.left = `${rect.left}px`;
     card.style.top = `${rect.top}px`;
     header.setPointerCapture(event.pointerId);
@@ -150,6 +195,9 @@ function makeDialogDraggable(dialog) {
     card.style.top = `${Math.max(8, Math.min(window.innerHeight - 60, event.clientY - offsetY))}px`;
   });
   header.addEventListener("pointerup", () => {
+    dragging = false;
+  });
+  header.addEventListener("pointercancel", () => {
     dragging = false;
   });
 }

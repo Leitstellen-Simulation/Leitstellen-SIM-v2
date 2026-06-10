@@ -198,7 +198,7 @@ function answerCall() {
     call.callLogShown = true;
   }
   renderCallDisposition();
-  showDialog(el.callDispositionDialog);
+  showFloatingDialog(el.callDispositionDialog, { width: 560 });
   updateCallControls();
 }
 
@@ -256,7 +256,7 @@ function renderPendingCallActions() {
       if (call.noticeOnly) return;
       if (call.answered) {
         renderCallDisposition();
-        showDialog(el.callDispositionDialog);
+        showFloatingDialog(el.callDispositionDialog, { width: 560 });
         updateCallControls();
       }
     });
