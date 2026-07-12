@@ -29,10 +29,6 @@ function processCallRates() {
   state.lastCallRateMinute = currentMinute;
 }
 
-function callTypeForMinute(minute) {
-  return callEventsForMinute(minute, Math.floor(state.absoluteMinute)).callType;
-}
-
 function callEventsForMinute(minute, absoluteMinute = Math.floor(state.absoluteMinute)) {
   const chance = currentCallChanceInfo(minute, absoluteMinute);
   return {

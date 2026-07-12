@@ -106,7 +106,7 @@ function vehicleShiftIntervals(vehicle) {
   if (!vehicle.shift || vehicle.shift.toLowerCase() === "24h") {
     return [{ label: "24h", active: true, endingSoon: false, expired: false, valid: true }];
   }
-  return vehicle.shift.split(/[,;]/)
+  return vehicle.shift.split(/[,;\/]/)
     .map((interval) => shiftIntervalState(interval.trim()))
     .filter(Boolean);
 }
@@ -455,12 +455,15 @@ function rescaleVehicleRouteForSignal(vehicle, oldSignal, newSignal) {
   const oldDuration = routeTravelDurationMs(vehicle, vehicle.routeMeta, oldSignal);
   const newDuration = routeTravelDurationMs(vehicle, vehicle.routeMeta, newSignal);
   if (!oldDuration || !newDuration || oldDuration === newDuration) return;
-  const now = Date.now();
+  const now = state.paused && Number.isFinite(state.pauseStartedAt) ? state.pauseStartedAt : Date.now();
+  const total = Math.max(1, vehicle.routeMeta.endAt - vehicle.routeMeta.startAt);
+  const progress = Math.min(1, Math.max(0, (now - vehicle.routeMeta.startAt) / total));
   const remaining = Math.max(0, vehicle.routeMeta.endAt - now) * (newDuration / oldDuration);
+  const newTotal = progress >= 1 ? 1 : remaining / Math.max(.001, 1 - progress);
+  vehicle.routeMeta.startAt = now - progress * newTotal;
   vehicle.routeMeta.endAt = now + remaining;
   if (vehicle.routeTimer) {
-    clearTimeout(vehicle.routeTimer);
-    state.timeouts = state.timeouts.filter((timer) => timer !== vehicle.routeTimer);
+    cancelScheduledTimeout(vehicle.routeTimer);
   }
   if (vehicle.routeArrivalHandler) vehicle.routeTimer = scheduleTimeout(vehicle.routeArrivalHandler, remaining);
 }
@@ -547,99 +550,6 @@ function renderIncidents() {
   el.incidentList.innerHTML = "";
   renderIncidentsCollapsible(visible);
   restoreIncidentListScroll(previousScrollTop);
-  return;
-  visible.forEach((incident) => {
-    const card = document.createElement("article");
-    card.className = `incident-card ${incident.id === state.selectedIncidentId ? "active" : ""}`;
-    appendTextBlock(card, "h3", incident.keyword);
-    appendTextBlock(card, "p", incident.location || "Regensburg");
-    appendTextBlock(card, "p", `Status: ${incident.status}${incident.signal ? " | Sondersignal" : ""}`);
-    appendTextBlock(card, "p", `Fahrzeuge: ${incident.assigned.length ? incident.assigned.map(unitName).join(", ") : "noch keine"}`);
-    if (incident.patient && incidentHasVehicleStatus(incident, 4)) {
-      appendTextBlock(card, "p", `Patienten: ${incident.patient.patientCount || 1} | ${incident.patient.status}, ${incident.patient.requiredDepartment}`);
-      if (incident.patient.report) appendTextBlock(card, "p", `Rückmeldung: ${incident.patient.report}`);
-      if (incident.patient.outcome) appendTextBlock(card, "p", `Ergebnis: ${incident.patient.outcome}`);
-    }
-    pendingDispatchVehicles(incident).forEach((vehicle) => {
-      appendTextBlock(card, "p", `${vehicle.name} meldet: noch ca. ${remainingDispatchMinutes(vehicle)} min bis Ausrücken.`);
-      const replacementButton = document.createElement("button");
-      replacementButton.type = "button";
-      replacementButton.textContent = `anderes Auto statt ${vehicle.name}`;
-      replacementButton.addEventListener("click", (event) => {
-        event.stopPropagation();
-        releasePendingVehicle(vehicle.id, incident.id);
-      });
-      card.append(replacementButton);
-    });
-    if (incident.note) appendTextBlock(card, "p", `Bemerkung: ${incident.note}`);
-
-    const editButton = document.createElement("button");
-    editButton.type = "button";
-    editButton.textContent = "Bearbeiten / nachalarmieren";
-    editButton.addEventListener("click", (event) => {
-      event.stopPropagation();
-      openIncidentDialog(incident);
-    });
-    card.append(editButton);
-
-    const handoffBox = document.createElement("div");
-    handoffBox.className = "handoff-actions";
-    [
-      ["FW", "an FW"],
-      ["POL", "an POL"],
-      ["AEND", "an ÄND"]
-    ].forEach(([service, label]) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = label;
-      button.addEventListener("click", (event) => {
-        event.stopPropagation();
-        handoffIncident(incident.id, service);
-      });
-      handoffBox.append(button);
-    });
-    card.append(handoffBox);
-
-    const summaryTransportRequests = activeTransportRequests(incident);
-    summaryTransportRequests.forEach((request) => {
-      const transportBox = document.createElement("div");
-      transportBox.className = "transport-choice";
-      appendTransportRequestHeader(transportBox, incident, request);
-      appendForeignHospitalToggle(transportBox, incident, request);
-      appendHospitalChoices(transportBox, incident, request);
-      ["Tod festgestellt", "Keine Indikation RD", "Transport verweigert"].forEach((reason) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.textContent = reason;
-        button.addEventListener("click", (event) => {
-          event.stopPropagation();
-          finishWithoutTransport(incident.id, reason);
-        });
-        transportBox.append(button);
-      });
-      card.append(transportBox);
-    });
-
-    card.addEventListener("click", () => {
-      selectIncidentFromMapOrList(incident);
-      const lat = Number.isFinite(incident.lat) ? incident.lat : state.center.mapCenter[0];
-      const lng = Number.isFinite(incident.lng) ? incident.lng : state.center.mapCenter[1];
-      if (state.mapReady) state.map.setView([lat, lng], 15);
-      renderIncidents();
-    });
-
-    nearestAvailableVehicles(incident).forEach((vehicle) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = `${vehicle.name} alarmieren`;
-      button.addEventListener("click", (event) => {
-        event.stopPropagation();
-        assignVehicle(vehicle.id, incident.id);
-      });
-      card.append(button);
-    });
-    el.incidentList.append(card);
-  });
 }
 
 function selectIncidentFromMapOrList(incident) {
@@ -698,13 +608,6 @@ function incidentNeedsDispositionAttention(incident) {
 
 function incidentNeedsSlowAlert(incident) {
   return incident.signal && !incident.assigned?.length && incident.status !== "geschlossen";
-}
-
-function nearestAvailableVehicles(incident) {
-  return state.vehicles
-    .filter((vehicle) => !vehicle.foreign && isAlarmable(vehicle))
-    .sort((a, b) => distanceToIncident(a, incident) - distanceToIncident(b, incident))
-    .slice(0, 4);
 }
 
 function renderIncidentsCollapsible(visible) {
@@ -1143,12 +1046,6 @@ function answerKtwHandover(incidentId, available) {
   openIncidentDialog(incident);
   scheduleTreatmentCompletion(rtw, incident);
   renderAll();
-}
-
-function nearestAvailableVehicleOfType(incident, type) {
-  return state.vehicles
-    .filter((vehicle) => vehicle.type === type && isAlarmable(vehicle))
-    .sort((a, b) => distanceToIncident(a, incident) - distanceToIncident(b, incident))[0] || null;
 }
 
 function applyAssistanceAlternative(incidentId, mode, patientId = null) {
@@ -1637,8 +1534,7 @@ function releasePendingVehicle(vehicleId, incidentId) {
   const incident = state.incidents.find((item) => item.id === incidentId);
   if (!vehicle || !incident || vehicle.nextIncidentId !== incident.id) return;
   if (vehicle.dispatchTimer) {
-    clearTimeout(vehicle.dispatchTimer);
-    state.timeouts = state.timeouts.filter((timer) => timer !== vehicle.dispatchTimer);
+    cancelScheduledTimeout(vehicle.dispatchTimer);
   }
   vehicle.dispatchTimer = null;
   vehicle.dispatchHandler = null;
@@ -1680,8 +1576,7 @@ function removeAssignedVehicle(vehicleId, incidentId) {
 
   releasePatientAssignment(vehicle);
   if (vehicle.dispatchTimer) {
-    clearTimeout(vehicle.dispatchTimer);
-    state.timeouts = state.timeouts.filter((timer) => timer !== vehicle.dispatchTimer);
+    cancelScheduledTimeout(vehicle.dispatchTimer);
   }
   if (vehicle.status === 3) {
     cancelVehicleRoute(vehicle);
@@ -2249,13 +2144,4 @@ function locateVehicle(vehicleId) {
   if (!vehicle || !state.mapReady) return;
   state.map.setView([vehicle.lat, vehicle.lng], 15);
   logRadio(`${vehicle.name}: Ortung gesendet, aktuelle Position auf Karte markiert.`, "radio");
-}
-
-function queryVehicleStatus(vehicleId) {
-  const vehicle = state.vehicles.find((unit) => unit.id === vehicleId);
-  if (!vehicle) return;
-  const reachable = [1, 3, 7].includes(vehicle.status);
-  logRadio(reachable
-    ? `${vehicle.name}: Status bestätigt (${vehicle.status} - ${vehicle.statusText}).`
-    : `${vehicle.name}: keine Antwort auf Statusabfrage.`, reachable ? "radio" : "warn");
 }

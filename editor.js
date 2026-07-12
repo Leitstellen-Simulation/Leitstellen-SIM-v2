@@ -1649,31 +1649,6 @@ function importBoundsForTiles(payload) {
   return payload.bounds;
 }
 
-function addressImportTiles(bounds, polygons = []) {
-  const south = Number(bounds?.south);
-  const west = Number(bounds?.west);
-  const north = Number(bounds?.north);
-  const east = Number(bounds?.east);
-  if (![south, west, north, east].every(Number.isFinite) || south >= north || west >= east) return [];
-  const tiles = [];
-  const latStep = 0.045;
-  const lngStep = 0.045;
-  for (let tileSouth = south; tileSouth < north; tileSouth += latStep) {
-    for (let tileWest = west; tileWest < east; tileWest += lngStep) {
-      tiles.push({
-        south: roundImportCoord(tileSouth),
-        west: roundImportCoord(tileWest),
-        north: roundImportCoord(Math.min(north, tileSouth + latStep)),
-        east: roundImportCoord(Math.min(east, tileWest + lngStep))
-      });
-    }
-  }
-  const filtered = polygons?.length
-    ? tiles.filter((tile) => tileIntersectsAnyPolygon(tile, polygons))
-    : tiles;
-  return filtered.slice(0, 260);
-}
-
 function tileIntersectsAnyPolygon(tile, polygons) {
   return polygons.some((polygon) => tileIntersectsPolygon(tile, polygon));
 }

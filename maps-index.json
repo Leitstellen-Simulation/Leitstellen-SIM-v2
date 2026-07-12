@@ -1,0 +1,47 @@
+[
+  {
+    "file": "ils-hochfranken.json",
+    "id": "ils-hochfranken",
+    "name": "ILS Hochfranken",
+    "stations": 34,
+    "hospitals": 12,
+    "supportGroups": 12,
+    "size": 52362455
+  },
+  {
+    "file": "ils-oberpfalz-nord.json",
+    "id": "ils-oberpfalz-nord",
+    "name": "ILS Oberpfalz Nord",
+    "stations": 59,
+    "hospitals": 11,
+    "supportGroups": 11,
+    "size": 63831181
+  },
+  {
+    "file": "ils-regensburg-testversion-stadt-regensburg.json",
+    "id": "ils-regensburg-testversion-stadt-regensburg",
+    "name": "ILS Regensburg (Testversion Stadt Regensburg)",
+    "stations": 7,
+    "hospitals": 6,
+    "supportGroups": 0,
+    "size": 11429
+  },
+  {
+    "file": "ils-regensburg-tisch-regensburg-alpha-version.json",
+    "id": "ils-regensburg-tisch-regensburg-alpha-version",
+    "name": "ILS Regensburg Tisch Regensburg (Alpha-Version)",
+    "stations": 23,
+    "hospitals": 15,
+    "supportGroups": 1,
+    "size": 5968685
+  },
+  {
+    "file": "ils-regensburg-tisch-regensburg-beta-version.json",
+    "id": "ils-regensburg-tisch-regensburg-beta-version",
+    "name": "ILS Regensburg Tisch Regensburg (Beta-Version)",
+    "stations": 24,
+    "hospitals": 15,
+    "supportGroups": 1,
+    "size": 50218242
+  }
+]

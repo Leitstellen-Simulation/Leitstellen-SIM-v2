@@ -289,8 +289,7 @@ async function startShift() {
   state.systemStatus.routing = "unbekannt";
   state.systemStatus.weather = "unbekannt";
   state.systemStatus.geocoding = "unbekannt";
-  state.timeouts.forEach((timer) => clearTimeout(timer));
-  state.timeouts = [];
+  cancelAllScheduledTimeouts();
   state.speed = Number(el.speedSelect.value) || 1;
   state.lastClockTick = Date.now();
   state.lastCallRateMinute = Math.floor(state.absoluteMinute);
@@ -979,9 +978,8 @@ function vehicleTypeLabel(type) {
 
 function endShift() {
   state.timers.forEach((timer) => clearInterval(timer));
-  state.timeouts.forEach((timer) => clearTimeout(timer));
+  cancelAllScheduledTimeouts();
   state.timers = [];
-  state.timeouts = [];
   el.dispatchScreen.classList.add("hidden");
   el.startScreen.classList.remove("hidden");
   document.body.classList.remove("dispatch-active");
@@ -1210,7 +1208,6 @@ function repairMapSize() {
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       state.map.invalidateSize({ animate: false, pan: false });
-      state.map.setView(state.center.mapCenter, state.center.zoom, { animate: false });
     });
   });
 }
@@ -1251,36 +1248,6 @@ function normalizedCallRates(rates) {
   }));
   if (!Array.isArray(rates)) return fallback;
   return fallback.map((base) => ({ ...base, ...(rates.find((item) => Number(item.hour) === base.hour) || {}) }));
-}
-
-function legacyReceiveCall(forcedType = null) {
-  if (state.pendingCall) return;
-  const templates = availableCallTemplates();
-  if (!templates.length) {
-    logCall("Kein Einsatzkatalog geladen. Bitte Einsatzeditor oder incidents-dynamic.json pruefen.", "warn");
-    return;
-  }
-  let templateIndex = weightedCallTemplateIndex(forcedType);
-  if (templates.length > 1 && templateIndex === state.lastCallTemplateIndex) {
-    templateIndex = (templateIndex + randomInt(1, templates.length - 1)) % templates.length;
-  }
-  state.lastCallTemplateIndex = templateIndex;
-  const template = resolveTemplateLocation(normalizeIncidentTemplate(templates[templateIndex]));
-  state.pendingCall = {
-    ...template,
-    id: makeId(),
-    location: template.location || defaultLocationLabel(),
-    lat: Number.isFinite(template.lat) ? template.lat : state.center.mapCenter[0],
-    lng: Number.isFinite(template.lng) ? template.lng : state.center.mapCenter[1]
-  };
-  keepCallInsideCoverage(state.pendingCall);
-  updateCallAddressFromNearestSource(state.pendingCall);
-  reverseGeocodeCall(state.pendingCall);
-  playPhoneRing();
-  logCall("Neuer Telefonanruf.", "warn");
-  el.answerButton.disabled = false;
-  el.forwardButton.disabled = false;
-  el.answerButton.classList.add("pending-call-alert");
 }
 
 function resolveTemplateLocation(template) {
@@ -2020,23 +1987,6 @@ function playStatusTone(code) {
   }
 }
 
-function legacyWeightedCallTemplateIndex(forcedType = null) {
-  const roll = Math.random();
-  const wantedType = forcedType || (roll < .72 ? "emergency" : roll < .9 ? "transport" : "scheduled");
-  const templates = availableCallTemplates();
-  if (!templates.length) return -1;
-  const candidates = templates
-    .map((template, index) => ({ template, index }))
-    .filter((item) => item.template.type === wantedType);
-  const pool = candidates.length ? candidates : templates.map((template, index) => ({ template, index }));
-  return pool[Math.floor(Math.random() * pool.length)].index;
-}
-
-function legacyAvailableCallTemplates() {
-  if (Array.isArray(state.incidentCatalog) && state.incidentCatalog.length) return state.incidentCatalog;
-  return [];
-}
-
 async function loadIncidentCatalog() {
   try {
     const response = await fetch("/api/incidents");
@@ -2192,60 +2142,6 @@ function callTypeTag(type) {
 
 function defaultLocationLabel() {
   return state.center?.name || "Einsatzgebiet";
-}
-
-function legacyRenderPendingCallActions() {
-  el.callActions.innerHTML = "";
-  const reopenButton = document.createElement("button");
-  reopenButton.type = "button";
-  reopenButton.textContent = "Dispositionsfenster öffnen";
-  reopenButton.addEventListener("click", () => {
-    renderCallDisposition();
-    showFloatingDialog(el.callDispositionDialog, { width: 560 });
-  });
-  const rejectButton = document.createElement("button");
-  rejectButton.type = "button";
-  rejectButton.textContent = "Anruf ablehnen";
-  rejectButton.addEventListener("click", rejectPendingCall);
-  const mapButton = document.createElement("button");
-  mapButton.type = "button";
-  mapButton.textContent = "auf Karte zeigen";
-  mapButton.addEventListener("click", showPendingCallOnMap);
-  el.callActions.append(reopenButton, rejectButton, mapButton);
-}
-
-function legacyRejectPendingCall() {
-  if (!state.pendingCall) return;
-  logCall("Anruf abgelehnt.", "warn");
-  state.pendingCall = null;
-  el.answerButton.disabled = true;
-  el.answerButton.classList.remove("pending-call-alert");
-  el.forwardButton.disabled = true;
-  el.callActions.innerHTML = "";
-  if (el.callDispositionDialog.open) el.callDispositionDialog.close();
-}
-
-function legacyReferPendingCall(service) {
-  if (!state.pendingCall) return;
-  const labels = { FW: "Feuerwehr", POL: "Polizei", AEND: "Ärztlichen Notdienst" };
-  logCall(`Anruf an ${labels[service] || service} verwiesen.`, "warn");
-  state.pendingCall = null;
-  el.answerButton.disabled = true;
-  el.answerButton.classList.remove("pending-call-alert");
-  el.forwardButton.disabled = true;
-  el.callActions.innerHTML = "";
-  el.callDispositionDialog.close();
-}
-
-function legacyForwardCall() {
-  if (!state.pendingCall) return;
-  logCall("Anruf beendet oder weitergeleitet.", "warn");
-  state.pendingCall = null;
-  el.answerButton.disabled = true;
-  el.answerButton.classList.remove("pending-call-alert");
-  el.forwardButton.disabled = true;
-  el.callActions.innerHTML = "";
-  if (el.callDispositionDialog.open) el.callDispositionDialog.close();
 }
 
 function openIncidentDialog(source = null) {
@@ -2429,66 +2325,6 @@ function currentIncidentDialogSource() {
   return state.editingIncidentId
     ? state.incidents.find((item) => item.id === state.editingIncidentId)
     : state.pendingCall;
-}
-
-function renderPatientConditionEditor(source) {
-  if (!el.incidentPatientConditions) return;
-  const currentValues = collectPatientConditionInputs();
-  const patients = dialogPatientsForConditionEditor(source);
-  el.incidentPatientConditions.innerHTML = "";
-  if (patients.length <= 1) {
-    el.incidentPatientConditions.hidden = true;
-    return;
-  }
-  el.incidentPatientConditions.hidden = false;
-  const title = document.createElement("strong");
-  title.textContent = "Patientenzustand";
-  el.incidentPatientConditions.append(title);
-  patients.forEach((patient) => {
-    const label = document.createElement("label");
-    label.dataset.patientId = patient.id;
-    label.textContent = patient.label;
-    const input = document.createElement("textarea");
-    input.rows = 2;
-    input.dataset.patientId = patient.id;
-    input.placeholder = "z.B. kritisch, Rauchgasexposition, Ziel: Innere";
-    input.value = currentValues[patient.id] ?? patient.conditionReport ?? patient.report ?? "";
-    label.append(input);
-    el.incidentPatientConditions.append(label);
-  });
-}
-
-function collectPatientConditionInputs() {
-  if (!el.incidentPatientConditions) return {};
-  return [...el.incidentPatientConditions.querySelectorAll("textarea[data-patient-id]")]
-    .reduce((values, input) => {
-      values[input.dataset.patientId] = input.value.trim();
-      return values;
-    }, {});
-}
-
-function dialogPatientsForConditionEditor(source) {
-  if (!source) return [];
-  if (source.patient?.patients?.length) {
-    return source.patient.patients.map((patient, index) => ({
-      id: patient.id || `pat-${index + 1}`,
-      label: patient.label || `Pat ${index + 1}`,
-      conditionReport: patient.conditionReport || patient.report || ""
-    }));
-  }
-  if (Array.isArray(source.patients) && source.patients.length) {
-    return source.patients.map((patient, index) => ({
-      id: patient.id || `pat-${index + 1}`,
-      label: patient.label || `Pat ${index + 1}`,
-      conditionReport: patient.conditionReport || patient.patientCondition || patient.report || ""
-    }));
-  }
-  const count = Math.max(1, Number(source.patientCount) || 1);
-  return Array.from({ length: count }, (_, index) => ({
-    id: `pat-${index + 1}`,
-    label: `Pat ${index + 1}`,
-    conditionReport: ""
-  }));
 }
 
 function nearestDispositionVehicle(call, type, unavailableIds, options = {}) {
@@ -2854,19 +2690,6 @@ function normalizeRequiredVehicles(required = []) {
     if (normalized === "HVO" || normalized === "HVO/FR") return "HVO";
     return normalized === "VEF" || normalized === "RTH" ? "NEF" : normalized;
   });
-}
-
-function departmentForKeyword(keyword, trauma = false, child = false) {
-  if (child) return "Pädiatrie / Kinderklinik";
-  if (trauma) return "Unfallchirurgie / Schockraum";
-  if (keyword.includes("Herz") || keyword.includes("Kreislauf")) return "Kardiologie / Chest Pain Unit";
-  if (keyword.includes("Atmung")) return "Innere Medizin / Überwachung";
-  if (keyword.includes("Neuro")) return "Neurologie / Stroke Unit";
-  if (keyword.includes("Psych")) return "Psychiatrie";
-  if (keyword.includes("Geburt")) return "Geburtshilfe";
-  if (keyword.includes("Verlegung")) return "aufnehmende Fachabteilung";
-  if (keyword.includes("KTP")) return "Ziel nach Auftrag";
-  return "Notaufnahme";
 }
 
 function departmentKeyForKeyword(keyword, trauma = false, child = false) {

@@ -2,7 +2,7 @@ import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
-import { dirname, extname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const port = Number(process.env.PORT || 4173);
@@ -11,9 +11,11 @@ loadLocalEnvFile();
 const dataRoot = process.env.DISPATCH_DATA_DIR ? resolve(process.env.DISPATCH_DATA_DIR) : root;
 const usesExternalDataDir = dataRoot !== root;
 const defaultMapsDir = join(root, "maps");
+const defaultMapIndexFile = join(root, "maps-index.json");
 const incidentCatalogFileName = process.env.DISPATCH_INCIDENTS_FILE || "incidents-dynamic.json";
 const defaultIncidentsFile = join(root, incidentCatalogFileName);
 const mapsDir = join(dataRoot, "maps");
+const mapIndexFile = join(dataRoot, "maps-index.json");
 const incidentsFile = join(dataRoot, incidentCatalogFileName);
 const syncMetaFile = join(dataRoot, "startup-sync.json");
 const startupSyncMetaVersion = 2;
@@ -1193,13 +1195,7 @@ async function handleMapsApi(request, response, url) {
   const id = url.pathname.split("/").filter(Boolean)[2];
   if (request.method === "GET" && !id) {
     const maps = await readSavedMaps();
-    sendJson(response, maps.map((map) => ({
-      id: map.id,
-      name: map.name,
-      stations: Array.isArray(map.stations) ? map.stations.length : 0,
-      hospitals: Array.isArray(map.hospitals) ? map.hospitals.length : 0,
-      supportGroups: Array.isArray(map.supportGroups) ? map.supportGroups.length : 0
-    })));
+    sendJson(response, maps);
     return;
   }
   if (request.method === "GET" && id) {
@@ -1215,13 +1211,16 @@ async function handleMapsApi(request, response, url) {
     if (!map) return;
     map.id = safeId(map.id || map.name || `map-${Date.now()}`);
     if (!isValidMap(map)) return sendJson(response, { error: "invalid map payload" }, 400);
-    await writeJsonFile(mapFilePath(map.id), map);
+    const file = mapFilePath(map.id);
+    await writeJsonFile(file, map);
+    await updateMapIndexEntry(basename(file), map);
     sendJson(response, map);
     return;
   }
   if (request.method === "DELETE" && id) {
     const file = mapFilePath(id);
     if (file && existsSync(file)) await unlink(file);
+    if (file) await removeMapIndexEntry(basename(file));
     sendJson(response, { ok: true });
     return;
   }
@@ -1274,11 +1273,14 @@ async function handleStartupSyncApi(request, response) {
     const meta = await readSyncMeta();
     if (action === "bundled" || action === "neu") {
       await copyDefaultFile(sourceFile, targetFile);
+      await removeMapIndexEntry(conflict.file);
       meta.mapHashes[conflict.file] = conflict.bundledHash || await jsonFileHash(sourceFile);
     } else if (action === "both" || action === "beide") {
       const bundled = await readJsonFile(sourceFile);
       const copy = await uniqueMapCopy(bundled);
-      await writeJsonFile(mapFilePath(copy.id), copy);
+      const copyFile = mapFilePath(copy.id);
+      await writeJsonFile(copyFile, copy);
+      await updateMapIndexEntry(basename(copyFile), copy);
       meta.mapIgnores[conflict.file] = conflict.bundledHash || await jsonFileHash(sourceFile);
     } else {
       meta.mapIgnores[conflict.file] = conflict.bundledHash || await jsonFileHash(sourceFile);
@@ -1803,16 +1805,69 @@ function allowedDestinationPoiCategories() {
 
 async function readSavedMaps() {
   const files = (await readdir(mapsDir)).filter((file) => file.endsWith(".json")).sort();
-  const maps = [];
+  const bundledIndex = await readMapIndexFile(defaultMapIndexFile);
+  const localIndex = await readMapIndexFile(mapIndexFile);
+  const bundledByFile = new Map(bundledIndex.map((entry) => [entry.file, entry]));
+  const localByFile = new Map(localIndex.map((entry) => [entry.file, entry]));
+  const summaries = [];
+  let indexChanged = false;
   for (const file of files) {
+    const localIndexed = localByFile.get(file);
+    const indexed = localIndexed || bundledByFile.get(file);
+    const filePath = join(mapsDir, file);
+    const fileSize = statSync(filePath).size;
+    if (indexed && (!usesExternalDataDir || !localIndexed || localIndexed.size === fileSize)) {
+      summaries.push(indexed);
+      continue;
+    }
     try {
-      const map = await readJsonFile(join(mapsDir, file));
-      if (isValidMap(map)) maps.push(map);
+      const map = await readJsonFile(filePath);
+      if (!isValidMap(map)) continue;
+      const summary = mapSummary(file, map, fileSize);
+      const localIndexPosition = localIndex.findIndex((entry) => entry.file === file);
+      if (localIndexPosition >= 0) localIndex[localIndexPosition] = summary;
+      else localIndex.push(summary);
+      summaries.push(summary);
+      indexChanged = true;
     } catch (error) {
       console.warn(`Skipping invalid map file ${file}: ${error.message}`);
     }
   }
-  return maps;
+  if (indexChanged) await writeJsonFile(mapIndexFile, localIndex);
+  return summaries;
+}
+
+async function readMapIndexFile(filePath) {
+  if (!existsSync(filePath)) return [];
+  const entries = await readJsonFile(filePath).catch(() => []);
+  return Array.isArray(entries) ? entries.filter((entry) => entry?.file && entry?.id) : [];
+}
+
+function mapSummary(file, map, size = null) {
+  return {
+    file,
+    id: map.id,
+    name: map.name,
+    stations: Array.isArray(map.stations) ? map.stations.length : 0,
+    hospitals: Array.isArray(map.hospitals) ? map.hospitals.length : 0,
+    supportGroups: Array.isArray(map.supportGroups) ? map.supportGroups.length : 0,
+    size: Number.isFinite(size) ? size : statSync(join(mapsDir, file)).size
+  };
+}
+
+async function updateMapIndexEntry(file, map) {
+  const entries = await readMapIndexFile(mapIndexFile);
+  const summary = mapSummary(file, map);
+  const next = entries.filter((entry) => entry.file !== file && entry.id !== map.id);
+  next.push(summary);
+  await writeJsonFile(mapIndexFile, next.sort((a, b) => a.name.localeCompare(b.name, "de")));
+}
+
+async function removeMapIndexEntry(file) {
+  const entries = await readMapIndexFile(mapIndexFile);
+  const next = entries.filter((entry) => entry.file !== file);
+  if (next.length === entries.length) return;
+  await writeJsonFile(mapIndexFile, next);
 }
 
 async function readJsonBody(request, response, fallback) {
@@ -1843,17 +1898,31 @@ function parseJson(text) {
 function readBody(request) {
   return new Promise((resolve, reject) => {
     let body = "";
+    let receivedBytes = 0;
+    let settled = false;
     request.on("data", (chunk) => {
-      body += chunk;
-      if (Buffer.byteLength(body, "utf8") > maxBodyBytes) {
+      if (settled) return;
+      receivedBytes += chunk.length;
+      if (receivedBytes > maxBodyBytes) {
+        settled = true;
         const error = new Error("request body too large");
         error.code = "BODY_TOO_LARGE";
         reject(error);
         request.destroy();
+        return;
       }
+      body += chunk.toString("utf8");
     });
-    request.on("end", () => resolve(body));
-    request.on("error", reject);
+    request.on("end", () => {
+      if (settled) return;
+      settled = true;
+      resolve(body);
+    });
+    request.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    });
   });
 }
 

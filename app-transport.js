@@ -233,28 +233,23 @@ function assignVehicle(vehicleId, incidentId) {
     : `alarmiert, rückt in ca. ${delayMinutes} min aus`;
 
   if (vehicle.handoverTimer) {
-    clearTimeout(vehicle.handoverTimer);
-    state.timeouts = state.timeouts.filter((timer) => timer !== vehicle.handoverTimer);
+    cancelScheduledTimeout(vehicle.handoverTimer);
     vehicle.handoverTimer = null;
   }
   if (vehicle.status8ReadyTimer) {
-    clearTimeout(vehicle.status8ReadyTimer);
-    state.timeouts = state.timeouts.filter((timer) => timer !== vehicle.status8ReadyTimer);
+    cancelScheduledTimeout(vehicle.status8ReadyTimer);
     vehicle.status8ReadyTimer = null;
   }
   if (vehicle.supportReleaseTimer) {
-    clearTimeout(vehicle.supportReleaseTimer);
-    state.timeouts = state.timeouts.filter((timer) => timer !== vehicle.supportReleaseTimer);
+    cancelScheduledTimeout(vehicle.supportReleaseTimer);
     vehicle.supportReleaseTimer = null;
   }
   if (vehicle.surplusCancellationTimer) {
-    clearTimeout(vehicle.surplusCancellationTimer);
-    state.timeouts = state.timeouts.filter((timer) => timer !== vehicle.surplusCancellationTimer);
+    cancelScheduledTimeout(vehicle.surplusCancellationTimer);
     vehicle.surplusCancellationTimer = null;
   }
   if (vehicle.postTransportCleanupTimer) {
-    clearTimeout(vehicle.postTransportCleanupTimer);
-    state.timeouts = state.timeouts.filter((timer) => timer !== vehicle.postTransportCleanupTimer);
+    cancelScheduledTimeout(vehicle.postTransportCleanupTimer);
     vehicle.postTransportCleanupTimer = null;
   }
 
@@ -341,8 +336,7 @@ function scheduleDispatchTimer(vehicle, delayMinutes, handler) {
 
 function clearDispatchTimer(vehicle) {
   if (!vehicle?.dispatchTimer) return;
-  clearTimeout(vehicle.dispatchTimer);
-  state.timeouts = state.timeouts.filter((timer) => timer !== vehicle.dispatchTimer);
+  cancelScheduledTimeout(vehicle.dispatchTimer);
   vehicle.dispatchTimer = null;
   vehicle.dispatchHandler = null;
   vehicle.pendingDispatchUntil = null;
@@ -372,8 +366,7 @@ function triggerRadioStatus(vehicle, code, message) {
 
 function clearRadioDisplayTimer(vehicle) {
   if (!vehicle?.radioDisplayTimer) return;
-  clearTimeout(vehicle.radioDisplayTimer);
-  state.timeouts = state.timeouts.filter((timer) => timer !== vehicle.radioDisplayTimer);
+  cancelScheduledTimeout(vehicle.radioDisplayTimer);
   vehicle.radioDisplayTimer = null;
 }
 
@@ -876,8 +869,7 @@ function scheduleTreatmentCompletion(vehicle, incident) {
     return;
   }
   if (vehicle.treatmentTimer) {
-    clearTimeout(vehicle.treatmentTimer);
-    state.timeouts = state.timeouts.filter((timer) => timer !== vehicle.treatmentTimer);
+    cancelScheduledTimeout(vehicle.treatmentTimer);
   }
   vehicle.treatmentTimer = scheduleTimeout(() => {
     vehicle.treatmentTimer = null;
@@ -891,28 +883,6 @@ function remainingTreatmentMinutes(patient, incident) {
   const progress = patientTreatmentProgress(patient, incident);
   const cap = currentTreatmentCap(patient, incident).cap;
   return Math.max(0, patientTreatmentMinutes(patient, incident) * (cap - progress));
-}
-
-function scheduleSurplusRelease(incidentId) {
-  return incidentId;
-}
-
-function surplusVehiclesAtScene(incident) {
-  const requiredCounts = incident.required.reduce((counts, type) => {
-    counts[type] = (counts[type] || 0) + 1;
-    return counts;
-  }, {});
-  const usedCounts = {};
-  return incident.assigned
-    .map((id) => state.vehicles.find((vehicle) => vehicle.id === id))
-    .filter((vehicle) => vehicle?.status === 4)
-    .filter((vehicle) => !vehicle.patientId)
-    .filter((vehicle) => {
-      const doctorRequired = Object.keys(requiredCounts).some(isDoctorRequirement);
-      if (isDoctorVehicle(vehicle.type) && !doctorRequired) return true;
-      usedCounts[vehicle.type] = (usedCounts[vehicle.type] || 0) + 1;
-      return usedCounts[vehicle.type] > (requiredCounts[vehicle.type] || 0);
-    });
 }
 
 function requestVehicleClearance(vehicle, incident, reason) {
@@ -2230,7 +2200,7 @@ function transportPoiDestinationForPatient(incident, patient) {
   if (config.destinationMode !== "poi") return null;
   const destination = randomPoiTransportDestination(config, incident);
   if (!destination) {
-    logRadio(`Kein passender Ziel-POI fÃ¼r ${incident.keyword} gefunden, Krankenhaus-Zuweisung bleibt aktiv.`, "warn");
+    logRadio(`Kein passender Ziel-POI für ${incident.keyword} gefunden, Krankenhaus-Zuweisung bleibt aktiv.`, "warn");
     return null;
   }
   patient.destinationDecision = { type: "poi", destination };
@@ -2913,33 +2883,27 @@ function clearVehicle(vehicleId) {
   }
   cancelVehicleRoute(vehicle);
   if (vehicle.status8ReadyTimer) {
-    clearTimeout(vehicle.status8ReadyTimer);
-    state.timeouts = state.timeouts.filter((timer) => timer !== vehicle.status8ReadyTimer);
+    cancelScheduledTimeout(vehicle.status8ReadyTimer);
     vehicle.status8ReadyTimer = null;
   }
   if (vehicle.handoverTimer) {
-    clearTimeout(vehicle.handoverTimer);
-    state.timeouts = state.timeouts.filter((timer) => timer !== vehicle.handoverTimer);
+    cancelScheduledTimeout(vehicle.handoverTimer);
     vehicle.handoverTimer = null;
   }
   if (vehicle.treatmentTimer) {
-    clearTimeout(vehicle.treatmentTimer);
-    state.timeouts = state.timeouts.filter((timer) => timer !== vehicle.treatmentTimer);
+    cancelScheduledTimeout(vehicle.treatmentTimer);
     vehicle.treatmentTimer = null;
   }
   if (vehicle.supportReleaseTimer) {
-    clearTimeout(vehicle.supportReleaseTimer);
-    state.timeouts = state.timeouts.filter((timer) => timer !== vehicle.supportReleaseTimer);
+    cancelScheduledTimeout(vehicle.supportReleaseTimer);
     vehicle.supportReleaseTimer = null;
   }
   if (vehicle.surplusCancellationTimer) {
-    clearTimeout(vehicle.surplusCancellationTimer);
-    state.timeouts = state.timeouts.filter((timer) => timer !== vehicle.surplusCancellationTimer);
+    cancelScheduledTimeout(vehicle.surplusCancellationTimer);
     vehicle.surplusCancellationTimer = null;
   }
   if (vehicle.postTransportCleanupTimer) {
-    clearTimeout(vehicle.postTransportCleanupTimer);
-    state.timeouts = state.timeouts.filter((timer) => timer !== vehicle.postTransportCleanupTimer);
+    cancelScheduledTimeout(vehicle.postTransportCleanupTimer);
     vehicle.postTransportCleanupTimer = null;
   }
   vehicle.treatmentDueAt = null;
@@ -3184,13 +3148,6 @@ function fallbackRouteBaseSpeedKmh(distanceKm) {
   return 82;
 }
 
-function routeSpeedKmh(vehicle, signal) {
-  const route = vehicle?.routeMeta || null;
-  const durationMs = routeTravelDurationMs(vehicle, route, signal);
-  const distanceKm = route?.distanceKm || 1;
-  return durationMs > 0 ? (distanceKm / durationMs) * 3600000 : 0;
-}
-
 function routeSimulationTravelMs(vehicle, route, signal) {
   return Math.max(8000, routeTravelDurationMs(vehicle, route, signal) / state.speed);
 }
@@ -3251,13 +3208,11 @@ function askVehicleReadiness(vehicleId) {
   const vehicle = state.vehicles.find((unit) => unit.id === vehicleId);
   if (!vehicle || vehicle.status !== 8) return;
   if (vehicle.status8ReadyTimer) {
-    clearTimeout(vehicle.status8ReadyTimer);
-    state.timeouts = state.timeouts.filter((timer) => timer !== vehicle.status8ReadyTimer);
+    cancelScheduledTimeout(vehicle.status8ReadyTimer);
     vehicle.status8ReadyTimer = null;
   }
   if (vehicle.handoverTimer) {
-    clearTimeout(vehicle.handoverTimer);
-    state.timeouts = state.timeouts.filter((timer) => timer !== vehicle.handoverTimer);
+    cancelScheduledTimeout(vehicle.handoverTimer);
     vehicle.handoverTimer = null;
   }
   if (Math.random() < 0.125) {
@@ -3322,19 +3277,70 @@ function simulationDelay(minutes) {
 }
 
 function scheduleTimeout(handler, delay) {
-  let timer = null;
-  const fire = () => {
-    state.timeouts = state.timeouts.filter((item) => item !== timer);
+  const timeout = {
+    nativeId: null,
+    handler,
+    createdAt: Date.now(),
+    dueAt: Date.now() + Math.max(0, Number(delay) || 0),
+    cancelled: false,
+    fire: null
+  };
+  timeout.fire = () => {
+    if (timeout.cancelled) return;
     if (state.paused) {
-      timer = window.setTimeout(fire, 500);
-      state.timeouts.push(timer);
+      armScheduledTimeout(timeout, 500);
       return;
     }
-    handler();
+    state.timeouts = state.timeouts.filter((item) => item !== timeout);
+    timeout.cancelled = true;
+    timeout.nativeId = null;
+    timeout.handler();
   };
-  timer = window.setTimeout(fire, delay);
-  state.timeouts.push(timer);
-  return timer;
+  state.timeouts.push(timeout);
+  armScheduledTimeout(timeout, Math.max(0, Number(delay) || 0));
+  return timeout;
+}
+
+function armScheduledTimeout(timeout, delay) {
+  if (!timeout || timeout.cancelled) return;
+  if (timeout.nativeId !== null) window.clearTimeout(timeout.nativeId);
+  timeout.nativeId = window.setTimeout(timeout.fire, Math.max(0, Number(delay) || 0));
+}
+
+function cancelScheduledTimeout(timeout) {
+  if (!timeout) return;
+  timeout.cancelled = true;
+  if (timeout.nativeId !== null) window.clearTimeout(timeout.nativeId);
+  timeout.nativeId = null;
+  state.timeouts = state.timeouts.filter((item) => item !== timeout);
+}
+
+function cancelAllScheduledTimeouts() {
+  [...state.timeouts].forEach(cancelScheduledTimeout);
+  state.timeouts = [];
+}
+
+function rescaleScheduledTimeouts(factor) {
+  if (!Number.isFinite(factor) || factor <= 0 || factor === 1) return;
+  const now = Date.now();
+  const referenceNow = state.paused && Number.isFinite(state.pauseStartedAt) ? state.pauseStartedAt : now;
+  state.timeouts.forEach((timeout) => {
+    if (!timeout || timeout.cancelled) return;
+    const remaining = Math.max(0, timeout.dueAt - referenceNow) * factor;
+    timeout.dueAt = referenceNow + remaining;
+    armScheduledTimeout(timeout, Math.max(0, timeout.dueAt - now));
+  });
+}
+
+function shiftScheduledTimeouts(offsetMs, pauseStartedAt = Date.now() - offsetMs) {
+  if (!Number.isFinite(offsetMs) || offsetMs <= 0) return;
+  const now = Date.now();
+  state.timeouts.forEach((timeout) => {
+    if (!timeout || timeout.cancelled) return;
+    const pausedOverlap = Math.max(0, now - Math.max(pauseStartedAt, timeout.createdAt));
+    timeout.dueAt += pausedOverlap;
+    armScheduledTimeout(timeout, Math.max(0, timeout.dueAt - now));
+  });
 }
 
 function updateVehicleTracking() {
@@ -3471,8 +3477,7 @@ function pointAtProgress(routeMeta, progress) {
 function cancelVehicleRoute(vehicle) {
   snapVehicleToRoutePosition(vehicle);
   if (vehicle.routeTimer) {
-    clearTimeout(vehicle.routeTimer);
-    state.timeouts = state.timeouts.filter((timer) => timer !== vehicle.routeTimer);
+    cancelScheduledTimeout(vehicle.routeTimer);
   }
   vehicle.routeTimer = null;
   vehicle.route = null;
@@ -3608,56 +3613,28 @@ function rescaleActiveTimers(oldSpeed, newSpeed) {
   if (!oldSpeed || !newSpeed || oldSpeed === newSpeed) return;
   const factor = oldSpeed / newSpeed;
   const now = Date.now();
+  const referenceNow = state.paused && Number.isFinite(state.pauseStartedAt) ? state.pauseStartedAt : now;
+  rescaleScheduledTimeouts(factor);
   state.vehicles.forEach((vehicle) => {
     if (vehicle.routeMeta) {
       const total = Math.max(1, vehicle.routeMeta.endAt - vehicle.routeMeta.startAt);
-      const progress = Math.min(1, Math.max(0, (now - vehicle.routeMeta.startAt) / total));
-      const remaining = Math.max(0, vehicle.routeMeta.endAt - now) * factor;
+      const progress = Math.min(1, Math.max(0, (referenceNow - vehicle.routeMeta.startAt) / total));
+      const remaining = Math.max(0, vehicle.routeMeta.endAt - referenceNow) * factor;
       const newTotal = progress >= 1 ? 1 : remaining / Math.max(.001, 1 - progress);
-      vehicle.routeMeta.startAt = now - progress * newTotal;
-      vehicle.routeMeta.endAt = now + remaining;
-      if (vehicle.routeTimer) {
-        clearTimeout(vehicle.routeTimer);
-        state.timeouts = state.timeouts.filter((timer) => timer !== vehicle.routeTimer);
-      }
-      if (vehicle.routeArrivalHandler) {
-        vehicle.routeTimer = scheduleTimeout(vehicle.routeArrivalHandler, remaining);
-      }
+      vehicle.routeMeta.startAt = referenceNow - progress * newTotal;
+      vehicle.routeMeta.endAt = referenceNow + remaining;
     }
     if (vehicle.dispatchTimer && vehicle.pendingDispatchUntil) {
-      const remaining = Math.max(0, vehicle.pendingDispatchUntil - now) * factor;
-      vehicle.pendingDispatchUntil = now + remaining;
-      clearTimeout(vehicle.dispatchTimer);
-      state.timeouts = state.timeouts.filter((timer) => timer !== vehicle.dispatchTimer);
-      const handler = vehicle.dispatchHandler || (() => startResponse(vehicle.id));
-      vehicle.dispatchTimer = scheduleTimeout(() => {
-        vehicle.dispatchTimer = null;
-        vehicle.dispatchHandler = null;
-        handler();
-      }, remaining);
+      const remaining = Math.max(0, vehicle.pendingDispatchUntil - referenceNow) * factor;
+      vehicle.pendingDispatchUntil = referenceNow + remaining;
     }
     if (vehicle.treatmentTimer && vehicle.treatmentDueAt) {
-      const remaining = Math.max(0, vehicle.treatmentDueAt - now) * factor;
-      vehicle.treatmentDueAt = now + remaining;
-      clearTimeout(vehicle.treatmentTimer);
-      state.timeouts = state.timeouts.filter((timer) => timer !== vehicle.treatmentTimer);
-      vehicle.treatmentTimer = scheduleTimeout(() => {
-        vehicle.treatmentTimer = null;
-        vehicle.treatmentDueAt = null;
-        transportOrClear(vehicle.id);
-      }, remaining);
+      const remaining = Math.max(0, vehicle.treatmentDueAt - referenceNow) * factor;
+      vehicle.treatmentDueAt = referenceNow + remaining;
     }
     if (vehicle.status8ReadyTimer && vehicle.status8ReadyAt) {
-      const remaining = Math.max(0, vehicle.status8ReadyAt - now) * factor;
-      vehicle.status8ReadyAt = now + remaining;
-      clearTimeout(vehicle.status8ReadyTimer);
-      state.timeouts = state.timeouts.filter((timer) => timer !== vehicle.status8ReadyTimer);
-      vehicle.status8ReadyTimer = scheduleTimeout(() => {
-        vehicle.status8ReadyTimer = null;
-        vehicle.status8ReadyAt = null;
-        vehicle.status8ReadyDelay = null;
-        if (vehicle.status === 8 && !vehicle.nextIncidentId) clearVehicle(vehicle.id);
-      }, remaining);
+      const remaining = Math.max(0, vehicle.status8ReadyAt - referenceNow) * factor;
+      vehicle.status8ReadyAt = referenceNow + remaining;
     }
   });
 }
@@ -3668,12 +3645,15 @@ function togglePause() {
     state.pauseStartedAt = Date.now();
   } else if (state.pauseStartedAt) {
     const pausedMs = Date.now() - state.pauseStartedAt;
+    shiftScheduledTimeouts(pausedMs, state.pauseStartedAt);
     state.vehicles.forEach((vehicle) => {
       if (vehicle.routeMeta) {
         vehicle.routeMeta.startAt += pausedMs;
         vehicle.routeMeta.endAt += pausedMs;
       }
       if (vehicle.pendingDispatchUntil) vehicle.pendingDispatchUntil += pausedMs;
+      if (vehicle.treatmentDueAt) vehicle.treatmentDueAt += pausedMs;
+      if (vehicle.status8ReadyAt) vehicle.status8ReadyAt += pausedMs;
     });
     state.pauseStartedAt = null;
     state.lastClockTick = Date.now();

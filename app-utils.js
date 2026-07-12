@@ -89,12 +89,6 @@ function timeLabel() {
   return `${hours}:${minutes}`;
 }
 
-function distanceToIncident(vehicle, incident) {
-  const lat = Number.isFinite(incident.lat) ? incident.lat : state.center.mapCenter[0];
-  const lng = Number.isFinite(incident.lng) ? incident.lng : state.center.mapCenter[1];
-  return mapDistance(vehicle.lat, vehicle.lng, lat, lng);
-}
-
 function distanceToCall(vehicle, call) {
   const lat = Number.isFinite(call.lat) ? call.lat : state.center.mapCenter[0];
   const lng = Number.isFinite(call.lng) ? call.lng : state.center.mapCenter[1];
