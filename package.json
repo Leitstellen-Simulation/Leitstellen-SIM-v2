@@ -1,6 +1,6 @@
 {
   "name": "leitstellen-sim-v2",
-  "version": "0.5.1",
+  "version": "0.5.3",
   "description": "Browserbasierte Leitstellen-Simulation als Desktop-App",
   "type": "module",
   "main": "electron-main.mjs",
@@ -23,6 +23,7 @@
       "!.env.*",
       "!test-admin.local.js",
       "!*.local.js",
+      "!Leitstellen-SIM-vor-TNA-*.zip",
       "!node_modules/.cache/**",
       "!dist/**"
     ],

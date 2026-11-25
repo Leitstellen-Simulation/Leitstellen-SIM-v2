@@ -97,7 +97,7 @@
   function applyDynamicNamePlaceholdersToIncidentTemplate(template) {
     if (!template || typeof template !== "object") return template;
     const next = { ...template };
-    ["callerName", "callerText", "report", "situationReport", "note"].forEach((key) => {
+    ["callerName", "callerText", "report", "situationReport", "assistanceReason", "note"].forEach((key) => {
       if (typeof next[key] === "string") next[key] = applyDynamicNamePlaceholders(next[key]);
     });
     if (Array.isArray(next.patients)) {

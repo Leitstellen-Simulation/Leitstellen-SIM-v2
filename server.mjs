@@ -1,9 +1,12 @@
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
-import { mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir, open, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+import { gzip } from "node:zlib";
 
 const port = Number(process.env.PORT || 4173);
 const root = dirname(fileURLToPath(import.meta.url));
@@ -11,7 +14,6 @@ loadLocalEnvFile();
 const dataRoot = process.env.DISPATCH_DATA_DIR ? resolve(process.env.DISPATCH_DATA_DIR) : root;
 const usesExternalDataDir = dataRoot !== root;
 const defaultMapsDir = join(root, "maps");
-const defaultMapIndexFile = join(root, "maps-index.json");
 const incidentCatalogFileName = process.env.DISPATCH_INCIDENTS_FILE || "incidents-dynamic.json";
 const defaultIncidentsFile = join(root, incidentCatalogFileName);
 const mapsDir = join(dataRoot, "maps");
@@ -41,6 +43,9 @@ const startupSyncState = {
   incidentMerge: null,
   incidentConflicts: []
 };
+let pendingDataWrite = Promise.resolve();
+let cachedMapFile;
+const gzipJson = promisify(gzip);
 
 const server = createServer(async (request, response) => {
   try {
@@ -92,27 +97,43 @@ const server = createServer(async (request, response) => {
   }
 });
 
-server.on("error", (error) => {
-  if (error.code === "EADDRINUSE") {
-    console.error(`Port ${port} ist bereits belegt. Wahrscheinlich laeuft DispatchSim schon unter http://127.0.0.1:${port}/`);
-    console.error("Nutze das vorhandene Browserfenster oder beende den alten Node-Prozess, bevor du den Server neu startest.");
-    if (process.env.DISPATCH_ELECTRON === "1") return;
-    process.exit(1);
-  }
-  throw error;
-});
-
 await ensureWritableDataFiles();
 
-server.listen(port, "127.0.0.1", () => {
-  console.log(`DispatchSim running at http://127.0.0.1:${port}/`);
-  if (usesExternalDataDir) {
-    console.log(`Writable app data: ${dataRoot}`);
+try {
+  await listenOnLoopback(port);
+} catch (error) {
+  if (error.code !== "EADDRINUSE") throw error;
+  if (process.env.DISPATCH_ELECTRON === "1") {
+    await listenOnLoopback(0);
+  } else {
+    console.error(`Port ${port} ist bereits belegt. Wahrscheinlich laeuft DispatchSim schon unter http://127.0.0.1:${port}/`);
+    console.error("Nutze das vorhandene Browserfenster oder beende den alten Node-Prozess, bevor du den Server neu startest.");
+    process.exit(1);
   }
-  if (!process.env.DISPATCH_ADMIN_PASSWORD) {
-    console.log("Admin password uses the development default. Set DISPATCH_ADMIN_PASSWORD to override it.");
-  }
-});
+}
+
+export const serverPort = server.address().port;
+console.log(`DispatchSim running at http://127.0.0.1:${serverPort}/`);
+if (usesExternalDataDir) console.log(`Writable app data: ${dataRoot}`);
+if (!process.env.DISPATCH_ADMIN_PASSWORD) {
+  console.log("Admin password uses the development default. Set DISPATCH_ADMIN_PASSWORD to override it.");
+}
+
+function listenOnLoopback(requestedPort) {
+  return new Promise((resolve, reject) => {
+    const onError = (error) => {
+      server.off("listening", onListening);
+      reject(error);
+    };
+    const onListening = () => {
+      server.off("error", onError);
+      resolve();
+    };
+    server.once("error", onError);
+    server.once("listening", onListening);
+    server.listen(requestedPort, "127.0.0.1");
+  });
+}
 
 async function ensureWritableDataFiles() {
   await mkdir(mapsDir, { recursive: true });
@@ -124,7 +145,6 @@ async function ensureWritableDataFiles() {
 
 async function seedDefaultMaps() {
   if (!existsSync(defaultMapsDir)) return;
-  await mkdir(mapsDir, { recursive: true });
 
   const syncMeta = await readSyncMeta();
   let metaChanged = false;
@@ -134,32 +154,33 @@ async function seedDefaultMaps() {
     const sourceFile = join(defaultMapsDir, file);
     const targetFile = join(mapsDir, file);
     const bundledHash = await jsonFileHash(sourceFile);
-    if (!existingFiles.has(file)) {
-      await copyDefaultFile(sourceFile, targetFile);
-      syncMeta.mapHashes[file] = bundledHash;
-      metaChanged = true;
-      continue;
-    }
-    const targetHash = await jsonFileHash(targetFile).catch(() => null);
+    const hasLocalFile = existingFiles.has(file);
+    const previousHash = syncMeta.mapHashes[file];
+    const targetHash = hasLocalFile ? await jsonFileHash(targetFile).catch(() => null) : null;
     if (targetHash === bundledHash) {
-      syncMeta.mapHashes[file] = bundledHash;
-      metaChanged = true;
+      if (previousHash !== bundledHash) {
+        syncMeta.mapHashes[file] = bundledHash;
+        metaChanged = true;
+      }
       continue;
     }
-    if (syncMeta.mapHashes?.[file] && targetHash === syncMeta.mapHashes[file]) {
+    if ((!hasLocalFile && !previousHash) || (previousHash && targetHash === previousHash)) {
       await copyDefaultFile(sourceFile, targetFile);
+      await removeMapIndexEntry(file);
       syncMeta.mapHashes[file] = bundledHash;
       metaChanged = true;
       continue;
     }
-    if (syncMeta.mapIgnores?.[file] === bundledHash) continue;
+    if (syncMeta.mapIgnores[file] === bundledHash) continue;
+    if (bundledHash === previousHash && (!hasLocalFile || targetHash !== null)) continue;
     const bundled = await readJsonFile(sourceFile).catch(() => null);
-    const local = await readJsonFile(targetFile).catch(() => null);
+    const local = hasLocalFile ? await readJsonFile(targetFile).catch(() => null) : null;
     startupSyncState.mapConflicts.push({
       id: safeId(bundled?.id || local?.id || file.replace(/\.json$/i, "")),
       file,
       localName: local?.name || local?.id || file,
       bundledName: bundled?.name || bundled?.id || file,
+      localDeleted: !hasLocalFile,
       bundledHash
     });
   }
@@ -167,7 +188,9 @@ async function seedDefaultMaps() {
 }
 
 async function copyDefaultFile(sourceFile, targetFile) {
-  await writeFile(targetFile, await readFile(sourceFile, "utf8"), "utf8");
+  const tmpPath = `${targetFile}.startup.tmp`;
+  await writeFile(tmpPath, await readFile(sourceFile));
+  await rename(tmpPath, targetFile);
 }
 
 function stableJsonString(value) {
@@ -220,8 +243,8 @@ async function mergeDefaultIncidents() {
     startupSyncState.incidentMerge = { added: "initial", total: null };
     return;
   }
-  const bundled = await readJsonFile(bundledFile).catch(() => []);
-  const local = await readJsonFile(incidentsFile).catch(() => []);
+  const bundled = await readJsonFile(bundledFile).catch(() => null);
+  const local = await readJsonFile(incidentsFile).catch(() => null);
   if (!Array.isArray(bundled) || !Array.isArray(local)) return;
   const bundledById = new Map(bundled.filter((incident) => incident?.id).map((incident) => [incident.id, incident]));
   const localById = new Map(local.filter((incident) => incident?.id).map((incident) => [incident.id, incident]));
@@ -235,17 +258,18 @@ async function mergeDefaultIncidents() {
     if (!bundledIncident) return incident;
     const bundledHash = bundledHashes[incident.id];
     const localHash = jsonValueHash(incident);
+    const previousHash = syncMeta.incidentHashes[incident.id];
     if (localHash === bundledHash) {
       syncMeta.incidentHashes[incident.id] = bundledHash;
       return incident;
     }
-    if (syncMeta.incidentHashes?.[incident.id] && localHash === syncMeta.incidentHashes[incident.id]) {
+    if (previousHash && localHash === previousHash) {
       syncMeta.incidentHashes[incident.id] = bundledHash;
       updated += 1;
       changed = true;
       return bundledIncident;
     }
-    if (syncMeta.incidentIgnores?.[incident.id] !== bundledHash) {
+    if (bundledHash !== previousHash && syncMeta.incidentIgnores[incident.id] !== bundledHash) {
       startupSyncState.incidentConflicts.push({
         id: incident.id,
         localTitle: incident.title || incident.keyword || incident.id,
@@ -257,8 +281,21 @@ async function mergeDefaultIncidents() {
   });
   bundled.forEach((incident) => {
     if (!incident?.id || localById.has(incident.id)) return;
+    const bundledHash = bundledHashes[incident.id];
+    const previousHash = syncMeta.incidentHashes[incident.id];
+    if (previousHash) {
+      if (bundledHash !== previousHash && syncMeta.incidentIgnores[incident.id] !== bundledHash) {
+        startupSyncState.incidentConflicts.push({
+          id: incident.id,
+          bundledTitle: incident.title || incident.keyword || incident.id,
+          localDeleted: true,
+          bundledHash
+        });
+      }
+      return;
+    }
     merged.push(incident);
-    syncMeta.incidentHashes[incident.id] = bundledHashes[incident.id];
+    syncMeta.incidentHashes[incident.id] = bundledHash;
     added += 1;
     changed = true;
   });
@@ -1194,17 +1231,28 @@ async function handleMapsApi(request, response, url) {
   await mkdir(mapsDir, { recursive: true });
   const id = url.pathname.split("/").filter(Boolean)[2];
   if (request.method === "GET" && !id) {
-    const maps = await readSavedMaps();
+    const maps = await queueDataWrite(readSavedMaps);
     sendJson(response, maps);
     return;
   }
   if (request.method === "GET" && id) {
     const file = mapFilePath(id);
-    if (!file || !existsSync(file)) return notFound(response);
-    const map = await readJsonFile(file);
+    const entry = file && await readMapFile(file);
+    if (!entry) return notFound(response);
+    const { map, revision } = entry;
     if (!isValidMap(map)) return sendJson(response, { error: "invalid map file" }, 500);
-    sendJson(response, map);
-    return;
+    const view = url.searchParams.get("view");
+    if (view === "overview") {
+      const { osmData, ...overview } = map;
+      const hasOsm = Object.values(osmData || {}).some((value) => Array.isArray(value) ? value.length : value != null);
+      return sendMapJson(request, response, { map: overview, osmRevision: hasOsm ? revision : null });
+    }
+    if (view === "osm") {
+      const expected = url.searchParams.get("revision");
+      if (expected && expected !== revision) return sendJson(response, { error: "map changed" }, 409);
+      return sendMapJson(request, response, map.osmData || {});
+    }
+    return sendMapJson(request, response, map);
   }
   if (request.method === "POST") {
     const map = await readJsonBody(request, response, {});
@@ -1212,42 +1260,112 @@ async function handleMapsApi(request, response, url) {
     map.id = safeId(map.id || map.name || `map-${Date.now()}`);
     if (!isValidMap(map)) return sendJson(response, { error: "invalid map payload" }, 400);
     const file = mapFilePath(map.id);
-    await writeJsonFile(file, map);
-    await updateMapIndexEntry(basename(file), map);
-    sendJson(response, map);
+    const saved = await queueDataWrite(async () => {
+      await writeJsonFile(file, map, 0);
+      await updateMapIndexEntry(basename(file), map);
+      return url.searchParams.has("summary") ? mapSummary(basename(file), map) : map;
+    });
+    await sendMapJson(request, response, saved);
     return;
   }
   if (request.method === "DELETE" && id) {
     const file = mapFilePath(id);
-    if (file && existsSync(file)) await unlink(file);
-    if (file) await removeMapIndexEntry(basename(file));
+    if (file) {
+      await queueDataWrite(async () => {
+        await unlink(file).catch((error) => { if (error.code !== "ENOENT") throw error; });
+        await removeMapIndexEntry(basename(file));
+      });
+    }
     sendJson(response, { ok: true });
     return;
   }
   notFound(response);
 }
 
+async function readMapFile(file) {
+  const handle = await open(file, "r").catch((error) => {
+    if (error.code !== "ENOENT") throw error;
+    return null;
+  });
+  if (!handle) return null;
+  try {
+    const { size, mtimeMs, ino } = await handle.stat();
+    const revision = `${size}-${mtimeMs}-${ino}`;
+    if (cachedMapFile?.file === file && cachedMapFile.revision === revision) return await cachedMapFile.entry;
+    const entry = handle.readFile("utf8").then((text) => ({ map: parseJson(text), revision }));
+    cachedMapFile = { file, revision, entry };
+    try {
+      return await entry;
+    } catch (error) {
+      if (cachedMapFile?.entry === entry) cachedMapFile = null;
+      throw error;
+    }
+  } finally {
+    await handle.close();
+  }
+}
+
+async function sendMapJson(request, response, data) {
+  const json = JSON.stringify(data);
+  const accepted = new Map(String(request.headers["accept-encoding"] || "").toLowerCase().split(",").map((encoding) => {
+    const [name, ...parameters] = encoding.trim().split(";");
+    const quality = parameters.find((parameter) => parameter.trim().startsWith("q="));
+    return [name.trim(), quality === undefined ? 1 : Number(quality.split("=")[1])];
+  }));
+  const compressed = json.length >= 1024 && (accepted.get("gzip") ?? accepted.get("*") ?? 0) > 0;
+  const body = compressed ? await gzipJson(json) : json;
+  response.setHeader("Vary", "Accept-Encoding");
+  if (compressed) response.setHeader("Content-Encoding", "gzip");
+  response.writeHead(200, { "content-type": "application/json; charset=utf-8", "content-length": Buffer.byteLength(body) });
+  response.end(body);
+}
+
 async function handleIncidentsApi(request, response) {
   if (request.method === "GET") {
-    const sourceFile = existsSync(incidentsFile)
-      ? incidentsFile
-      : existsSync(defaultIncidentsFile)
-        ? defaultIncidentsFile
-        : null;
-    if (!sourceFile) return sendJson(response, []);
-    const incidents = await readJsonFile(sourceFile);
-    sendJson(response, Array.isArray(incidents) ? incidents : []);
+    sendIncidentCatalog(response, await readIncidentCatalog());
     return;
   }
   if (request.method === "POST") {
-    const incidents = await readJsonBody(request, response, []);
-    if (!incidents) return;
+    const incidents = await readJsonBody(request, response, {});
     if (!Array.isArray(incidents)) return sendJson(response, { error: "invalid incidents payload" }, 400);
-    await writeJsonFile(incidentsFile, incidents);
-    sendJson(response, incidents);
+    await queueDataWrite(async () => {
+      const expectedRevision = request.headers["if-match"];
+      if (expectedRevision) {
+        const currentRevision = incidentCatalogRevision(await readIncidentCatalog());
+        if (expectedRevision !== currentRevision) {
+          if (incidentCatalogRevision(incidents) === currentRevision) return sendIncidentCatalog(response, incidents);
+          return sendJson(response, { error: "incident catalog changed" }, 412);
+        }
+      }
+      await writeJsonFile(incidentsFile, incidents);
+      sendIncidentCatalog(response, incidents);
+    });
     return;
   }
   notFound(response);
+}
+
+async function readIncidentCatalog() {
+  const sourceFile = existsSync(incidentsFile) ? incidentsFile : defaultIncidentsFile;
+  if (!existsSync(sourceFile)) return [];
+  const incidents = await readJsonFile(sourceFile);
+  if (!Array.isArray(incidents)) throw new Error("invalid incident catalog");
+  return incidents;
+}
+
+function incidentCatalogRevision(incidents) {
+  return `"${createHash("sha256").update(JSON.stringify(incidents)).digest("hex")}"`;
+}
+
+function sendIncidentCatalog(response, incidents) {
+  response.setHeader("ETag", incidentCatalogRevision(incidents));
+  sendJson(response, incidents);
+}
+
+function queueDataWrite(write) {
+  const result = pendingDataWrite.then(write);
+  pendingDataWrite = result.catch(() => {});
+  return result;
 }
 
 async function handleStartupSyncApi(request, response) {
@@ -1259,38 +1377,38 @@ async function handleStartupSyncApi(request, response) {
   if (request.method === "POST") {
     const body = await readJsonBody(request, response, {});
     if (!body) return;
-    if (body.type === "incident") {
-      await handleIncidentSyncChoice(body);
-      sendJson(response, startupSyncState);
-      return;
-    }
-    if (body.type !== "map") return sendJson(response, { error: "unsupported sync type" }, 400);
-    const conflict = startupSyncState.mapConflicts.find((item) => item.id === body.id || item.file === body.file);
-    if (!conflict) return sendJson(response, startupSyncState);
-    const action = String(body.action || "local").toLowerCase();
-    const sourceFile = join(defaultMapsDir, conflict.file);
-    const targetFile = join(mapsDir, conflict.file);
-    const meta = await readSyncMeta();
-    if (action === "bundled" || action === "neu") {
-      await copyDefaultFile(sourceFile, targetFile);
-      await removeMapIndexEntry(conflict.file);
-      meta.mapHashes[conflict.file] = conflict.bundledHash || await jsonFileHash(sourceFile);
-    } else if (action === "both" || action === "beide") {
+    if (!["map", "incident"].includes(body.type)) return sendJson(response, { error: "unsupported sync type" }, 400);
+    const applyChoice = body.type === "map" ? handleMapSyncChoice : handleIncidentSyncChoice;
+    await queueDataWrite(() => applyChoice(body));
+    return sendJson(response, startupSyncState);
+  }
+  notFound(response);
+}
+
+async function handleMapSyncChoice(body) {
+  const conflict = startupSyncState.mapConflicts.find((item) => item.id === body.id || item.file === body.file);
+  if (!conflict) return;
+  const action = String(body.action || "local").toLowerCase();
+  const sourceFile = join(defaultMapsDir, conflict.file);
+  const targetFile = join(mapsDir, conflict.file);
+  const meta = await readSyncMeta();
+  if (action === "bundled" || action === "neu") {
+    await copyDefaultFile(sourceFile, targetFile);
+    await removeMapIndexEntry(conflict.file);
+    meta.mapHashes[conflict.file] = conflict.bundledHash;
+    delete meta.mapIgnores[conflict.file];
+  } else {
+    if (action === "both" || action === "beide") {
       const bundled = await readJsonFile(sourceFile);
       const copy = await uniqueMapCopy(bundled);
       const copyFile = mapFilePath(copy.id);
-      await writeJsonFile(copyFile, copy);
+      await writeJsonFile(copyFile, copy, 0);
       await updateMapIndexEntry(basename(copyFile), copy);
-      meta.mapIgnores[conflict.file] = conflict.bundledHash || await jsonFileHash(sourceFile);
-    } else {
-      meta.mapIgnores[conflict.file] = conflict.bundledHash || await jsonFileHash(sourceFile);
     }
-    await writeSyncMeta(meta);
-    startupSyncState.mapConflicts = startupSyncState.mapConflicts.filter((item) => item !== conflict);
-    sendJson(response, startupSyncState);
-    return;
+    meta.mapIgnores[conflict.file] = conflict.bundledHash;
   }
-  notFound(response);
+  await writeSyncMeta(meta);
+  startupSyncState.mapConflicts = startupSyncState.mapConflicts.filter((item) => item !== conflict);
 }
 
 async function handleIncidentSyncChoice(body) {
@@ -1298,8 +1416,8 @@ async function handleIncidentSyncChoice(body) {
   if (!conflict || !existsSync(defaultIncidentsFile) || !existsSync(incidentsFile)) return;
   const action = String(body.action || "local").toLowerCase();
   const [bundled, local] = await Promise.all([
-    readJsonFile(defaultIncidentsFile).catch(() => []),
-    readJsonFile(incidentsFile).catch(() => [])
+    readJsonFile(defaultIncidentsFile),
+    readJsonFile(incidentsFile)
   ]);
   if (!Array.isArray(bundled) || !Array.isArray(local)) return;
   const bundledIncident = bundled.find((incident) => incident?.id === conflict.id);
@@ -1307,16 +1425,18 @@ async function handleIncidentSyncChoice(body) {
   const meta = await readSyncMeta();
   let next = local;
   if (action === "bundled" || action === "neu") {
-    next = local.map((incident) => incident?.id === conflict.id ? bundledIncident : incident);
-    meta.incidentHashes[conflict.id] = conflict.bundledHash || jsonValueHash(bundledIncident);
+    next = local.some((incident) => incident?.id === conflict.id)
+      ? local.map((incident) => incident?.id === conflict.id ? bundledIncident : incident)
+      : [...local, bundledIncident];
+    meta.incidentHashes[conflict.id] = conflict.bundledHash;
     delete meta.incidentIgnores[conflict.id];
   } else if (action === "both" || action === "beide") {
     next = [...local, uniqueIncidentCopy(bundledIncident, local)];
-    meta.incidentIgnores[conflict.id] = conflict.bundledHash || jsonValueHash(bundledIncident);
+    meta.incidentIgnores[conflict.id] = conflict.bundledHash;
   } else {
-    meta.incidentIgnores[conflict.id] = conflict.bundledHash || jsonValueHash(bundledIncident);
+    meta.incidentIgnores[conflict.id] = conflict.bundledHash;
   }
-  await writeJsonFile(incidentsFile, next);
+  if (next !== local) await writeJsonFile(incidentsFile, next);
   await writeSyncMeta(meta);
   startupSyncState.incidentConflicts = startupSyncState.incidentConflicts.filter((item) => item !== conflict);
 }
@@ -1516,7 +1636,7 @@ function incidentGenerationSystemPrompt(mode = "emergency", variationCount = 1) 
   const variationRules = variationCount > 1
     ? `Erzeuge genau ${variationCount} Varianten im variants-Array.
 - Alle Varianten muessen denselben callerName, callerText, locationMode, locationRoadTypes, poiCategories, destinationMode, destinationPoiProbability und destinationPoiCategories nutzen.
-- Variieren sollen nur report, situationReport und patients. Die medizinische Bandbreite soll realistisch sein, z.B. bei Brustschmerz von muskuloskelettal/Intercostalneuralgie bis ACS/Myokardinfarkt.
+- Variieren sollen nur report, situationReport, assistanceReason und patients. Die medizinische Bandbreite soll realistisch sein, z.B. bei Brustschmerz von muskuloskelettal/Intercostalneuralgie bis ACS/Myokardinfarkt.
 - Keine getrennten Anruftexte pro Variante, keine unterschiedlichen POI-/Zielmodi pro Variante.`
     : `Erzeuge genau 1 Variante im variants-Array.`;
   return `Du generierst Einsatzvorlagen fuer eine deutsche Rettungsdienst-Leitstellen-Simulation.
@@ -1544,7 +1664,8 @@ JSON-Schema:
     "destinationPoiCategories": ["practice|dentist|dialysis|nursing-home|hospital"],
     "requiredServices": ["FW","POL"],
     "report": "kurze Rueckmeldung an die Leitstelle, z.B. Zustand und benoetigtes Transportmittel, kein Abschlussbericht",
-    "situationReport": "Lagemeldung bei mehreren Patienten",
+    "situationReport": "kurze Lagemeldung",
+    "assistanceReason": "optionaler Befund oder Grund, wenn weitere Kräfte nachgefordert werden",
     "patients": [{
       "options": [{"probability":1,"vehicles":["RTW"]}],
       "requiredDepartmentKeys": ["internal|cardiology|neurology|trauma|pediatrics|obstetrics|psychiatry|stroke|icu|none"],
@@ -1657,7 +1778,8 @@ function normalizeGeneratedIncidents(input, fallbackTitle, mode = "emergency", v
       requiredServices: allowedList(rawVariant.requiredServices || sourceVariant.requiredServices, ["FW", "POL"]),
       weight: positiveWeight(rawVariant.weight, 1),
       report: patients.length > 1 ? "" : stringValue(rawVariant.report, 500),
-      situationReport: patients.length > 1 ? stringValue(rawVariant.situationReport || rawVariant.report, 600) : "",
+      situationReport: stringValue(rawVariant.situationReport || (patients.length > 1 ? rawVariant.report : ""), 600),
+      assistanceReason: stringValue(rawVariant.assistanceReason, 500),
       patients
     };
     return {
@@ -1805,18 +1927,15 @@ function allowedDestinationPoiCategories() {
 
 async function readSavedMaps() {
   const files = (await readdir(mapsDir)).filter((file) => file.endsWith(".json")).sort();
-  const bundledIndex = await readMapIndexFile(defaultMapIndexFile);
   const localIndex = await readMapIndexFile(mapIndexFile);
-  const bundledByFile = new Map(bundledIndex.map((entry) => [entry.file, entry]));
-  const localByFile = new Map(localIndex.map((entry) => [entry.file, entry]));
+  const indexedByFile = new Map(localIndex.map((entry) => [entry.file, entry]));
   const summaries = [];
   let indexChanged = false;
   for (const file of files) {
-    const localIndexed = localByFile.get(file);
-    const indexed = localIndexed || bundledByFile.get(file);
+    const indexed = indexedByFile.get(file);
     const filePath = join(mapsDir, file);
     const fileSize = statSync(filePath).size;
-    if (indexed && (!usesExternalDataDir || !localIndexed || localIndexed.size === fileSize)) {
+    if (indexed && (!usesExternalDataDir || indexed.size === fileSize)) {
       summaries.push(indexed);
       continue;
     }
@@ -1885,9 +2004,9 @@ async function readJsonFile(filePath) {
   return parseJson(await readFile(filePath, "utf8"));
 }
 
-async function writeJsonFile(filePath, data) {
+async function writeJsonFile(filePath, data, indent = 2) {
   const tmpPath = `${filePath}.${Date.now()}.tmp`;
-  await writeFile(tmpPath, JSON.stringify(data, null, 2), "utf8");
+  await writeFile(tmpPath, JSON.stringify(data, null, indent), "utf8");
   await rename(tmpPath, filePath);
 }
 
@@ -1897,6 +2016,7 @@ function parseJson(text) {
 
 function readBody(request) {
   return new Promise((resolve, reject) => {
+    const decoder = new StringDecoder("utf8");
     let body = "";
     let receivedBytes = 0;
     let settled = false;
@@ -1911,12 +2031,12 @@ function readBody(request) {
         request.destroy();
         return;
       }
-      body += chunk.toString("utf8");
+      body += decoder.write(chunk);
     });
     request.on("end", () => {
       if (settled) return;
       settled = true;
-      resolve(body);
+      resolve(body + decoder.end());
     });
     request.on("error", (error) => {
       if (settled) return;

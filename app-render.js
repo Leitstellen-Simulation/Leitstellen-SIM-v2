@@ -17,19 +17,57 @@ function syncSpeedSelect() {
 
 function renderRadioAlerts() {
   if (!el.radioAlerts) return;
-  const alerts = state.vehicles.filter((vehicle) => vehicle.radioStatus === 5 || vehicle.radioStatus === 0 || vehicle.radioStatus === 6);
-  el.radioAlerts.innerHTML = "";
+  const alerts = vehiclesWithRadioAlerts();
+  updateDispatchBadge(el.mobileRadioCount, alerts.length, alerts.some((vehicle) => vehicle.radioStatus === 0));
+  const existing = new Map([...el.radioAlerts.children].map((button) => [button.dataset.vehicleId, button]));
+  const activeIds = new Set(alerts.map((vehicle) => vehicle.id));
+  for (const [id, button] of existing) {
+    if (!activeIds.has(id)) button.remove();
+  }
   alerts.forEach((vehicle) => {
-    const button = document.createElement("button");
-    button.type = "button";
+    const button = existing.get(vehicle.id) || document.createElement("button");
+    if (!button.isConnected) {
+      button.type = "button";
+      button.dataset.vehicleId = vehicle.id;
+      button.addEventListener("click", () => sendSpeechPrompt(vehicle.id));
+      el.radioAlerts.append(button);
+    }
     button.className = `radio-alert radio-alert-${vehicle.radioStatus}`;
-    button.textContent = `${vehicle.radioStatus} - ${vehicle.shortName || vehicle.name}`;
+    const text = `${vehicle.radioStatus} · ${vehicle.shortName || vehicle.name}`;
+    if (button.textContent !== text) button.textContent = text;
     button.title = vehicle.radioStatus === 6
       ? `Status 6 ${vehicle.name} quittieren`
       : `Status ${vehicle.radioStatus} ${vehicle.radioStatus === 0 ? "dringenden Sprechwunsch" : "Sprechwunsch"} ${vehicle.name} annehmen`;
-    button.addEventListener("click", () => sendSpeechPrompt(vehicle.id));
-    el.radioAlerts.append(button);
+    button.setAttribute("aria-label", button.title);
   });
+  renderDispatchQueue();
+}
+
+function vehiclesWithRadioAlerts() {
+  return state.vehicles.filter((vehicle) => [0, 5, 6].includes(vehicle.radioStatus));
+}
+
+function renderRadioIncidentFilter() {
+  const incident = state.incidents.find((item) => item.id === state.selectedIncidentId && item.status !== "geschlossen");
+  if (!incident) state.radioIncidentFilter = false;
+  const button = el.radioIncidentFilter;
+  button.disabled = !incident;
+  button.setAttribute("aria-pressed", String(state.radioIncidentFilter));
+  button.title = incident ? `${incident.keyword} · ${incident.location}` : "Einsatz in der Liste oder auf der Karte auswählen";
+  const incidentId = state.radioIncidentFilter ? incident.id : undefined;
+  if (el.radioLog.dataset.incidentId === incidentId) return;
+  if (incidentId) el.radioLog.dataset.incidentId = incidentId;
+  else delete el.radioLog.dataset.incidentId;
+  for (const entry of el.radioLog.children) {
+    entry.hidden = Boolean(incidentId && !entry.dataset.incidentIds?.split(" ").includes(incidentId));
+  }
+  el.radioLog.scrollTop = 0;
+}
+
+function updateDispatchBadge(badge, count, urgent = false) {
+  if (!badge) return;
+  if (badge.textContent !== String(count)) badge.textContent = String(count);
+  badge.dataset.level = urgent ? "urgent" : count ? "pending" : "idle";
 }
 
 function renderClock() {
@@ -37,6 +75,7 @@ function renderClock() {
   const hours = String(Math.floor(displayMinute / 60)).padStart(2, "0");
   const minutes = String(displayMinute % 60).padStart(2, "0");
   el.clockLabel.textContent = `${hours}:${minutes}`;
+  if (el.callDispositionDialog.open) renderCallElapsed();
 }
 
 function updateShiftStates() {
@@ -169,42 +208,28 @@ function shiftTimeLabel(hourText, minuteText = "0") {
 function renderMap() {
   if (!state.mapReady) return;
   clearMapLayers();
-  const markerSlots = new Map();
 
   state.center.stations.forEach((station) => {
-    const vehicleSummary = Object.entries(station.vehicles || {})
-      .map(([type, count]) => `${count} ${type}`)
-      .join(", ");
     const availableCount = stationAvailableVehicles(station).length;
     const foreignStation = isForeignMapPoint(station);
-    const vehicleCounts = station.vehicles || {};
-    const hasOnlyStabilizers = Object.entries(vehicleCounts).some(([, count]) => Number(count) > 0)
-      && Object.entries(vehicleCounts).every(([type, count]) => !Number(count) || isStabilizerVehicle(type));
-    const stationType = `${availableCount ? "station station-available" : "station station-empty"}${hasOnlyStabilizers ? " station-stabilizer" : ""}${foreignStation ? " foreign-map-point" : ""}`;
-    const stationLabel = foreignStation ? "FRW" : hasOnlyStabilizers
-      ? (vehicleCounts.HVO ? "HvO" : "FR")
-      : (vehicleCounts.RTH || vehicleCounts.ITH) && !vehicleCounts.RTW && !vehicleCounts.KTW && !vehicleCounts.ITW ? "RTH"
-        : (vehicleCounts.NEF || vehicleCounts.VEF) && !vehicleCounts.RTW && !vehicleCounts.KTW && !vehicleCounts.ITW ? "NEF"
-          : "RW";
+    const stationType = `${availableCount ? "station station-available" : "station station-empty"}${foreignStation ? " foreign-map-point" : ""}`;
+    const stationLabel = stationMapSymbol(station);
     const availabilityText = availableCount ? `${availableCount} Fahrzeug(e) an der Wache` : "keine Fahrzeuge an der Wache";
     const stationKind = foreignStation ? "Fremdwache" : "Rettungswache";
-    const position = stackedMapPosition(offsetStationPosition(station), markerSlots);
-    const marker = addMapMarker("stations", position.lat, position.lng, stationLabel, stationType, `<strong>${escapeHtml(station.label)}</strong><br>${escapeHtml(stationKind)}<br>${escapeHtml(station.address)}<br>${escapeHtml(vehicleSummary)}<br>${escapeHtml(availabilityText)}`);
+    const marker = addMapMarker("stations", station.lat, station.lng, stationLabel, stationType, "", {
+      title: `${station.label} · ${stationKind} · ${availabilityText}`,
+      count: availableCount
+    });
     marker.bindPopup(stationPopupContent(station), { autoClose: true, closeOnClick: true, closeButton: true });
   });
-  state.center.hospitals.forEach((hospital) => {
-    const foreignHospital = isForeignMapPoint(hospital);
-    const unavailable = hospitalIsUnavailable(hospital);
-    const position = stackedMapPosition(hospital, markerSlots);
-    const unavailableText = unavailable ? "Krankenhaus abgemeldet<br>" : "";
-    addMapMarker("hospitals", position.lat, position.lng, foreignHospital ? "FKH" : "KH", `hospital${foreignHospital ? " foreign-map-point" : ""}${unavailable ? " hospital-unavailable" : ""}`, `<strong>${escapeHtml(hospital.label)}</strong><br>${unavailableText}${foreignHospital ? "Fremdkrankenhaus<br>" : ""}${escapeHtml(hospital.address)}`);
-  });
+  renderHospitalMarkers();
   state.incidents.filter((incident) => incident.status !== "geschlossen").forEach((incident) => {
     const lat = Number.isFinite(incident.lat) ? incident.lat : state.center.mapCenter[0];
     const lng = Number.isFinite(incident.lng) ? incident.lng : state.center.mapCenter[1];
-    const position = stackedMapPosition({ lat, lng }, markerSlots);
     const attention = incidentHasRadioAttention(incident) ? " attention" : "";
-    const marker = addMapMarker("incidents", position.lat, position.lng, "!", `incident${attention}`, `${incident.keyword}<br>${incident.location || "Regensburg"}`);
+    const bucket = incidentListBucket(incident);
+    const selected = incident.id === state.selectedIncidentId;
+    const marker = addMapMarker("incidents", lat, lng, { emergency: "!", transport: "T", scheduled: "P" }[bucket], `incident incident-${bucket}${attention}${selected ? " map-selected" : ""}`, `${escapeHtml(incident.keyword)}<br>${escapeHtml(incident.location || "Regensburg")}`, { title: incident.keyword, zIndexOffset: selected ? 300 : 100 });
     marker.on("click", () => {
       selectIncidentFromMapOrList(incident);
       renderAll();
@@ -224,12 +249,11 @@ function renderMap() {
 
     const icon = L.divIcon({
       className: "",
-      html: `<span class="vehicle-marker vehicle-${vehicle.type} ${vehicle.status > 2 ? "busy" : ""} ${vehicle.routeMeta?.signal ? "signal" : ""} ${vehicle.radioStatus ? "radio-attention" : ""}"><span class="vehicle-marker-text"><strong>${escapeHtml(vehicle.type)}</strong><small>${escapeHtml(vehicle.shortName || vehicle.name)}</small></span><em class="vehicle-marker-status status-${vehicle.status}">${vehicle.status}</em></span>`,
+      html: `<span class="vehicle-marker vehicle-${vehicle.type} ${vehicle.status > 2 ? "busy" : ""} ${vehicle.routeMeta?.signal ? "signal" : ""} ${vehicle.radioStatus ? "radio-attention" : ""}"><span class="vehicle-marker-text"><strong><span class="vehicle-map-symbol" aria-hidden="true">${vehicleMapSymbol(vehicle.type)}</span> ${escapeHtml(vehicle.type)}</strong><small>${escapeHtml(vehicle.shortName || vehicle.name)}</small></span><em class="vehicle-marker-status status-${vehicle.status}">${vehicle.status}</em></span>`,
       iconSize: [72, 34],
       iconAnchor: [36, 17]
     });
-    const position = stackedMapPosition(vehicle, markerSlots);
-    const marker = L.marker([position.lat, position.lng], { icon })
+    const marker = L.marker([vehicle.lat, vehicle.lng], { icon, title: vehicle.name })
       .bindPopup(vehiclePopupContent(vehicle))
       .addTo(state.map);
     marker.on("click", (event) => {
@@ -244,31 +268,24 @@ function renderMap() {
   });
 }
 
-function stackedMapPosition(point, markerSlots) {
-  const lat = Number(point?.lat);
-  const lng = Number(point?.lng);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !state.map?.project) return { lat, lng };
-  const key = `${lat.toFixed(5)}:${lng.toFixed(5)}`;
-  const index = markerSlots.get(key) || 0;
-  markerSlots.set(key, index + 1);
-  if (!index) return { lat, lng };
-  const direction = index % 2 ? -1 : 1;
-  const step = Math.ceil(index / 2);
-  const horizontalStep = Math.floor((step - 1) / 4);
-  const pixelOffset = L.point(horizontalStep * 38, direction * (38 + (step - 1) % 4 * 38));
-  const projected = state.map.project(L.latLng(lat, lng), state.map.getZoom()).add(pixelOffset);
-  const shifted = state.map.unproject(projected, state.map.getZoom());
-  return { lat: shifted.lat, lng: shifted.lng };
+function vehicleMapSymbol(type) {
+  if (isStabilizerVehicle(type)) return MAP_RESPONDER_SYMBOL;
+  return { RTH: "↕", ITH: "↕", NEF: "✚", VEF: "✚", ELRD: "◆" }[type] || "▰";
 }
 
-function offsetStationPosition(station) {
-  const overlapsHospital = state.center.hospitals.some((hospital) => mapDistance(station.lat, station.lng, hospital.lat, hospital.lng) < .08);
-  if (!overlapsHospital) return { lat: station.lat, lng: station.lng };
-  return { lat: station.lat + .0012, lng: station.lng - .0012 };
-}
-
-function isForeignMapPoint(point) {
-  return Boolean(point?.foreign || point?.foreignStation || point?.outsideCoverage || point?.external);
+function renderHospitalMarkers() {
+  for (const entries of groupHospitalsByLocation(state.center.hospitals)) {
+    const first = entries[0];
+    const foreign = entries.every(isForeignMapPoint);
+    const unavailable = entries.every(hospitalIsUnavailable);
+    const count = entries.length > 1 ? entries.length : undefined;
+    const title = hospitalMapMarkerTitle(entries);
+    const popup = entries.map((hospital) => {
+      const detail = [hospitalIsUnavailable(hospital) && "abgemeldet", isForeignMapPoint(hospital) && "Fremdkrankenhaus"].filter(Boolean);
+      return `<div><strong>${escapeHtml(hospital.label)}</strong>${detail.length ? ` · ${detail.join(" · ")}` : ""}</div>`;
+    }).join("");
+    addMapMarker("hospitals", first.lat, first.lng, "+", `hospital${foreign ? " foreign-map-point" : ""}${unavailable ? " hospital-unavailable" : ""}`, popup, { title, count });
+  }
 }
 
 function stationAvailableVehicles(station) {
@@ -295,25 +312,11 @@ function vehicleAtHomeStation(vehicle) {
 
 function incidentHasRadioAttention(incident) {
   const hasTransportDestinationRequest = activeTransportRequests(incident).length > 0;
-  if (!hasTransportDestinationRequest && incident.assigned?.length && incident.assigned.every((id) => {
-    const vehicle = state.vehicles.find((unit) => unit.id === id);
-    return vehicle && [7, 8, 1, 2, 6].includes(vehicle.status);
-  })) return false;
+  if (!incident.assigned.length || hasTransportDestinationRequest || openReportedAssistanceNeeds(incident).length) return true;
   return incident.assigned.some((id) => {
     const vehicle = state.vehicles.find((unit) => unit.id === id);
-    return vehicle?.radioStatus === 5 || vehicle?.radioStatus === 0;
-  }) || hasTransportDestinationRequest || missingVehicleTypesAtScene(incident).length > 0 || missingExternalServices(incident, "dispatch").length > 0;
-}
-
-function missingVehicleTypesAtScene(incident) {
-  const assigned = incident.assigned
-    .map((id) => state.vehicles.find((unit) => unit.id === id))
-    .filter((vehicle) => vehicle && vehicle.status === 4);
-  return missingRequiredTypesForResources(
-    incident.required || [],
-    assigned,
-    (vehicle, requiredTypes) => requiredTypes.filter((type) => vehicleSatisfiesRequirement(vehicle.type, type))
-  );
+    return [0, 5].includes(vehicle?.radioStatus) && radioIncidentId(vehicle, vehicle.radioStatus) === incident.id;
+  });
 }
 
 function incidentHasVehicleStatus(incident, status) {
@@ -377,7 +380,7 @@ function forceRtwTransport(vehicleId) {
   patient.rtwMustTransport = true;
   patient.awaitingKtwHandover = false;
   incident.ktwHandoverDecision = null;
-  logRadio(`${vehicle.name}: RTW übernimmt den Transport.`, "radio");
+  logRadio(`${vehicle.name}: RTW übernimmt den Transport.`, "radio", incident.id);
   scheduleTreatmentCompletion(vehicle, incident);
   renderAll();
 }
@@ -399,11 +402,11 @@ function askAccompanyingDoctorRelease(vehicleId) {
   if (canRelease) {
     vehicle.accompanyingActive = false;
     vehicle.statusText = vehicle.statusText.replace(/begleitet aktiv/i, "begleitet abkoemmlich");
-    logRadio(`${vehicle.name}: Status 5 - Notarzt abkoemmlich, Freimeldung moeglich.`, "radio");
+    logRadio(`${vehicle.name}: Status 5 - Notarzt abkoemmlich, Freimeldung moeglich.`, "radio", incident?.id);
     releaseAccompanyingDoctor(vehicle.id);
     return;
   }
-  logRadio(`${vehicle.name}: Status 5 - Notarzt derzeit nicht abkoemmlich.`, "radio");
+  logRadio(`${vehicle.name}: Status 5 - Notarzt derzeit nicht abkoemmlich.`, "radio", incident?.id);
   vehicle.statusText = "Notarztbegleitung weiter gebunden";
   renderAll();
 }
@@ -411,6 +414,7 @@ function askAccompanyingDoctorRelease(vehicleId) {
 function releaseAccompanyingDoctor(vehicleId) {
   const vehicle = state.vehicles.find((unit) => unit.id === vehicleId);
   if (!vehicle || !canReleaseAccompanyingDoctor(vehicle)) return;
+  const incidentId = vehicle.incidentId;
   const transport = state.vehicles.find((unit) => unit.id === vehicle.boundTransportVehicleId);
   if (transport?.boundDoctorVehicleId === vehicle.id) transport.boundDoctorVehicleId = null;
   cancelVehicleRoute(vehicle);
@@ -423,7 +427,7 @@ function releaseAccompanyingDoctor(vehicleId) {
   vehicle.target = null;
   vehicle.route = null;
   vehicle.routeMeta = null;
-  logRadio(`${vehicle.name}: Status 1, Notarzt abkömmlich freigemeldet.`, "radio");
+  logRadio(`${vehicle.name}: Status 1, Notarzt abkömmlich freigemeldet.`, "radio", incidentId);
   renderAll();
 }
 
@@ -442,10 +446,10 @@ function toggleVehicleSignal(vehicleId) {
     const oldSignal = vehicle.routeMeta.signal;
     vehicle.routeMeta.signal = !vehicle.routeMeta.signal;
     rescaleVehicleRouteForSignal(vehicle, oldSignal, vehicle.routeMeta.signal);
-    logRadio(`${vehicle.name}: Fahrt ${vehicle.routeMeta.signal ? "mit" : "ohne"} Sondersignal fortgesetzt.`, "radio");
+    logRadio(`${vehicle.name}: Fahrt ${vehicle.routeMeta.signal ? "mit" : "ohne"} Sondersignal fortgesetzt.`, "radio", vehicle.incidentId);
   } else {
     vehicle.dispatchSignal = !vehicle.dispatchSignal;
-    logRadio(`${vehicle.name}: Anfahrt ${vehicle.dispatchSignal ? "mit" : "ohne"} Sondersignal vorgemerkt.`, "radio");
+    logRadio(`${vehicle.name}: Anfahrt ${vehicle.dispatchSignal ? "mit" : "ohne"} Sondersignal vorgemerkt.`, "radio", vehicle.nextIncidentId);
   }
   renderAll();
 }
@@ -472,7 +476,8 @@ function changeTransportDestination(vehicleId) {
   const vehicle = state.vehicles.find((unit) => unit.id === vehicleId);
   const incident = state.incidents.find((item) => item.id === vehicle?.incidentId);
   if (!vehicle || !incident || vehicle.status !== 7) return;
-  const previousSignal = Boolean(vehicle.routeMeta?.signal);
+  const rendezvousSignal = tna.destinationChanging(incident);
+  const previousSignal = Boolean(vehicle.routeMeta?.signal ?? rendezvousSignal);
   cancelVehicleRoute(vehicle);
   vehicle.statusText = "wartet auf neues Transportziel";
   holdBoundDoctorForDestinationChange(vehicle, incident);
@@ -488,18 +493,15 @@ function changeTransportDestination(vehicleId) {
   };
   incident.transportRequests = [incident.transportRequest];
   state.selectedIncidentId = incident.id;
-  logRadio(`${vehicle.name}: Zielortwechsel angefordert.`, "warn");
+  logRadio(`${vehicle.name}: Zielortwechsel angefordert.`, "warn", incident.id);
   renderAll();
 }
 
-function addMapMarker(group, lat, lng, label, type, popup) {
-  const icon = L.divIcon({
-    className: "",
-    html: `<span class="map-marker ${type}">${label}</span>`,
-    iconSize: [34, 34],
-    iconAnchor: [17, 17]
-  });
-  const marker = L.marker([lat, lng], { icon }).bindPopup(popup).addTo(state.map);
+function addMapMarker(group, lat, lng, label, type, popup, { title = label, count, zIndexOffset = 0 } = {}) {
+  const icon = createMapPointIcon(label, type, count);
+  const marker = L.marker([lat, lng], { icon, title, zIndexOffset }).addTo(state.map);
+  marker.getElement()?.setAttribute("aria-label", title);
+  if (popup) marker.bindPopup(popup);
   state.layers[group].push(marker);
   return marker;
 }
@@ -532,8 +534,10 @@ function renderCoveragePins() {
 }
 
 function renderIncidents() {
+  renderDispatchQueue();
   const previousScrollTop = el.incidentList?.scrollTop ?? 0;
   const active = state.incidents.filter((incident) => incident.status !== "geschlossen");
+  renderRadioIncidentFilter();
   el.incidentCount.textContent = `${active.length} offen`;
   renderIncidentTabCounts(active);
   const visible = active
@@ -601,9 +605,9 @@ function renderIncidentTabCounts(active) {
 
 function incidentNeedsDispositionAttention(incident) {
   if (!incident.assigned?.length) return true;
+  if (tna.requestTime(incident) !== null) return true;
   if (activeTransportRequests(incident).length) return true;
-  if (incident.assistanceDecision?.missing?.length) return true;
-  return /^Nachforderung/i.test(incident.status || "");
+  return openReportedAssistanceNeeds(incident).length > 0;
 }
 
 function incidentNeedsSlowAlert(incident) {
@@ -618,12 +622,20 @@ function renderIncidentsCollapsible(visible) {
     const summary = document.createElement("button");
     summary.type = "button";
     summary.className = "incident-summary";
+    const location = incident.location || "Regensburg";
+    const parts = location.split(",").map((part) => part.trim()).filter(Boolean);
+    const town = parts.at(-1);
+    const cityFirst = parts.length > 1 && !/\d/.test(town) ? `${town} · ${parts.slice(0, -1).join(", ")}` : location;
+    const timing = `${incidentStartTimeLabel(incident)} | ${incidentElapsedLabel(incident)} | ${incident.status}`;
+    summary.title = `${cityFirst}\n${incident.keyword}\n${timing}`;
+    summary.setAttribute("aria-expanded", String(isOpen));
+    const tnaBadge = tna.onScene(incident)
+      ? '<span class="incident-tna" title="Telenotarzt unterstützt vor Ort" aria-label="Telenotarzt unterstützt vor Ort">TNA</span>'
+      : "";
     summary.innerHTML = `
-      <span>
-        <strong>${escapeHtml(incident.keyword)}</strong>
-        <small>${escapeHtml(incident.location || "Regensburg")}</small>
-      </span>
-      <span class="incident-state">${incidentStartTimeLabel(incident)} | ${incidentElapsedLabel(incident)} | ${escapeHtml(incident.status)}</span>
+      <strong class="incident-location">${escapeHtml(cityFirst)}</strong>
+      <small>${escapeHtml(incident.keyword)}</small>
+      <span class="incident-meta">${tnaBadge}<span class="incident-state">${escapeHtml(incidentElapsedLabel(incident))} · ${escapeHtml(incident.status)}</span></span>
     `;
     summary.addEventListener("click", () => {
       if (isOpen) state.selectedIncidentId = null;
@@ -665,11 +677,30 @@ function renderIncidentsCollapsible(visible) {
     const editButton = document.createElement("button");
     editButton.type = "button";
     editButton.textContent = "Bearbeiten / nachalarmieren";
+    editButton.className = "incident-edit-action";
+    editButton.title = editButton.textContent;
     editButton.addEventListener("click", (event) => {
       event.stopPropagation();
       openIncidentDialog(incident);
     });
-    details.append(editButton);
+    const actions = document.createElement("div");
+    actions.className = "incident-actions";
+    actions.append(editButton, renderServiceSupport(incident));
+    details.append(actions);
+    const tnaStatus = tna.status(incident);
+    if (tnaStatus) {
+      const tnaRow = document.createElement("div");
+      tnaRow.className = "tna-status";
+      appendTextBlock(tnaRow, "strong", tnaStatus);
+      if (tna.requestTime(incident) !== null) {
+        const connect = document.createElement("button");
+        connect.type = "button";
+        connect.textContent = "TNA verbinden";
+        connect.addEventListener("click", () => tna.connect(incident.id));
+        tnaRow.append(connect);
+      }
+      details.append(tnaRow);
+    }
 
     const handoffBox = document.createElement("div");
     handoffBox.className = "handoff-actions";
@@ -688,8 +719,8 @@ function renderIncidentsCollapsible(visible) {
       handoffBox.append(button);
     });
     handoffBox.hidden = true;
-    details.append(renderServiceSupport(incident));
-    if (incident.assistanceDecision) details.append(renderAssistanceDecision(incident));
+    const assistance = openReportedAssistanceNeeds(incident);
+    if (assistance.length) details.append(renderAssistanceDecision(incident, assistance));
     if (incident.ktwHandoverDecision) details.append(renderKtwHandoverDecision(incident));
     if (incident.itwSubstitutionDecision) details.append(renderItwSubstitutionDecision(incident));
     if (incident.elrdWaitDecision) details.append(renderElrdWaitDecision(incident));
@@ -800,11 +831,11 @@ function incidentStartTimeLabel(incident) {
   return hours + ":" + minutes;
 }
 
-function renderAssistanceDecision(incident) {
+function renderAssistanceDecision(incident, missing) {
   const wrapper = document.createElement("div");
   wrapper.className = "assistance-decision";
-  const missing = incident.assistanceDecision?.missing || [];
   appendTextBlock(wrapper, "strong", `Nachforderung: ${missing.join(", ")}`);
+  if (incident.assistanceDecision?.reason) appendTextBlock(wrapper, "span", incident.assistanceDecision.reason);
   const patientRows = assistanceDecisionPatients(incident, missing);
   if (missing.includes("ELRD") && patientRows.length) {
     appendAssistanceButtons(wrapper, incident, ["ELRD"]);
@@ -854,13 +885,14 @@ function applyNoElrdDecision(incidentId) {
       }
     }
   }
-  logRadio(`${incident.keyword}: ELRD nicht erforderlich.`, "radio");
+  logRadio(`${incident.keyword}: ELRD nicht erforderlich.`, "radio", incident.id);
   renderAll();
 }
 
 function appendAssistanceButtons(parent, incident, missing, patientId = null) {
   const patient = patientId ? (incident.patient?.patients || []).find((item) => item.id === patientId) : null;
-  const reanimationLocked = patient?.acuity === "reanimation";
+  const reanimationLocked = (patient ? patient.acuity === "reanimation" : incident.patient?.patients?.some((item) => item.acuity === "reanimation"))
+    || tna.physicalMissing(incident).length > 0;
   const dismissed = assistanceAlternativeDismissed(incident, patientId);
   if (missing.includes("ELRD")) {
     const button = document.createElement("button");
@@ -984,14 +1016,14 @@ function answerItwSubstitution(incidentId, useRegularVehicles) {
     patient.itwMustTransport = false;
     itw.supportOnly = true;
     itw.statusText = `${patient.label} bis Uebergabe an regulaere Rettungsmittel versorgt`;
-    logRadio(`${itw.name}: Regulaere Rettungsmittel sollen nachgefuehrt werden (${(request.regularRequired || []).join(" + ")}).`, "radio");
+    logRadio(`${itw.name}: Regulaere Rettungsmittel sollen nachgefuehrt werden (${(request.regularRequired || []).join(" + ")}).`, "radio", incident.id);
     maybeRequestAdditionalResources(itw, incident);
   } else {
     patient.itwAwaitingRegular = false;
     patient.itwMustTransport = true;
     itw.supportOnly = false;
     itw.statusText = `${patient.label} wird durch ITW weiter versorgt`;
-    logRadio(`${itw.name}: ITW uebernimmt Versorgung und Transport.`, "radio");
+    logRadio(`${itw.name}: ITW uebernimmt Versorgung und Transport.`, "radio", incident.id);
     scheduleTreatmentCompletion(itw, incident);
   }
   renderAll();
@@ -1010,13 +1042,13 @@ function answerElrdWait(incidentId, shouldWait) {
     patient.elrdWaitBypassed = false;
     vehicle.statusText = `${patient.label} transportbereit, wartet auf ELRD`;
     maybeRequestAdditionalResources(vehicle, incident);
-    logRadio(`${vehicle.name}: Wartet mit Transportzielabfrage auf ELRD.`, "radio");
+    logRadio(`${vehicle.name}: Wartet mit Transportzielabfrage auf ELRD.`, "radio", incident.id);
     scheduleTreatmentCompletion(vehicle, incident);
     openIncidentDialog(incident);
   } else {
     patient.waitForElrdBeforeTransport = false;
     patient.elrdWaitBypassed = true;
-    logRadio(`${vehicle.name}: ELRD wird nicht abgewartet, Transportzielabfrage folgt.`, "radio");
+    logRadio(`${vehicle.name}: ELRD wird nicht abgewartet, Transportzielabfrage folgt.`, "radio", incident.id);
     requestTransportDestination(vehicle, incident);
   }
   renderAll();
@@ -1033,7 +1065,7 @@ function answerKtwHandover(incidentId, available) {
   if (!available) {
     patient.rtwMustTransport = true;
     patient.awaitingKtwHandover = false;
-    logRadio(`${rtw.name}: Kein KTW zeitnah verfügbar, RTW übernimmt Transport.`, "radio");
+  logRadio(`${rtw.name}: Kein KTW zeitnah verfügbar, RTW übernimmt Transport.`, "radio", incident.id);
     scheduleTreatmentCompletion(rtw, incident);
     renderAll();
     return;
@@ -1042,7 +1074,7 @@ function answerKtwHandover(incidentId, available) {
   patient.rtwMustTransport = false;
   patient.supportCapReachedAt = simMinuteNow();
   patient.supportCapValue = Math.min(patientTreatmentProgress(patient, incident), 0.95);
-  logRadio(`${rtw.name}: KTW soll nachgeführt werden, Versorgung bis Übergabe.`, "radio");
+  logRadio(`${rtw.name}: KTW soll nachgeführt werden, Versorgung bis Übergabe.`, "radio", incident.id);
   openIncidentDialog(incident);
   scheduleTreatmentCompletion(rtw, incident);
   renderAll();
@@ -1054,7 +1086,7 @@ function applyAssistanceAlternative(incidentId, mode, patientId = null) {
   const patient = patientId ? (incident.patient?.patients || []).find((item) => item.id === patientId) : null;
   const affectedPatients = patient ? [patient] : (incident.patient?.patients || []).filter((item) => !item.completed && !item.transporting);
   if (affectedPatients.some((item) => item.acuity === "reanimation") && ["without-doctor", "without-rtw", "nef-ktw", "rtw-only"].includes(mode)) {
-    logRadio(`Rueckfrage ${incident.keyword}: nicht moeglich, Reanimation erfordert RTW und NEF.`, "warn");
+    logRadio(`Rueckfrage ${incident.keyword}: nicht moeglich, Reanimation erfordert RTW und NEF.`, "warn", incident.id);
     dismissAssistanceAlternative(incident, mode, patientId);
     renderAll();
     return;
@@ -1062,7 +1094,7 @@ function applyAssistanceAlternative(incidentId, mode, patientId = null) {
   const chance = mode === "rtw-only" ? .25 : .5;
   const accepted = Math.random() < chance;
   if (!accepted) {
-    logRadio(`Rückfrage ${incident.keyword}: nicht möglich, Nachforderung bleibt bestehen.`, "warn");
+    logRadio(`Rückfrage ${incident.keyword}: nicht möglich, Nachforderung bleibt bestehen.`, "warn", incident.id);
     dismissAssistanceAlternative(incident, mode, patientId);
     renderAll();
     return;
@@ -1096,7 +1128,7 @@ function applyAssistanceAlternative(incidentId, mode, patientId = null) {
   }
   resetTreatmentCapsAfterRequirementChange(incident);
   const patientText = patient ? ` für ${patient.label || "Patient"}` : "";
-  logRadio(`Rückfrage ${incident.keyword}${patientText}: Alternative akzeptiert, Transport später mit Sondersignal.`, "radio");
+  logRadio(`Rückfrage ${incident.keyword}${patientText}: Alternative akzeptiert, Transport später mit Sondersignal.`, "radio", incident.id);
   rescheduleSceneTreatment(incident);
   renderAll();
 }
@@ -1398,7 +1430,7 @@ function requestRthForLongTransport(incident, hospital, request = incident.trans
   request.rthRequestedForHospitalId = hospital.id;
   incident.transportRequest = request;
   incident.status = "wartet auf RTH fuer Transport";
-  logRadio(`RTH fuer langen Transport nach ${hospital.label} nachgefordert. Krankenhausauswahl bleibt offen.`, "warn");
+  logRadio(`RTH fuer langen Transport nach ${hospital.label} nachgefordert. Krankenhausauswahl bleibt offen.`, "warn", incident.id);
   assignVehicle(rth.id, incident.id);
   renderAll();
 }
@@ -1551,7 +1583,7 @@ function releasePendingVehicle(vehicleId, incidentId) {
   incident.assigned = incident.assigned.filter((id) => id !== vehicle.id);
   incident.status = incident.assigned.length ? "in Bearbeitung" : "offen";
   vehicle.handoverTimer = scheduleTimeout(() => clearVehicle(vehicle.id), simulationDelay(handoverMinutes()));
-  logRadio(`${vehicle.name}: Folgeeinsatz zurückgenommen, bleibt zunächst am Krankenhaus.`, "warn");
+  logRadio(`${vehicle.name}: Folgeeinsatz zurückgenommen, bleibt zunächst am Krankenhaus.`, "warn", incident.id);
   renderAll();
 }
 
@@ -1604,7 +1636,7 @@ function removeAssignedVehicle(vehicleId, incidentId) {
   incident.assigned = incident.assigned.filter((id) => id !== vehicle.id);
   incident.status = incident.assigned.length ? "in Bearbeitung" : "offen";
   clearResolvedAssistanceNeeds(incident);
-  logRadio(`${vehicle.name}: vom Einsatz ${incident.keyword} zurückgenommen.`, "warn");
+  logRadio(`${vehicle.name}: vom Einsatz ${incident.keyword} zurückgenommen.`, "warn", incident.id);
   renderDialogVehicles(incident, incident);
   renderAll();
 }
@@ -1615,12 +1647,36 @@ function statusTextForIdleVehicle(vehicle) {
   return vehicle.statusText || "frei";
 }
 
+function renderIncidentSelectedTypes(incident) {
+  const assignedIds = new Set(incident?.assigned || []);
+  const selected = [];
+  const assigned = [];
+  for (const vehicle of state.vehicles) {
+    if (assignedIds.has(vehicle.id)) assigned.push(vehicle.type);
+    else if (state.selectedDialogVehicleIds.has(vehicle.id)) selected.push(vehicle.type);
+  }
+  const source = incident || currentIncidentDialogSource();
+  const defaults = dispositionDefaults(source);
+  const required = defaults ? addElrdToRequiredForDialog(defaults.required, source) : [];
+  const missing = missingDispositionVehicleTypes(required, [...selected, ...assigned]);
+  const summary = vehicleTypeCounts(selected).join(" · ") || (assigned.length ? "Keine neuen Fahrzeuge" : "Keine Fahrzeuge");
+  const assignedSummary = assigned.length ? `Zugeordnet · ${vehicleTypeCounts(assigned).join(" · ")}` : "";
+  const shortfall = missing.length ? `Fehlt · ${vehicleTypeCounts(missing).join(" · ")}` : "";
+  if (el.incidentSelectedTypes.textContent !== summary) el.incidentSelectedTypes.textContent = summary;
+  if (el.incidentAssignedTypes.textContent !== assignedSummary) el.incidentAssignedTypes.textContent = assignedSummary;
+  el.incidentAssignedTypes.hidden = !assignedSummary;
+  if (el.incidentMissingTypes.textContent !== shortfall) el.incidentMissingTypes.textContent = shortfall;
+  el.incidentMissingTypes.hidden = !shortfall;
+}
+
 function renderDialogVehicles(call, incident = null) {
+  renderIncidentSelectedTypes(incident);
   el.dialogVehicleList.innerHTML = "";
   const assignedIds = new Set(incident?.assigned || []);
   const unavailableIds = new Set([...assignedIds, ...state.selectedDialogVehicleIds]);
-  renderDialogVehicleTypeFilter(call, incident);
-  renderQuickVehicleButtons(call, unavailableIds, incident);
+  const filters = document.createElement("div");
+  filters.className = "dialog-vehicle-filter";
+  filters.append(createDialogVehicleTypeFilter(call, incident));
   const foreignToggle = document.createElement("label");
   foreignToggle.className = "foreign-vehicle-toggle";
   const foreignInput = document.createElement("input");
@@ -1631,8 +1687,10 @@ function renderDialogVehicles(call, incident = null) {
     renderDialogVehicles(call, incident);
   });
   const foreignAvailableCount = state.vehicles.filter((vehicle) => vehicle.foreign && vehicle.status === 2 && !vehicle.nextIncidentId).length;
-  foreignToggle.append(foreignInput, document.createTextNode(` Fremdfahrzeuge anzeigen (${foreignAvailableCount})`));
-  el.dialogVehicleList.append(foreignToggle);
+  foreignToggle.append(foreignInput, document.createTextNode(`Fremdfahrzeuge (${foreignAvailableCount})`));
+  filters.append(foreignToggle);
+  el.dialogVehicleList.append(filters);
+  renderQuickVehicleButtons(call, unavailableIds, incident);
   if (assignedIds.size) {
     const assigned = document.createElement("section");
     assigned.className = "assigned-vehicles-note";
@@ -1674,8 +1732,10 @@ function renderDialogVehicles(call, incident = null) {
       const nextShift = nextShiftChangeText(vehicle);
       const distanceText = `${distanceToCall(vehicle, call).toFixed(1).replace(".", ",")} km Luftlinie`;
       const travelTime = dialogTravelTimeStatus(vehicle, call);
+      const isSelected = state.selectedDialogVehicleIds.has(vehicle.id);
       row.type = "button";
-      row.className = `dialog-vehicle-row ${vehicle.foreign ? "foreign-vehicle-row" : ""} ${shiftNotice ? `shift-${shiftNotice.type}` : ""} ${state.selectedDialogVehicleIds.has(vehicle.id) ? "selected" : ""}`;
+      row.setAttribute("aria-pressed", String(isSelected));
+      row.className = `dialog-vehicle-row ${vehicle.foreign ? "foreign-vehicle-row" : ""} ${shiftNotice ? `shift-${shiftNotice.type}` : ""} ${isSelected ? "selected" : ""}`;
       row.innerHTML = `
         <div>
           <h3><span class="vehicle-type-badge">${escapeHtml(vehicle.type)}</span> ${escapeHtml(vehicle.name)}</h3>
@@ -1697,22 +1757,22 @@ function renderDialogVehicles(call, incident = null) {
         requestDialogTravelTime(vehicle, call, true);
       });
       row.addEventListener("click", () => {
-        if (state.selectedDialogVehicleIds.has(vehicle.id)) {
+        const wasSelected = state.selectedDialogVehicleIds.has(vehicle.id);
+        if (wasSelected) {
           state.selectedDialogVehicleIds.delete(vehicle.id);
-          row.classList.remove("selected");
         } else {
           state.selectedDialogVehicleIds.add(vehicle.id);
-          row.classList.add("selected");
         }
+        row.classList.toggle("selected", !wasSelected);
+        row.setAttribute("aria-pressed", String(!wasSelected));
+        renderIncidentSelectedTypes(incident);
       });
       el.dialogVehicleList.append(row);
       if (autoTravelTimeIds.has(vehicle.id)) requestDialogTravelTime(vehicle, call);
     });
 }
 
-function renderDialogVehicleTypeFilter(call, incident = null) {
-  const wrapper = document.createElement("section");
-  wrapper.className = "dialog-vehicle-filter";
+function createDialogVehicleTypeFilter(call, incident) {
   const label = document.createElement("label");
   label.textContent = "Fahrzeugklasse";
   const select = document.createElement("select");
@@ -1729,8 +1789,7 @@ function renderDialogVehicleTypeFilter(call, incident = null) {
     renderDialogVehicles(call, incident);
   });
   label.append(select);
-  wrapper.append(label);
-  el.dialogVehicleList.append(wrapper);
+  return label;
 }
 
 function vehicleTypeFilterOptions() {
@@ -1835,7 +1894,6 @@ async function requestDialogTravelTime(vehicle, call, force = false) {
 function renderQuickVehicleButtons(call, assignedIds, incident = null) {
   const wrapper = document.createElement("section");
   wrapper.className = "quick-vehicle-picker";
-  const showVehicleNameForTypes = new Set(["RTW", "KTW", "NEF"]);
   [
     { label: "RTW", types: ["RTW"] },
     { label: "KTW", types: ["KTW"] },
@@ -1851,11 +1909,8 @@ function renderQuickVehicleButtons(call, assignedIds, incident = null) {
     const button = document.createElement("button");
     button.type = "button";
     if (shiftNotice) button.classList.add(`shift-${shiftNotice.type}`);
-    button.title = shiftNotice?.text || "";
-    const showVehicleName = group.types.length === 1 && showVehicleNameForTypes.has(group.types[0]);
-    button.innerHTML = showVehicleName
-      ? `<strong>${escapeHtml(group.label)}:</strong> ${vehicle ? escapeHtml(vehicleQuickName(vehicle)) : "-"}`
-      : `<strong>${escapeHtml(group.label)}</strong>`;
+    button.title = [vehicle?.shortName || vehicle?.name, shiftNotice?.text].filter(Boolean).join(" · ");
+    button.innerHTML = `<strong>${escapeHtml(group.label)}</strong>`;
     button.disabled = !vehicle;
     button.addEventListener("click", () => {
       if (!vehicle) return;
@@ -1866,10 +1921,6 @@ function renderQuickVehicleButtons(call, assignedIds, incident = null) {
     wrapper.append(button);
   });
   el.dialogVehicleList.append(wrapper);
-}
-
-function vehicleQuickName(vehicle) {
-  return vehicle?.shortName || vehicle?.name || "";
 }
 
 function nearestFreeVehicleOfType(call, type, assignedIds) {
@@ -2012,7 +2063,12 @@ function currentShiftBadgeHtml(vehicle) {
   if (notice?.type === "ending") toneClass = " shift-current-ending";
   if (notice?.type === "overtime") toneClass = " shift-current-expired";
   if (notice?.type === "pre-start") toneClass = " shift-current-prestart";
-  return `<small class="shift-current${toneClass}">${escapeHtml(label)}</small>`;
+  const endTime = notice?.endTime;
+  const title = endTime ? `Schichtende um ${endTime} · ${label}` : label;
+  const content = endTime
+    ? `<span class="shift-ending-label">${escapeHtml(label)}</span><time class="shift-ending-time" datetime="${endTime}" aria-label="Schichtende um ${endTime}">${endTime}</time>`
+    : escapeHtml(label);
+  return `<small class="shift-current${toneClass}" title="${escapeHtml(title)}">${content}</small>`;
 }
 
 function shiftSummaryBadgesHtml(vehicle) {
@@ -2027,7 +2083,8 @@ function shiftSummaryBadgesHtml(vehicle) {
     ].filter(Boolean).join(" ");
     return `<small class="${classes}">${escapeHtml(interval.label)}</small>`;
   }).join("");
-  return `<span class="shift-summary-list">${chips}</span>`;
+  const schedule = intervals.map((interval) => interval.label).join(", ");
+  return `<span class="shift-summary-list" title="${escapeHtml(schedule)}">${chips}</span>`;
 }
 
 function shiftNoticeForVehicle(vehicle) {
@@ -2055,10 +2112,12 @@ function shiftNoticeForVehicle(vehicle) {
     };
   }
   if (active?.endingSoon) {
-    const minutes = shiftMinutesUntilEnd(Math.floor(state.minute) % 1440, shiftEndMinuteFromLabel(active.label));
+    const endMinute = shiftEndMinuteFromLabel(active.label);
+    const minutes = shiftMinutesUntilEnd(Math.floor(state.minute) % 1440, endMinute);
     return {
       type: "ending",
-      text: Number.isFinite(minutes) ? `Feierabend: ${minutes} min` : "Feierabend"
+      text: Number.isFinite(minutes) ? `Feierabend: ${minutes} min` : "Feierabend",
+      endTime: Number.isFinite(endMinute) ? timeLabel(endMinute % 1440) : null
     };
   }
   return null;
@@ -2143,5 +2202,5 @@ function locateVehicle(vehicleId) {
   const vehicle = state.vehicles.find((unit) => unit.id === vehicleId);
   if (!vehicle || !state.mapReady) return;
   state.map.setView([vehicle.lat, vehicle.lng], 15);
-  logRadio(`${vehicle.name}: Ortung gesendet, aktuelle Position auf Karte markiert.`, "radio");
+  logRadio(`${vehicle.name}: Ortung gesendet, aktuelle Position auf Karte markiert.`, "radio", vehicle.incidentId || vehicle.nextIncidentId);
 }

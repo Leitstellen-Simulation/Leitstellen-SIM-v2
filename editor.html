@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="de">
   <head>
     <meta charset="utf-8">
@@ -6,69 +6,74 @@
     <title>Karteneditor</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="editor-layout.css">
   </head>
-  <body class="standalone-editor">
-    <main class="editor-shell">
-      <aside class="editor-sidebar panel">
-        <div class="panel-title">
-          <h2>Karteneditor</h2>
-          <a href="index.html">Leitstelle</a>
+  <body class="standalone-editor editor-app map-editor-app">
+    <header class="editor-app-bar">
+      <div class="editor-app-brand">
+        <a href="index.html" class="editor-back">‹ Leitstelle</a>
+        <h1>Karteneditor</h1>
+      </div>
+      <div class="editor-app-actions">
+        <details class="map-library" id="se-map-library">
+          <summary>Karten öffnen</summary>
+          <div class="map-library-flyout">
+            <h2>Gespeicherte Karten</h2>
+            <div id="se-saved" class="editor-point-list" aria-label="Gespeicherte Karten"></div>
+          </div>
+        </details>
+        <button id="se-new" type="button">Neue Karte</button>
+        <button id="se-save" class="primary-action" type="button">Karte speichern</button>
+      </div>
+    </header>
+    <main class="map-editor-workspace">
+      <section class="editor-map-panel panel">
+        <header class="editor-map-toolbar">
+          <div>
+            <h2 id="se-map-title">Neue Karte</h2>
+            <p id="se-map-status" class="editor-map-status" role="status"></p>
+          </div>
+          <label class="compact-check"><input id="se-show-poi-markers" type="checkbox"> POI auf Karte</label>
+        </header>
+        <div id="se-map-mode" class="map-placement" hidden>
+          <span>Klicke auf die Karte, um den Standort zu setzen.</span>
+          <button id="se-cancel-pin" type="button">Abbrechen</button>
         </div>
-        <div class="editor-standalone-form">
-          <details class="editor-section editor-compact-section" open>
-            <summary>Kartendaten</summary>
-            <label>Kartenname <input id="se-map-name" value="ILS Regensburg Test"></label>
-            <details class="editor-rates-panel">
-              <summary>Einsatzintervalle je Stunde</summary>
-              <p class="inline-hint">Durchschnitt pro Stunde. Die Simulation würfelt um diese Werte herum.</p>
-              <div id="se-rates" class="rate-grid"></div>
+        <div id="se-map" class="map" aria-label="Kartenvorschau"></div>
+      </section>
+      <aside class="map-toolbox" aria-label="Kartenwerkzeuge">
+        <div class="editor-tablist" role="tablist" aria-label="Kartenwerkzeuge" data-editor-tabs>
+          <button id="se-tab-objects" type="button" role="tab" aria-controls="se-object-tools" aria-selected="true">Objekte</button>
+          <button id="se-tab-areas" type="button" role="tab" aria-controls="se-area-tools" aria-selected="false" tabindex="-1">Gebiete</button>
+          <button id="se-tab-osm" type="button" role="tab" aria-controls="se-osm-tools" aria-selected="false" tabindex="-1">OSM</button>
+          <button id="se-tab-settings" type="button" role="tab" aria-controls="se-settings" aria-selected="false" tabindex="-1">Karte</button>
+        </div>
+        <section class="map-object-tools" id="se-object-tools" role="tabpanel" aria-labelledby="se-tab-objects">
+          <div class="map-object-tools-head">
+            <details class="map-create-tools">
+              <summary>Objekt hinzufügen</summary>
+              <div class="editor-action-grid">
+                <button id="se-new-station" type="button">Rettungswache</button>
+                <button id="se-new-hospital" type="button">Krankenhaus</button>
+                <button id="se-new-poi" type="button">POI</button>
+                <button id="se-new-support-group" type="button">UGRD / SEG</button>
+              </div>
             </details>
-            <div class="editor-actions">
-              <button id="se-new" type="button">Neue Karte</button>
-              <button id="se-save" class="primary-action" type="button">Karte als Datei speichern</button>
+            <div class="editor-list-tabs" aria-label="Objekttyp auswählen">
+              <button id="se-point-filter-stations" class="active" aria-pressed="true" type="button">Wachen</button>
+              <button id="se-point-filter-hospitals" aria-pressed="false" type="button">Kliniken</button>
+              <button id="se-point-filter-poi" aria-pressed="false" type="button">POI</button>
+              <button id="se-point-filter-support" aria-pressed="false" type="button">UGRD / SEG</button>
             </div>
-          </details>
-
-          <section class="editor-section editor-action-section">
-            <strong>Aktion</strong>
-            <div class="editor-action-grid">
-              <button id="se-new-station" type="button">Neue Rettungswache</button>
-              <button id="se-new-hospital" type="button">Neue Klinik</button>
-              <button id="se-new-poi" type="button">Neuer POI</button>
-              <button id="se-new-support-group" type="button">Neue UGRD/SEG</button>
-              <button id="se-edit-coverage" type="button">Einsatzgebiet</button>
-              <button id="se-edit-weight-zones" type="button">Gewichtung</button>
-            </div>
-          </section>
-
-          <details class="editor-section editor-osm-import-section">
-            <summary>OSM-Daten importieren</summary>
-            <p class="inline-hint">Einmaliger Import aus OpenStreetMap fuer das Einsatzgebiet. Ohne Einsatzgebiet wird der aktuelle Kartenausschnitt verwendet.</p>
-            <strong>Standort-Pools</strong>
-            <div class="check-grid osm-poi-grid">
-              <label class="check-row"><input id="se-import-roads" type="checkbox" checked> Straßen / Verkehrswege</label>
-              <label class="check-row"><input id="se-import-outdoor" type="checkbox" checked> Wald / Outdoor / Freiflächen</label>
-            </div>
-            <strong>POI-Kategorien</strong>
-            <div class="osm-import-shortcuts">
-              <button id="se-osm-select-all-poi" type="button">Alle POI</button>
-              <button id="se-osm-clear-poi" type="button">Keine POI</button>
-              <button id="se-osm-only-roads" type="button">Nur Straßen</button>
-            </div>
-            <div id="se-osm-poi-categories" class="check-grid osm-poi-grid"></div>
-            <div class="editor-actions">
-              <button id="se-import-pois" type="button">OSM suchen</button>
-              <button id="se-retry-osm-failed" type="button" disabled>Fehlgeschlagene erneut</button>
-              <button id="se-pause-osm-import" type="button" disabled>Nach Schritt pausieren</button>
-              <button id="se-abort-osm-import" type="button" disabled>Abbrechen</button>
-              <button id="se-apply-imported-pois" class="primary-action" type="button" disabled>Treffer übernehmen</button>
-            </div>
-            <label class="check-row"><input id="se-show-address-diagnostics" type="checkbox"> Straßenpool anzeigen</label>
-            <label class="check-row"><input id="se-show-all-road-diagnostics" type="checkbox"> Alle Straßen anzeigen (Debug)</label>
-            <small id="se-osm-poi-status" class="inline-hint">Keine Suche gestartet.</small>
-            <div id="se-osm-poi-preview" class="editor-point-list osm-poi-preview"></div>
-          </details>
-
+            <input id="se-point-search" type="search" aria-label="Objekte suchen" placeholder="Name oder Adresse suchen">
+          </div>
+          <div id="se-points" class="editor-point-list"></div>
+        </section>
+        <section class="map-area-tools" id="se-area-tools" role="tabpanel" aria-labelledby="se-tab-areas" hidden>
+          <div class="editor-actions">
+            <button id="se-edit-coverage" type="button">Einsatzgebiet bearbeiten</button>
+            <button id="se-edit-weight-zones" type="button">Gewichtungszonen</button>
+          </div>
           <section id="se-coverage-form" class="editor-workbench" hidden>
             <div class="editor-workbench-head">
               <strong>Einsatzgebiet</strong>
@@ -118,7 +123,68 @@
             </div>
             <div id="se-weight-zone-list" class="editor-point-list weight-zone-list empty-state">Noch keine Gewichtungszonen.</div>
           </section>
-        </div>
+        </section>
+          <section class="editor-osm-import-section" id="se-osm-tools" role="tabpanel" aria-labelledby="se-tab-osm" hidden>
+            <h2>OpenStreetMap importieren</h2>
+            <p class="inline-hint">Importiert im Einsatzgebiet oder im sichtbaren Kartenausschnitt.</p>
+            <strong>Standort-Pools</strong>
+            <div class="check-grid osm-location-pools">
+              <label class="check-row"><input id="se-import-roads" type="checkbox" checked> Straßen / Verkehrswege</label>
+              <label class="check-row"><input id="se-import-outdoor" type="checkbox" checked> Wald / Outdoor / Freiflächen</label>
+            </div>
+            <strong>POI-Kategorien</strong>
+            <div class="osm-import-shortcuts">
+              <button id="se-osm-select-all-poi" type="button">Alle POI</button>
+              <button id="se-osm-clear-poi" type="button">Keine POI</button>
+              <button id="se-osm-only-roads" type="button">Nur Straßen</button>
+            </div>
+            <div id="se-osm-poi-categories" class="check-grid osm-poi-grid" role="group" aria-label="POI-Kategorien für den Import"></div>
+            <div class="editor-actions">
+              <button id="se-import-pois" type="button">Import starten</button>
+              <button id="se-retry-osm-failed" type="button" disabled>Fehlgeschlagene Kacheln erneut laden</button>
+              <button id="se-pause-osm-import" type="button" disabled>Nach Schritt pausieren</button>
+              <button id="se-abort-osm-import" type="button" disabled>Abbrechen</button>
+              <button id="se-apply-imported-pois" class="primary-action" type="button" disabled>Treffer übernehmen</button>
+            </div>
+            <label class="check-row"><input id="se-show-address-diagnostics" type="checkbox"> Straßenpool anzeigen</label>
+            <label class="check-row"><input id="se-show-all-road-diagnostics" type="checkbox"> Alle Straßen anzeigen (Debug)</label>
+            <small id="se-osm-poi-status" class="inline-hint" role="status">Keine Suche gestartet.</small>
+            <div id="se-osm-poi-preview" class="editor-point-list osm-poi-preview"></div>
+          </section>
+
+        <section class="map-settings" id="se-settings" role="tabpanel" aria-labelledby="se-tab-settings" hidden>
+          <h2>Karteneinstellungen</h2>
+          <label>Kartenname <input id="se-map-name" value="Neue Karte"></label>
+          <fieldset class="map-radio-settings">
+            <legend>Funkmeldung beim Ausrücken (Status 3)</legend>
+            <label>Mit Sondersignal
+              <select id="se-status3-signal">
+                <option value="0" selected>Dringender Sprechwunsch (Status 0)</option>
+                <option value="5">Sprechwunsch (Status 5)</option>
+                <option value="none">Kein Sprechwunsch</option>
+              </select>
+            </label>
+            <label>Ohne Sondersignal
+              <select id="se-status3-normal">
+                <option value="0">Dringender Sprechwunsch (Status 0)</option>
+                <option value="5" selected>Sprechwunsch (Status 5)</option>
+                <option value="none">Kein Sprechwunsch</option>
+              </select>
+            </label>
+          </fieldset>
+          <fieldset class="map-radio-settings">
+            <legend>Telenotarzt</legend>
+            <label class="check-row"><input id="se-tna-enabled" type="checkbox"> TNA-Modul aktivieren</label>
+            <label>Technikausfall je TNA-Anfrage (%)
+              <input id="se-tna-failure" type="number" min="0" max="100" step="1" value="5">
+            </label>
+          </fieldset>
+          <details class="editor-rates-panel">
+            <summary>Einsatzintervalle je Stunde</summary>
+            <p class="inline-hint">Durchschnitt pro Stunde. Die Simulation würfelt um diese Werte herum.</p>
+            <div id="se-rates" class="rate-grid"></div>
+          </details>
+        </section>
       </aside>
       <dialog id="se-point-dialog" class="modal">
         <form method="dialog" id="se-point-form" class="modal-card editor-point-dialog">
@@ -131,7 +197,7 @@
             <section class="editor-subform">
               <h3>Basisdaten</h3>
               <label>Name <input id="se-name" placeholder="Name"></label>
-              <label>Adresse <input id="se-address" placeholder="Adresse"></label>
+              <label><span id="se-address-label">Adresse</span> <input id="se-address" placeholder="Adresse"></label>
               <label class="check-row"><input id="se-foreign-point" type="checkbox"> Fremdwache / Fremdkrankenhaus außerhalb des Einsatzgebietes</label>
               <label id="se-foreign-availability-row">Verfügbarkeit Fremdfahrzeuge (%) <input id="se-foreign-availability" type="number" min="0" max="100" step="5" value="50"></label>
               <div class="editor-actions">
@@ -148,33 +214,19 @@
             <section id="se-hospital-section" class="editor-subform" hidden>
               <h3>Fachrichtungen</h3>
               <p class="inline-hint">Alle Fachrichtungen auswählen, die diese Klinik aufnehmen kann.</p>
+              <p class="inline-hint">Klinikeinträge mit denselben Koordinaten teilen sich in der Simulation einen Kartenmarker.</p>
               <label class="check-row"><input id="se-pediatric-only" type="checkbox"> Reine Kinderklinik: nur Patienten mit Pädiatrie-Bedarf zuweisen</label>
               <label>Abmelde-Wahrscheinlichkeit alle 15 min (%) <input id="se-hospital-unavailable-probability" type="number" min="0" max="100" step="1" value="0"></label>
               <div id="se-departments" class="check-grid"></div>
             </section>
             <section id="se-poi-section" class="editor-subform" hidden>
               <h3>POI-Kategorien</h3>
-              <input id="se-poi-category-search" placeholder="Kategorie suchen">
-              <select id="se-poi-categories" multiple size="7"></select>
-            </section>
-            <section id="se-vehicle-count-section" class="editor-subform">
-              <h3>Fahrzeuge</h3>
-              <div class="editor-vehicle-counts">
-                <label>RTW <input id="se-rtw" type="number" min="0" value="1"></label>
-                <label>KTW <input id="se-ktw" type="number" min="0" value="0"></label>
-                <label>NEF <input id="se-nef" type="number" min="0" value="0"></label>
-                <label>VEF <input id="se-vef" type="number" min="0" value="0"></label>
-                <label>REF <input id="se-ref" type="number" min="0" value="0"></label>
-                <label>ITW <input id="se-itw" type="number" min="0" value="0"></label>
-                <label>RTH <input id="se-rth" type="number" min="0" value="0"></label>
-                <label>ITH <input id="se-ith" type="number" min="0" value="0"></label>
-                <label>ELRD <input id="se-elrd" type="number" min="0" value="0"></label>
-                <label>HvO <input id="se-hvo" type="number" min="0" value="0"></label>
-                <label>FR <input id="se-fr" type="number" min="0" value="0"></label>
-              </div>
+              <input id="se-poi-category-search" type="search" aria-label="POI-Kategorie suchen" placeholder="Kategorie suchen">
+              <div id="se-poi-categories" class="check-grid" role="group" aria-label="Kategorien des POI"></div>
             </section>
             <section id="se-unit-section" class="editor-subform">
-              <h3>Einzelfahrzeuge</h3>
+              <h3>Fahrzeuge</h3>
+              <div id="se-units-list" class="unit-list"></div>
               <div class="unit-editor">
                 <label>Typ
                   <select id="se-unit-type">
@@ -198,7 +250,6 @@
                 <label>Ausrück-/Fremdwachenverfügbarkeit (%) <input id="se-unit-responder-availability" type="number" min="0" max="100" step="5" placeholder="100"></label>
                 <button id="se-add-unit" type="button">Fahrzeug hinzufügen</button>
                 <button id="se-cancel-unit-edit" type="button" hidden>Bearbeitung abbrechen</button>
-                <div id="se-units-list" class="unit-list"></div>
               </div>
             </section>
           </div>
@@ -259,45 +310,12 @@
           </footer>
         </form>
       </dialog>
-      <section class="editor-map-panel panel">
-        <div class="panel-title">
-          <h2>Karte</h2>
-          <label class="compact-check"><input id="se-show-poi-markers" type="checkbox"> POI anzeigen</label>
-        </div>
-        <div id="se-map" class="map"></div>
-      </section>
-      <aside class="editor-list-sidebar panel">
-        <div class="panel-title">
-          <h2>Verwaltung</h2>
-          <span>Karten & Punkte</span>
-        </div>
-        <div class="editor-list-panels">
-          <section class="editor-list-section">
-            <div class="editor-list-header">
-              <h3>Punkte</h3>
-              <div class="editor-list-tabs">
-                <button id="se-point-filter-stations" class="active" type="button">Wachen</button>
-                <button id="se-point-filter-hospitals" type="button">KH</button>
-                <button id="se-point-filter-poi" type="button">POI</button>
-                <button id="se-point-filter-support" type="button">UGRD</button>
-              </div>
-            </div>
-            <div id="se-points" class="editor-point-list"></div>
-          </section>
-          <section class="editor-list-section">
-            <div class="editor-list-header">
-              <h3>Gespeicherte Karten</h3>
-              <span>Laden und bearbeiten</span>
-            </div>
-            <div id="se-saved" class="editor-point-list"></div>
-          </section>
-        </div>
-      </aside>
     </main>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="departments.js"></script>
     <script src="poi.js"></script>
+    <script src="map-client.js"></script>
+    <script src="editor-layout.js"></script>
     <script src="editor.js"></script>
   </body>
 </html>
-

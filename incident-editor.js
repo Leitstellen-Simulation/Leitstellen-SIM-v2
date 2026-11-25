@@ -1,5 +1,7 @@
 const state = {
   incidents: [],
+  catalogRevision: null,
+  catalogBusy: false,
   current: null,
   savedIncidentId: null,
   dirty: false,
@@ -11,6 +13,7 @@ const state = {
 
 const el = Object.fromEntries([
   "search", "type-filter", "count", "list", "new", "save", "duplicate", "delete", "editor-title",
+  "catalog-status", "retry-catalog",
   "id", "title", "category", "type", "weight", "time-windows",
   "caller-name", "caller-text", "location-mode", "location-road-types-row", "poi-category-search", "poi-categories", "poi-selected",
   "poi-select-visible", "poi-clear", "poi-category-count", "poi-ids",
@@ -19,30 +22,32 @@ const el = Object.fromEntries([
   "destination-poi-select-visible", "destination-poi-clear", "destination-poi-category-count", "destination-poi-ids",
   "ai-mode", "ai-variations", "ai-prompt", "ai-generate", "ai-status",
   "add-variant", "variant-list", "current-variant-title", "remove-variant",
-  "variant-label", "variant-weight", "variant-report", "variant-situation-report", "variant-fw", "variant-pol", "variant-signal", "variant-no-elrd",
+  "variant-label", "variant-weight", "variant-report", "variant-situation-report", "variant-assistance-reason",
+  "variant-fw", "variant-pol", "variant-signal", "variant-no-elrd", "variant-tna-probability",
   "add-patient", "patient-list", "patient-label", "patient-options", "patient-condition-report", "departments",
   "patient-acuity", "patient-signal", "patient-no-transport", "patient-no-transport-text", "patient-doctor-required",
   "patient-reanimation-case", "patient-fw", "patient-pol", "save-patient", "remove-patient"
 ].map((id) => [id.replaceAll("-", "_"), document.querySelector(`#ie-${id}`)]));
+const catalogControls = document.querySelectorAll("[data-catalog-controls]");
 
 init();
 
-async function init() {
-  await loadIncidents();
+function init() {
   bindEvents();
   renderDepartmentChecks(el.departments);
-  if (state.incidents.length) editIncident(state.incidents[0]);
-  else newIncident();
-  renderList();
+  loadIncidents();
 }
 
 function bindEvents() {
   el.search.addEventListener("input", renderList);
   el.type_filter.addEventListener("change", renderList);
-  el.new.addEventListener("click", newIncident);
+  el.new.addEventListener("click", () => {
+    if (newIncident() !== false) showIncidentWorkspace();
+  });
   el.save.addEventListener("click", saveIncident);
   el.duplicate.addEventListener("click", duplicateIncident);
   el.delete.addEventListener("click", deleteCurrentIncident);
+  el.retry_catalog.addEventListener("click", loadIncidents);
   el.location_mode.addEventListener("change", updateLocationPoiControls);
   document.querySelectorAll("input[name='ie-location-road-types']").forEach((input) => input.addEventListener("change", markDirty));
   el.destination_mode.addEventListener("change", updateDestinationPoiControls);
@@ -69,17 +74,47 @@ function bindEvents() {
 }
 
 async function loadIncidents() {
+  if (state.catalogBusy) return;
+  setCatalogBusy(true);
+  el.retry_catalog.hidden = true;
+  setCatalogStatus("Einsatzkatalog wird geladen …", "pending");
   try {
-    const response = await fetch("/api/incidents");
-    const data = response.ok ? await response.json() : [];
-    state.incidents = Array.isArray(data) ? data.map(toDynamicIncident) : [];
+    const response = await fetch("/api/incidents", { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    const revision = response.headers.get("ETag");
+    if (!revision || !Array.isArray(data) || data.some((item) => !item || typeof item !== "object" || Array.isArray(item))) {
+      throw new Error("Ungültiger Einsatzkatalog");
+    }
+    state.incidents = data.map(toDynamicIncident);
+    state.catalogRevision = revision;
+    if (state.incidents.length) editIncident(state.incidents[0]);
+    else newIncident();
+    setCatalogStatus("");
   } catch {
-    state.incidents = [];
+    state.catalogRevision = null;
+    setCatalogStatus("Einsatzkatalog konnte nicht geladen werden.", "error");
+    el.retry_catalog.hidden = false;
+  } finally {
+    setCatalogBusy(false);
   }
 }
 
+function setCatalogBusy(busy) {
+  state.catalogBusy = busy;
+  const locked = busy || !state.catalogRevision;
+  catalogControls.forEach((control) => { control.inert = locked; });
+  el.save.disabled = locked;
+  el.delete.disabled = locked;
+}
+
+function setCatalogStatus(message, tone = "neutral") {
+  el.catalog_status.textContent = message;
+  el.catalog_status.className = `inline-hint ai-status-${tone}`;
+}
+
 function newIncident() {
-  if (!confirmDiscardUnsavedChanges()) return;
+  if (!confirmDiscardUnsavedChanges()) return false;
   state.current = createEmptyIncident();
   state.savedIncidentId = null;
   state.selectedVariantId = state.current.variants[0].id;
@@ -87,6 +122,11 @@ function newIncident() {
   fillFormFromCurrent();
   markClean();
   renderEverything();
+}
+
+function showIncidentWorkspace() {
+  document.querySelector("#ie-tab-basics").click();
+  el.editor_title.scrollIntoView({ block: "nearest" });
 }
 
 function createEmptyIncident() {
@@ -208,19 +248,16 @@ function collectFormIntoCurrent() {
 }
 
 async function saveIncident() {
+  if (state.catalogBusy || !state.catalogRevision) return;
   const incident = collectFormIntoCurrent();
   const index = state.incidents.findIndex((item) => item.id === (state.savedIncidentId || incident.id));
-  if (index >= 0) state.incidents[index] = structuredCloneSafe(incident);
-  else state.incidents.unshift(structuredCloneSafe(incident));
-  await fetch("/api/incidents", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(state.incidents)
-  });
-  state.savedIncidentId = incident.id;
+  const next = [...state.incidents];
+  if (index >= 0) next[index] = structuredCloneSafe(incident);
+  else next.unshift(structuredCloneSafe(incident));
+  markDirty();
+  if (!await persistIncidents(next, "Einsatz konnte nicht gespeichert werden.")) return;
   editIncident(incident);
-  markClean();
-  setAiStatus("Gespeichert.", "ok");
+  setCatalogStatus("Einsatz gespeichert.", "ok");
 }
 
 function duplicateIncident() {
@@ -237,6 +274,7 @@ function duplicateIncident() {
 }
 
 async function deleteCurrentIncident() {
+  if (state.catalogBusy || !state.catalogRevision) return;
   const current = state.current;
   if (!current?.id) return;
   const existingIndex = state.incidents.findIndex((incident) => incident.id === (state.savedIncidentId || current.id));
@@ -249,16 +287,38 @@ async function deleteCurrentIncident() {
     return;
   }
   if (!confirm(`Einsatz "${title}" wirklich löschen?`)) return;
-  state.incidents.splice(existingIndex, 1);
-  await fetch("/api/incidents", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(state.incidents)
-  });
-  setAiStatus("Gelöscht.", "ok");
+  const next = state.incidents.filter((_, index) => index !== existingIndex);
+  if (!await persistIncidents(next, "Einsatz konnte nicht gelöscht werden.")) return;
   markClean();
   if (state.incidents.length) editIncident(state.incidents[Math.max(0, existingIndex - 1)]);
   else newIncident();
+  setCatalogStatus("Einsatz gelöscht.", "ok");
+}
+
+async function persistIncidents(next, errorMessage) {
+  setCatalogBusy(true);
+  setCatalogStatus("Einsatzkatalog wird gespeichert …", "pending");
+  try {
+    const response = await fetch("/api/incidents", {
+      method: "POST",
+      headers: { "content-type": "application/json", "If-Match": state.catalogRevision },
+      body: JSON.stringify(next)
+    });
+    if (response.status === 412) {
+      setCatalogStatus(`${errorMessage} Der Katalog wurde inzwischen geändert. Offene Änderungen kopieren und die Seite neu laden.`, "error");
+      return false;
+    }
+    const revision = response.headers.get("ETag");
+    if (!response.ok || !revision) throw new Error(`HTTP ${response.status}`);
+    state.incidents = next;
+    state.catalogRevision = revision;
+    return true;
+  } catch {
+    setCatalogStatus(`${errorMessage} Bitte erneut versuchen.`, "error");
+    return false;
+  } finally {
+    setCatalogBusy(false);
+  }
 }
 
 function markDirtyFromEditor(event) {
@@ -305,20 +365,27 @@ function renderList() {
   });
   el.count.textContent = `${filtered.length} / ${state.incidents.length} Einsätze`;
   el.list.innerHTML = "";
+  if (!filtered.length && state.catalogRevision) {
+    el.list.textContent = query || typeFilter ? "Keine passenden Einsätze." : "Noch keine Einsätze im Katalog.";
+  }
   filtered.forEach((incident) => {
     const row = document.createElement("button");
     row.type = "button";
-    row.className = `dynamic-incident-row ${state.current?.id === incident.id ? "active" : ""}`;
+    const active = state.current?.id === incident.id;
+    row.className = `dynamic-incident-row${active ? " active" : ""}`;
+    if (active) row.setAttribute("aria-current", "true");
+    const type = { emergency: "Notfall", transport: "Transport", scheduled: "Planbar" }[incident.type] || "";
     const variants = Array.isArray(incident.variants) ? incident.variants.length : 0;
     const patients = (incident.variants || []).reduce((sum, variant) => sum + (variant.patients || []).length, 0);
     row.innerHTML = `
       <strong>${escapeHtml(incident.title || incident.keyword || "Einsatz")}</strong>
-      <span>${escapeHtml(incident.category || incident.type || "")} | ${escapeHtml(incident.type || "")}</span>
-      <small>${variants} Varianten | ${patients} Patientenprofile | Faktor ${escapeHtml(formatWeight(incident.weight))}</small>
+      <span>${escapeHtml([incident.category, type].filter(Boolean).join(" · "))}</span>
+      <small>${variants} ${variants === 1 ? "Variante" : "Varianten"} · ${patients} ${patients === 1 ? "Patientenprofil" : "Patientenprofile"}</small>
     `;
     row.addEventListener("click", () => {
       if (!confirmDiscardUnsavedChanges()) return;
       editIncident(incident);
+      showIncidentWorkspace();
     });
     el.list.append(row);
   });
@@ -374,10 +441,12 @@ function fillVariantEditor() {
   el.variant_weight.value = formatWeight(variant?.weight ?? 1);
   el.variant_report.value = variant?.report || "";
   el.variant_situation_report.value = variant?.situationReport || "";
+  el.variant_assistance_reason.value = variant?.assistanceReason || "";
   el.variant_fw.checked = (variant?.requiredServices || []).includes("FW");
   el.variant_pol.checked = (variant?.requiredServices || []).includes("POL");
   el.variant_signal.checked = Boolean(variant?.signal);
   el.variant_no_elrd.checked = Boolean(variant?.noElrd);
+  el.variant_tna_probability.value = Math.round(clampRuntimeProbability(variant?.tnaProbability) * 100);
 }
 
 function syncSelectedVariant() {
@@ -387,9 +456,13 @@ function syncSelectedVariant() {
   variant.weight = parseWeight(el.variant_weight.value);
   variant.report = el.variant_report.value.trim();
   variant.situationReport = el.variant_situation_report.value.trim();
+  const assistanceReason = el.variant_assistance_reason.value.trim();
+  if (assistanceReason) variant.assistanceReason = assistanceReason;
+  else delete variant.assistanceReason;
   variant.requiredServices = [el.variant_fw.checked ? "FW" : null, el.variant_pol.checked ? "POL" : null].filter(Boolean);
   variant.signal = el.variant_signal.checked;
   variant.noElrd = el.variant_no_elrd.checked;
+  variant.tnaProbability = clampRuntimeProbability(Number(el.variant_tna_probability.value) / 100);
 }
 
 function renderPatientList() {
@@ -495,6 +568,7 @@ async function generateAiIncident() {
     const generated = Array.isArray(data.incidents) && data.incidents.length ? data.incidents : [data.incident].filter(Boolean);
     const dynamic = combineGeneratedIncidents(generated, prompt, mode);
     editIncident(dynamic);
+    showIncidentWorkspace();
     markDirty();
     setAiStatus(`${dynamic.variants.length} Variante(n) übernommen. Bitte prüfen und speichern.`, "ok");
   } catch (error) {
@@ -613,9 +687,11 @@ function legacyIncidentToDynamic(input) {
       weight: variant.weight ?? 1,
       report: variant.report || "",
       situationReport: variant.situationReport || "",
+      assistanceReason: variant.assistanceReason,
       requiredServices: variant.requiredServices || [],
       signal: Boolean(variant.signal),
       noElrd: Boolean(variant.noElrd),
+      tnaProbability: clampRuntimeProbability(variant.tnaProbability),
       patients: variant.patients || []
     }))
   });
@@ -628,9 +704,12 @@ function sanitizeVariant(variant, index) {
     weight: parseWeight(variant.weight),
     report: variant.report || "",
     situationReport: variant.situationReport || "",
+    ...(typeof variant.assistanceReason === "string" && variant.assistanceReason.trim()
+      ? { assistanceReason: variant.assistanceReason.trim() } : {}),
     requiredServices: listValue(variant.requiredServices).filter((item) => ["FW", "POL"].includes(item)),
     signal: Boolean(variant.signal),
     noElrd: Boolean(variant.noElrd),
+    tnaProbability: clampRuntimeProbability(variant.tnaProbability),
     patients: Array.isArray(variant.patients) && variant.patients.length
       ? variant.patients.map((patient, patientIndex) => sanitizePatient(patient, patientIndex))
       : [createEmptyPatient()]

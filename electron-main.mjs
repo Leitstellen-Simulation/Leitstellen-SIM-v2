@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 let mainWindow;
 
-async function createWindow() {
+async function createWindow(port) {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -18,38 +18,19 @@ async function createWindow() {
 
   mainWindow.setMenuBarVisibility(false);
 
-  await waitForServer("http://127.0.0.1:4173/index.html");
-  await mainWindow.loadURL("http://127.0.0.1:4173/index.html");
+  await mainWindow.loadURL(`http://127.0.0.1:${port}/index.html`);
 }
 
-function waitForServer(url, timeoutMs = 10000) {
-  const start = Date.now();
-
-  return new Promise((resolve, reject) => {
-    const check = async () => {
-      try {
-        const response = await fetch(url);
-        if (response.ok) {
-          resolve();
-          return;
-        }
-      } catch {
-        // Server ist noch nicht bereit.
-      }
-
-      if (Date.now() - start > timeoutMs) {
-        reject(new Error("Server konnte nicht gestartet werden."));
-        return;
-      }
-
-      setTimeout(check, 250);
-    };
-
-    check();
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
   });
+  app.whenReady().then(startApp);
 }
-
-app.whenReady().then(startApp);
 
 async function startApp() {
   process.env.PORT = "4173";
@@ -57,8 +38,8 @@ async function startApp() {
   process.env.DISPATCH_DATA_DIR = app.getPath("userData");
 
   try {
-    await import("./server.mjs");
-    await createWindow();
+    const { serverPort } = await import("./server.mjs");
+    await createWindow(serverPort);
   } catch (error) {
     showStartupError(error);
     app.quit();

@@ -39,7 +39,7 @@ function abortVehicleMission(vehicleId) {
     incident.assigned = incident.assigned.filter((id) => id !== vehicle.id);
     incident.status = incident.assigned.length ? "in Bearbeitung" : "offen";
   }
-  logRadio(`${vehicle.name}: Leitstellenstatus E, Einsatzabbruch bestätigt.`, "warn");
+  logRadio(`${vehicle.name}: Leitstellenstatus E, Einsatzabbruch bestätigt.`, "warn", incident?.id);
   renderAll();
   if (station) driveVehicleTo(vehicle, station, { signal: false, phase: "station" }, () => returnToStation(vehicle.id));
 }

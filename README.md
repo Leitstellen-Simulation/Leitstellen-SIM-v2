@@ -34,6 +34,11 @@ Start unter Windows:
 2. `start-dispatchsim.cmd` ausfuehren.
 3. Browser oeffnet automatisch `http://127.0.0.1:4173/index.html`.
 
+Start unter macOS:
+
+1. `start-dispatchsim.command` im Finder doppelklicken.
+2. Der Browser oeffnet sich, sobald der Server bereit ist. Mit `Ctrl+C` im Terminal beenden.
+
 Start per Konsole:
 
 ```powershell

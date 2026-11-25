@@ -1,11 +1,11 @@
 const DEFAULT_MAP_ID = "ils-regensburg-testversion-stadt-regensburg";
+const MAP_TILES = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}";
 const STATIC_MAPS = [
   { id: "ils-regensburg-testversion-stadt-regensburg", name: "ILS Regensburg (Testversion Stadt Regensburg)" },
   { id: "ils-regensburg-tisch-regensburg-alpha-version", name: "ILS Regensburg Tisch Regensburg (Alpha-Version)" }
 ];
 
 const rdKeywords = window.rdKeywords || [];
-const keywordDefaults = Object.fromEntries(rdKeywords.map((item) => [item.label, item]));
 
 function createEmptyCenter() {
   return {
@@ -30,15 +30,22 @@ const state = {
   absoluteMinute: 0,
   speed: 1,
   paused: false,
+  pauseStartedAt: null,
   pendingCall: null,
   pendingCalls: [],
+  osmLoad: null,
+  startPreview: null,
+  startPreviewLoad: null,
   audioContext: null,
   editingIncidentId: null,
+  testIncidentDraft: null,
   selectedIncidentId: null,
+  radioIncidentFilter: false,
   selectedVehicleId: null,
   incidentFilter: "emergency",
   incidents: [],
   vehicles: [],
+  hasLocalRef: null,
   timers: [],
   timeouts: [],
   lastClockTick: Date.now(),
@@ -91,6 +98,11 @@ const el = {
   timeSelect: document.querySelector("#time-select"),
   startMapEditorButton: document.querySelector("#start-map-editor-button"),
   startIncidentEditorButton: document.querySelector("#start-incident-editor-button"),
+  startMap: document.querySelector("#start-map"),
+  startMapName: document.querySelector("#start-map-name"),
+  startMapSummary: document.querySelector("#start-map-summary"),
+  startMapStatus: document.querySelector("#start-map-status"),
+  shiftMenu: document.querySelector("#shift-menu"),
   activeCenter: document.querySelector("#active-center"),
   operatorLabel: document.querySelector("#operator-label"),
   weatherLabel: document.querySelector("#weather-label"),
@@ -100,6 +112,7 @@ const el = {
   incidentCount: document.querySelector("#incident-count"),
   callLog: document.querySelector("#call-log"),
   radioLog: document.querySelector("#radio-log"),
+  radioIncidentFilter: document.querySelector("#radio-incident-filter"),
   callActions: document.querySelector("#call-actions"),
   vehicleList: document.querySelector("#vehicle-list"),
   answerButton: document.querySelector("#answer-button"),
@@ -135,7 +148,16 @@ const el = {
   incidentKeywordOptions: document.querySelector("#incident-keyword-options"),
   incidentKeywordToggle: document.querySelector("#incident-keyword-toggle"),
   incidentSignal: document.querySelector("#incident-signal"),
+  incidentSelectedTypes: document.querySelector("#incident-selected-types"),
+  incidentAssignedTypes: document.querySelector("#incident-assigned-types"),
+  incidentMissingTypes: document.querySelector("#incident-missing-types"),
   dispositionSuggestion: document.querySelector("#disposition-suggestion"),
+  dispositionSuggestionText: document.querySelector("#disposition-suggestion-text"),
+  applyDispositionSuggestion: document.querySelector("#apply-disposition-suggestion"),
+  dispositionDeviation: document.querySelector("#disposition-deviation"),
+  dispositionDeviationReasons: document.querySelector("#disposition-deviation-reasons"),
+  dispositionDeviationReason: document.querySelector("#disposition-deviation-reason"),
+  incidentCallTextButton: document.querySelector("#incident-call-text-button"),
   incidentCallTextPanel: document.querySelector("#incident-call-text-panel"),
   incidentCallText: document.querySelector("#incident-call-text"),
   incidentTargetInfo: document.querySelector("#incident-target-info"),
@@ -167,12 +189,22 @@ const el = {
   coverageDialog: document.querySelector("#coverage-dialog"),
   coverageList: document.querySelector("#coverage-list"),
   radioAlerts: document.querySelector("#radio-alerts"),
+  mobileCallCount: document.querySelector("#mobile-call-count"),
+  mobileRadioCount: document.querySelector("#mobile-radio-count"),
+  mobileQueueCount: document.querySelector("#mobile-queue-count"),
+  dispatchQueue: document.querySelector("#dispatch-queue"),
+  dispatchQueueList: document.querySelector("#dispatch-queue-list"),
+  dispatchQueueCount: document.querySelector("#dispatch-queue-count"),
+  dispatchQueueEmpty: document.querySelector("#dispatch-queue-empty"),
+  dispatchQueueScroll: document.querySelector("#dispatch-queue-scroll"),
   callDispositionDialog: document.querySelector("#call-disposition-dialog"),
   callDispositionClose: document.querySelector("#call-disposition-close"),
   callDispositionText: document.querySelector("#call-disposition-text"),
+  callDispositionNumber: document.querySelector("#call-disposition-number"),
+  callDispositionTimer: document.querySelector("#call-disposition-timer"),
   callFwButton: document.querySelector("#call-fw-button"),
   callPolButton: document.querySelector("#call-pol-button"),
-  callAendButton: document.querySelector("#call-aend-button"),
+  callAelrdButton: document.querySelector("#call-aelrd-button"),
   callRejectButton: document.querySelector("#call-reject-button"),
   callMapButton: document.querySelector("#call-map-button"),
   callCreateButton: document.querySelector("#call-create-button")
@@ -182,10 +214,32 @@ el.shiftForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   await startShift();
 });
+el.centerSelect.addEventListener("change", updateStartMapPreview);
+document.addEventListener("pointerdown", (event) => {
+  if (el.shiftMenu.open && !el.shiftMenu.contains(event.target)) el.shiftMenu.open = false;
+});
+el.shiftMenu.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || !el.shiftMenu.open) return;
+  event.preventDefault();
+  el.shiftMenu.open = false;
+  el.shiftMenu.querySelector("summary").focus();
+});
+document.querySelector("#dispatch-queue-back").addEventListener("click", () => scrollDispatchQueue(-1));
+document.querySelector("#dispatch-queue-forward").addEventListener("click", () => scrollDispatchQueue(1));
 
 el.answerButton.addEventListener("click", answerCall);
 el.forwardButton.addEventListener("click", forwardCall);
+document.querySelectorAll("[data-dispatch-panel]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const panel = document.getElementById(button.dataset.dispatchPanel);
+    if (panel) {
+      panel.scrollIntoView({ block: "start" });
+      panel.focus({ preventScroll: true });
+    }
+  });
+});
 el.newCallButton.addEventListener("click", receiveCall);
+initAdvancedAdmin();
 el.testModeButton?.addEventListener("click", toggleTestMode);
 el.adminModeButton.addEventListener("click", enableAdminMode);
 el.adminLoginForm?.addEventListener("submit", handleAdminLoginSubmit);
@@ -195,7 +249,7 @@ el.startMapEditorButton?.addEventListener("click", openEditor);
 el.startIncidentEditorButton?.addEventListener("click", openIncidentEditor);
 el.callFwButton.addEventListener("click", () => referPendingCall("FW"));
 el.callPolButton.addEventListener("click", () => referPendingCall("POL"));
-el.callAendButton.addEventListener("click", () => referPendingCall("AEND"));
+el.callAelrdButton.addEventListener("click", () => referPendingCall("AELRD"));
 el.callRejectButton.addEventListener("click", rejectPendingCall);
 el.callMapButton.addEventListener("click", showPendingCallOnMap);
 el.callCreateButton.addEventListener("click", () => {
@@ -203,6 +257,13 @@ el.callCreateButton.addEventListener("click", () => {
   el.callDispositionDialog.close();
 });
 el.callDispositionDialog.addEventListener("close", handleCallDispositionClosed);
+el.incidentDialog.addEventListener("close", () => {
+  state.testIncidentDraft = null;
+  hideIncidentCallText();
+  if (el.dispositionDeviation.open) el.dispositionDeviation.close("cancel");
+  updateCallControls();
+});
+el.transportDestinationDialog?.addEventListener("close", renderDispatchQueue);
 el.callDispositionClose?.addEventListener("click", () => {
   if (el.callDispositionDialog.open) el.callDispositionDialog.close("cancel");
 });
@@ -216,11 +277,28 @@ el.supportGroupButton?.addEventListener("click", openSupportGroupDialog);
 el.closeSupportGroupDialog?.addEventListener("click", () => el.supportGroupDialog?.close());
 el.closeTransportDestinationDialog?.addEventListener("click", () => el.transportDestinationDialog?.close());
 el.vehicleSort.addEventListener("change", renderVehicles);
+el.radioIncidentFilter.addEventListener("click", () => {
+  state.radioIncidentFilter = !state.radioIncidentFilter;
+  renderRadioIncidentFilter();
+});
+el.applyDispositionSuggestion.addEventListener("click", applyDispositionSuggestion);
 el.incidentMapButton.addEventListener("click", showPendingCallOnMap);
 el.closeIncidentDialog?.addEventListener("click", () => {
   if (el.incidentDialog.open) el.incidentDialog.close("cancel");
 });
 el.incidentForm.addEventListener("submit", submitIncidentDialog);
+el.incidentCallTextPanel.addEventListener("beforetoggle", (event) => {
+  if (event.newState === "open") positionIncidentCallText();
+});
+el.incidentCallTextPanel.addEventListener("toggle", (event) => {
+  if (event.newState === "open") positionIncidentCallText();
+});
+window.addEventListener("resize", () => {
+  for (const dialog of [el.incidentDialog, el.callDispositionDialog]) {
+    if (dialog.open && dialog.classList.contains("floating-dialog")) positionFloatingDialog(dialog);
+  }
+  if (el.incidentCallTextPanel.matches(":popover-open")) positionIncidentCallText();
+});
 el.incidentKeyword.addEventListener("change", renderDispositionSuggestion);
 el.incidentKeyword.addEventListener("focus", () => showKeywordOptions(el.incidentKeyword.value));
 el.incidentKeyword.addEventListener("input", () => {
@@ -259,10 +337,27 @@ document.querySelectorAll(".tab").forEach((button) => {
 });
 
 async function startShift() {
+  const startButton = el.shiftForm.querySelector("button[type='submit']");
+  const label = document.querySelector("#shift-start-label");
+  if (startButton.disabled) return;
+  startButton.disabled = true;
+  label.textContent = "Karte wird geladen …";
+  try {
+    await initializeShift();
+  } finally {
+    startButton.disabled = false;
+    label.textContent = "Schicht starten";
+  }
+}
+
+async function initializeShift() {
   const options = startupOptions();
-  state.center = await loadSelectedMap(el.centerSelect.value) || await loadDefaultMap() || createEmptyCenter();
+  const mapId = el.centerSelect.value;
+  const [selectedMap, incidentCatalog] = await Promise.all([loadSelectedMap(mapId), loadIncidentCatalog()]);
+  const overview = selectedMap || (mapId !== DEFAULT_MAP_ID && await loadSelectedMap(DEFAULT_MAP_ID));
+  state.center = overview?.map || createEmptyCenter();
   state.center.callRates = normalizedCallRates(state.center.callRates);
-  state.incidentCatalog = await loadIncidentCatalog();
+  state.incidentCatalog = incidentCatalog;
   ensureHospitalDepartments(state.center);
   state.center.supportGroups ||= [];
   state.center.weightZones ||= [];
@@ -275,6 +370,7 @@ async function startShift() {
   state.pendingCall = null;
   state.pendingCalls = [];
   state.editingIncidentId = null;
+  state.testIncidentDraft = null;
   state.adminMode = false;
   state.testMode = false;
   state.pendingCoverageVehicleId = null;
@@ -290,20 +386,27 @@ async function startShift() {
   state.systemStatus.weather = "unbekannt";
   state.systemStatus.geocoding = "unbekannt";
   cancelAllScheduledTimeouts();
+  state.paused = false;
+  state.pauseStartedAt = null;
+  el.pauseButton.textContent = "Pause";
   state.speed = Number(el.speedSelect.value) || 1;
   state.lastClockTick = Date.now();
   state.lastCallRateMinute = Math.floor(state.absoluteMinute);
   state.lastUnplannedCallAbsoluteMinute = state.lastCallRateMinute;
   state.vehicles = seedVehicles(state.center);
+  state.hasLocalRef = hasConfiguredLocalRef(state.vehicles);
   initializeHospitalAvailabilityStates();
   rollForeignVehicleAvailability(true);
   initializeShiftStatesForStart();
 
   el.activeCenter.textContent = state.center.name;
   el.operatorLabel.textContent = state.dispatcher;
+  el.shiftMenu.open = false;
   el.weatherLabel.textContent = state.center.weather;
   updateCurrentWeather();
   checkCriticalServices();
+  state.startPreviewLoad?.abort();
+  state.startPreviewLoad = null;
   el.startScreen.classList.add("hidden");
   el.dispatchScreen.classList.remove("hidden");
   document.body.classList.add("dispatch-active");
@@ -317,7 +420,21 @@ async function startShift() {
   rollHospitalAvailability(true);
   initMap();
   renderAll();
+  if (overview?.osmRevision) loadShiftOsmData(overview);
   startClock();
+}
+
+async function loadShiftOsmData(overview) {
+  const controller = new AbortController();
+  state.osmLoad = controller;
+  try {
+    const osmData = await fetchMapOsmData(overview, { signal: controller.signal });
+    if (state.osmLoad === controller) state.center.osmData = osmData;
+  } catch (error) {
+    if (state.osmLoad === controller) logCall(`${error.message} Einsatzorte werden ohne OSM-Pools erzeugt.`, "warn");
+  } finally {
+    if (state.osmLoad === controller) state.osmLoad = null;
+  }
 }
 
 function startupOptions() {
@@ -353,7 +470,8 @@ async function loadCenterOptions() {
     const response = await fetch("/api/maps");
     if (!response.ok) throw new Error("map list unavailable");
     const maps = await response.json();
-    state.availableMaps = Array.isArray(maps) && maps.length ? mergeStaticMaps(maps) : fallback;
+    if (!Array.isArray(maps)) throw new Error("invalid map list");
+    state.availableMaps = maps;
     state.serverAvailable = true;
     state.systemStatus.server = "online";
   } catch {
@@ -374,12 +492,72 @@ async function loadCenterOptions() {
   });
   const defaultId = state.availableMaps.find((map) => map.id === DEFAULT_MAP_ID)?.id
     || state.availableMaps[0]?.id
-    || DEFAULT_MAP_ID;
+    || "";
   el.centerSelect.value = state.availableMaps.some((map) => map.id === previousValue) ? previousValue : defaultId;
+  el.shiftForm.querySelector("button[type='submit']").disabled = !state.availableMaps.length;
+  if (!startupOptions().autostart) updateStartMapPreview();
   if (!state.startupSyncHandled && state.serverAvailable) {
     state.startupSyncHandled = true;
     await handleStartupSyncPrompts();
   }
+}
+
+async function updateStartMapPreview() {
+  const mapId = el.centerSelect.value;
+  el.startMapName.textContent = el.centerSelect.selectedOptions[0]?.textContent || "Leitstelle";
+  el.startMapSummary.textContent = "";
+  state.startPreviewLoad?.abort();
+  if (typeof L === "undefined") {
+    el.startMapStatus.textContent = "Kartenvorschau nicht verfügbar.";
+    return;
+  }
+
+  const controller = new AbortController();
+  state.startPreviewLoad = controller;
+  el.startMapStatus.textContent = "Kartenvorschau wird geladen …";
+  el.startMapStatus.hidden = false;
+  const overview = await loadSelectedMap(mapId, { signal: controller.signal });
+  if (state.startPreviewLoad !== controller) return;
+  state.startPreviewLoad = null;
+  if (!overview?.map) {
+    el.startMapStatus.textContent = "Kartenvorschau nicht verfügbar.";
+    return;
+  }
+
+  const map = overview.map;
+  if (!state.startPreview) {
+    const leaflet = L.map(el.startMap, {
+      zoomControl: false, dragging: false, keyboard: false, scrollWheelZoom: false,
+      touchZoom: false, doubleClickZoom: false, boxZoom: false
+    });
+    L.tileLayer(MAP_TILES, { maxZoom: 19, attribution: "Tiles &copy; Esri, HERE, Garmin, FAO, NOAA, USGS" }).addTo(leaflet);
+    state.startPreview = { leaflet, layers: L.layerGroup().addTo(leaflet) };
+  }
+  const { leaflet, layers } = state.startPreview;
+  layers.clearLayers();
+  leaflet.invalidateSize({ pan: false });
+  const bounds = L.latLngBounds([]);
+  if (map.coverageGeoJson) {
+    const coverage = L.geoJSON(map.coverageGeoJson, {
+      interactive: false, style: { color: "#287596", weight: 2, fillOpacity: .1 }
+    }).addTo(layers);
+    bounds.extend(coverage.getBounds());
+  }
+  const stations = (map.stations || []).filter((point) => !point.foreign);
+  const hospitals = (map.hospitals || []).filter((point) => !point.foreign);
+  for (const [points, color] of [[stations, "#14765e"], [hospitals, "#256397"]]) {
+    for (const point of points) {
+      if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng)) continue;
+      const position = [point.lat, point.lng];
+      bounds.extend(position);
+      L.circleMarker(position, { radius: 5, color: "white", weight: 1.5, fillColor: color, fillOpacity: 1, interactive: false }).addTo(layers);
+    }
+  }
+  if (bounds.isValid()) leaflet.fitBounds(bounds, { padding: [24, 24], maxZoom: 13, animate: false });
+  else leaflet.setView(map.mapCenter || [49.01, 12.1], map.zoom || 12);
+  state.startPreview.mapId = mapId;
+  el.startMapSummary.textContent = `${stations.length} ${stations.length === 1 ? "Wache" : "Wachen"} · ${hospitals.length} ${hospitals.length === 1 ? "Klinik" : "Kliniken"}`;
+  el.startMapStatus.hidden = true;
 }
 
 async function handleStartupSyncPrompts() {
@@ -398,43 +576,51 @@ async function handleStartupSyncPrompts() {
       }
     }
     for (const conflict of sync?.mapConflicts || []) {
+      const name = conflict.bundledName || conflict.localName;
       const action = await requestStartupSyncChoice({
         title: "Karten-Synchronisierung",
-        heading: `Neue Version fuer "${conflict.localName}"`,
-        message: `Die installierte App enthaelt eine neuere gebuendelte Version der Karte "${conflict.bundledName || conflict.localName}". Was soll passieren?`,
-        defaultAction: "beide",
-        actions: [
-          { value: "lokal", label: "Lokal behalten", hint: "Deine lokale Karte bleibt unveraendert." },
-          { value: "neu", label: "Neue uebernehmen", hint: "Die lokale Karte wird durch die gebuendelte Version ersetzt." },
-          { value: "beide", label: "Beide behalten", hint: "Die neue Version wird als zusaetzliche Karte angelegt." }
+        heading: conflict.localDeleted ? `Lokal gelöschte Karte „${name}“` : `Zwei Versionen für „${conflict.localName}“`,
+        message: `Die Installation enthält eine abweichende Version der Karte „${name}“.`,
+        actions: conflict.localDeleted ? [
+          { value: "lokal", label: "Gelöscht lassen" },
+          { value: "neu", label: "Aus der Installation wiederherstellen" }
+        ] : [
+          { value: "lokal", label: "Lokal behalten", hint: "Deine lokale Karte bleibt unverändert." },
+          { value: "neu", label: "Installierte Version übernehmen", hint: "Die installierte Karte ersetzt deine lokale Version." },
+          { value: "beide", label: "Beide behalten", hint: "Die installierte Version wird als zusätzliche Karte angelegt." }
         ]
       });
-      if (!["lokal", "neu", "beide", "bundled", "both"].includes(action)) continue;
-      await fetch("/api/startup-sync", {
+      if (!action) continue;
+      const saved = await fetch("/api/startup-sync", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ type: "map", id: conflict.id, file: conflict.file, action })
       });
+      if (!saved.ok) throw new Error("Kartenauswahl konnte nicht gespeichert werden.");
       if (action !== "lokal") changedMaps = true;
     }
     for (const conflict of sync?.incidentConflicts || []) {
+      const title = conflict.bundledTitle || conflict.localTitle;
       const action = await requestStartupSyncChoice({
         title: "Einsatzkatalog-Synchronisierung",
-        heading: `Neue Version fuer "${conflict.localTitle}"`,
-        message: `Die installierte App enthaelt eine neuere Version dieses Einsatzes ("${conflict.bundledTitle || conflict.localTitle}"). Was soll passieren?`,
-        defaultAction: "lokal",
-        actions: [
-          { value: "lokal", label: "Lokal behalten", hint: "Deine lokale Einsatzvariante bleibt unveraendert." },
-          { value: "neu", label: "Neue uebernehmen", hint: "Die lokale Variante wird durch die gebuendelte Version ersetzt." },
-          { value: "beide", label: "Beide behalten", hint: "Die gebuendelte Version wird als Kopie ergaenzt." }
+        heading: conflict.localDeleted ? `Lokal gelöschter Einsatz „${title}“` : `Zwei Versionen für „${conflict.localTitle}“`,
+        message: `Die Installation enthält eine abweichende Version des Einsatzes „${title}“.`,
+        actions: conflict.localDeleted ? [
+          { value: "lokal", label: "Gelöscht lassen" },
+          { value: "neu", label: "Aus der Installation wiederherstellen" }
+        ] : [
+          { value: "lokal", label: "Lokal behalten", hint: "Dein lokaler Einsatz bleibt unverändert." },
+          { value: "neu", label: "Installierte Version übernehmen", hint: "Der installierte Einsatz ersetzt deine lokale Version." },
+          { value: "beide", label: "Beide behalten", hint: "Der installierte Einsatz wird als Kopie ergänzt." }
         ]
       });
-      if (!["lokal", "neu", "beide", "bundled", "both"].includes(action)) continue;
-      await fetch("/api/startup-sync", {
+      if (!action) continue;
+      const saved = await fetch("/api/startup-sync", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ type: "incident", id: conflict.id, action })
       });
+      if (!saved.ok) throw new Error("Einsatzauswahl konnte nicht gespeichert werden.");
       if (action !== "lokal") changedIncidents = true;
     }
     if (changedMaps) await reloadMapOptionsAfterSync();
@@ -467,6 +653,7 @@ function requestStartupSyncChoice({ title, heading, message, defaultAction = "lo
       button.type = "button";
       button.value = action.value;
       button.className = action.value === defaultAction ? "primary-action" : "";
+      button.autofocus = action.value === defaultAction;
       button.innerHTML = `<strong>${escapeHtml(action.label)}</strong>${action.hint ? `<small>${escapeHtml(action.hint)}</small>` : ""}`;
       button.addEventListener("click", () => {
         cleanup(action.value);
@@ -479,14 +666,13 @@ function requestStartupSyncChoice({ title, heading, message, defaultAction = "lo
     document.body.append(dialog);
     dialog.addEventListener("cancel", (event) => {
       event.preventDefault();
-      cleanup(defaultAction);
+      cleanup(null);
     });
-    dialog.addEventListener("close", () => cleanup(defaultAction), { once: true });
+    dialog.addEventListener("close", () => cleanup(null), { once: true });
     const cleanup = (value) => {
       if (!dialog.isConnected) return;
-      const action = String(value || defaultAction || "lokal").trim().toLowerCase();
       dialog.remove();
-      resolve(action);
+      resolve(value);
     };
     showDialog(dialog);
   });
@@ -497,16 +683,6 @@ async function reloadMapOptionsAfterSync() {
   state.startupSyncHandled = true;
   await loadCenterOptions();
   state.startupSyncHandled = previousHandled;
-}
-
-function mergeStaticMaps(maps) {
-  const merged = new Map(STATIC_MAPS.map((map) => [map.id, map]));
-  maps.forEach((map) => {
-    const id = map?.id || map?.name;
-    if (!id) return;
-    merged.set(id, map);
-  });
-  return Array.from(merged.values());
 }
 
 function initializeShiftStatesForStart() {
@@ -600,6 +776,7 @@ function updateAdminControls() {
   document.querySelectorAll(".admin-only").forEach((node) => {
     node.hidden = !state.adminMode;
   });
+  document.querySelector("#advanced-admin-button").hidden = !canUseAdvancedAdmin();
   el.adminModeButton.textContent = state.adminMode ? "Admin aktiv" : "Admin";
   updateTestModeButton();
   renderAdminStatusBar();
@@ -783,7 +960,6 @@ function ensurePoiCatalog(center) {
   const hospitals = (center.hospitals || []).map((hospital) => ({
     id: `hospital-${hospital.id}`,
     label: hospital.label,
-    address: hospital.address,
     lat: hospital.lat,
     lng: hospital.lng,
     foreign: Boolean(hospital.foreign),
@@ -911,9 +1087,9 @@ function keywordGroupName(label) {
 
 function populateKeywordSelectGrouped(filter = "") {
   const currentValue = el.incidentKeyword.value;
-  const query = normalizeSearch(filter);
+  const query = normalizeSearch(keywordForCenter(filter));
   el.incidentKeywordOptions.innerHTML = "";
-  const matches = rdKeywords
+  const matches = dispositionKeywords()
     .filter((keyword) => !query || normalizeSearch(keyword.label).includes(query));
   if (!matches.length) {
     const empty = document.createElement("div");
@@ -936,6 +1112,32 @@ function populateKeywordSelectGrouped(filter = "") {
     el.incidentKeywordOptions.append(button);
   });
   el.incidentKeyword.value = currentValue;
+}
+
+function hasConfiguredLocalRef(vehicles) {
+  return vehicles.some((vehicle) => !vehicle.foreign && vehicle.type === "REF");
+}
+
+function keywordForCenter(keyword) {
+  if (state.hasLocalRef !== false) return keyword;
+  return keyword?.replace(/^RD\s*0\b/i, "RD 1");
+}
+
+function requiredVehiclesForCenter(required) {
+  const types = normalizeRequiredVehicles(required);
+  return state.hasLocalRef === false ? types.map((type) => type === "REF" ? "RTW" : type) : types;
+}
+
+function dispositionKeywords() {
+  if (state.hasLocalRef !== false) return rdKeywords;
+  return rdKeywords.map((keyword) => {
+    const label = keywordForCenter(keyword.label);
+    return label === keyword.label ? keyword : { ...keyword, label, required: requiredVehiclesForCenter(keyword.required) };
+  });
+}
+
+function findDispositionKeyword(label) {
+  return dispositionKeywords().find((keyword) => keyword.label === keywordForCenter(label));
 }
 
 function showKeywordOptions(filter = "") {
@@ -977,12 +1179,18 @@ function vehicleTypeLabel(type) {
 }
 
 function endShift() {
+  state.testIncidentDraft = null;
+  for (const vehicle of state.vehicles) cancelVehicleRoute(vehicle);
+  state.osmLoad?.abort();
+  state.osmLoad = null;
   state.timers.forEach((timer) => clearInterval(timer));
   cancelAllScheduledTimeouts();
   state.timers = [];
   el.dispatchScreen.classList.add("hidden");
   el.startScreen.classList.remove("hidden");
   document.body.classList.remove("dispatch-active");
+  if (state.startPreview?.mapId === el.centerSelect.value) state.startPreview.leaflet.invalidateSize({ pan: false });
+  else updateStartMapPreview();
 }
 
 function startingMinute(value) {
@@ -1013,10 +1221,10 @@ function seedVehicles(center) {
 }
 
 function createVehicleFromStationUnit(station, stationIndex, unit, unitIndex) {
-  const type = unit.type || unit.name?.split(" ")[0]?.toUpperCase() || "RTW";
+  const type = String(unit.type || unit.name?.split(" ")[0] || "RTW").trim().toUpperCase();
   const fallbackName = `${type} ${stationIndex + 1}/${unitIndex + 1}`;
   const name = unit.fullName || unit.name || fallbackName;
-  const foreign = stationIsForeign(station) || Boolean(unit.foreign);
+  const foreign = isForeignMapPoint(station) || Boolean(unit.foreign);
   return {
     id: unit.id || `${type}-${stationIndex + 1}-${unitIndex + 1}`,
     name,
@@ -1044,10 +1252,6 @@ function createVehicleFromStationUnit(station, stationIndex, unit, unitIndex) {
     shiftWarning: false,
     coveragePointId: null
   };
-}
-
-function stationIsForeign(station) {
-  return Boolean(station?.foreign || station?.foreignStation || station?.outsideCoverage || station?.external);
 }
 
 function foreignAvailabilityProbability(unit = {}, station = {}) {
@@ -1161,7 +1365,7 @@ function initMap() {
   if (!state.map) {
     state.map = L.map(el.map, { zoomControl: true, closePopupOnClick: true }).setView(state.center.mapCenter, state.center.zoom);
     state.map.on("click", handleMapClick);
-    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
+    L.tileLayer(MAP_TILES, {
       maxZoom: 19,
       keepBuffer: 4,
       attribution: "Tiles &copy; Esri, HERE, Garmin, FAO, NOAA, USGS"
@@ -1223,11 +1427,13 @@ function startClock() {
     const elapsedMinutes = (elapsedMs / 60000) * state.speed;
     state.absoluteMinute += elapsedMinutes;
     state.minute = (state.minute + elapsedMinutes) % 1440;
-    processCallRates();
+    if (state.osmLoad) state.lastCallRateMinute = Math.floor(state.absoluteMinute);
+    else processCallRates();
     rollForeignVehicleAvailability();
     rollHospitalAvailability();
     renderClock();
     if (typeof updateDynamicPatientStates === "function") updateDynamicPatientStates();
+    tna.tick();
     if (state.incidents.some((incident) => incident.status !== "geschlossen")) {
       renderIncidents();
     }
@@ -1992,10 +2198,11 @@ async function loadIncidentCatalog() {
     const response = await fetch("/api/incidents");
     if (!response.ok) throw new Error("incident api unavailable");
     const catalog = await response.json();
-    if (Array.isArray(catalog) && catalog.length) return catalog;
+    if (Array.isArray(catalog)) return catalog;
   } catch {
     // Fallback below keeps the standalone JSON file usable when the API is unavailable.
   }
+  if (state.serverAvailable) return [];
   try {
     const response = await fetch("incidents-dynamic.json");
     if (!response.ok) throw new Error("dynamic incident file unavailable");
@@ -2006,23 +2213,18 @@ async function loadIncidentCatalog() {
   }
 }
 
-async function loadDefaultMap() {
-  return loadSelectedMap(DEFAULT_MAP_ID);
-}
-
-async function loadSelectedMap(mapId) {
+async function loadSelectedMap(mapId, { signal } = {}) {
   if (!mapId) return null;
   try {
-    const response = await fetch(`/api/maps/${encodeURIComponent(mapId)}`);
-    if (!response.ok) throw new Error("map api unavailable");
-    const map = await response.json();
-    return map?.stations?.length ? map : null;
+    const overview = await fetchMapOverview(mapId, { signal });
+    return Array.isArray(overview.map?.stations) ? overview : null;
   } catch {
+    if (signal?.aborted || state.serverAvailable) return null;
     try {
-      const response = await fetch(`maps/${encodeURIComponent(mapId)}.json`);
+      const response = await fetch(`maps/${encodeURIComponent(mapId)}.json`, { signal });
       if (!response.ok) throw new Error("map file unavailable");
       const map = await response.json();
-      return map?.stations?.length ? map : null;
+      return map?.stations?.length ? { map } : null;
     } catch {
       return null;
     }
@@ -2080,9 +2282,11 @@ function normalizeDynamicIncidentTemplate(template) {
     priority: variant.priority || template.priority || "normal",
     required: variant.required || template.required || ["RTW"],
     noElrd: Boolean(variant.noElrd ?? template.noElrd ?? false),
+    tnaProbability: clampProbability(variant.tnaProbability),
     requiredServices: variant.requiredServices || template.requiredServices || [],
     report: variant.report || "",
     situationReport: variant.situationReport || "",
+    assistanceReason: variant.assistanceReason || "",
     patients,
     patientCount: patients.length || Number(variant.patientCount) || Number(template.patientCount) || 1,
     signal: Boolean(variant.signal ?? template.signal ?? false)
@@ -2151,20 +2355,20 @@ function openIncidentDialog(source = null) {
   const call = incident || source || state.pendingCall;
   if (!call) return;
 
+  const isTestDraft = !incident && source?.isTestIncident && canUseAdvancedAdmin();
+  state.testIncidentDraft = isTestDraft ? call : null;
   state.editingIncidentId = incident?.id || null;
   state.selectedDialogVehicleIds = new Set();
   state.showForeignVehiclesInDialog = false;
   el.incidentDialog.querySelector(".modal-header h2").textContent = incident ? "Einsatz bearbeiten" : "Neuen Einsatz erstellen";
   el.incidentLocation.value = call.location || defaultLocationLabel();
   populateKeywordSelectGrouped();
-  el.incidentKeyword.value = incident ? call.keyword || "" : "";
+  el.incidentKeyword.value = incident || isTestDraft ? call.keyword || "" : "";
   setIncidentSignal(call.signal ? "yes" : "no");
-  el.incidentFw.checked = incident
-    ? Boolean(incident.requiredServices?.includes("FW") || (incident.services?.FW && incident.services.FW.status !== "nicht alarmiert"))
-    : false;
-  el.incidentPol.checked = incident
-    ? Boolean(incident.requiredServices?.includes("POL") || (incident.services?.POL && incident.services.POL.status !== "nicht alarmiert"))
-    : false;
+  for (const [service, input] of [["FW", el.incidentFw], ["POL", el.incidentPol]]) {
+    input.checked = (incident || isTestDraft) && Boolean(call.requiredServices?.includes(service)
+      || (call.services?.[service] && call.services[service].status !== "nicht alarmiert"));
+  }
   el.incidentNote.value = call.note || "";
   renderIncidentCallText(call);
   renderIncidentTransportTarget(call);
@@ -2177,14 +2381,34 @@ function openIncidentDialog(source = null) {
   renderDispositionSuggestion();
   renderDialogVehicles(call, incident);
   showFloatingDialog(el.incidentDialog, { width: 620 });
+  updateCallControls();
 }
 
 function renderIncidentCallText(source) {
-  if (!el.incidentCallTextPanel || !el.incidentCallText) return;
   const text = String(source?.callerText || source?.callText || "").trim();
-  el.incidentCallTextPanel.hidden = !text;
-  el.incidentCallTextPanel.open = false;
+  hideIncidentCallText();
+  el.incidentCallTextButton.hidden = !text;
   el.incidentCallText.textContent = text;
+}
+
+function hideIncidentCallText() {
+  if (el.incidentCallTextPanel.matches(":popover-open")) el.incidentCallTextPanel.hidePopover();
+}
+
+function positionIncidentCallText() {
+  const panel = el.incidentCallTextPanel;
+  const form = el.incidentForm.getBoundingClientRect();
+  const anchor = el.incidentCallTextButton.getBoundingClientRect();
+  const right = window.innerWidth - form.right - 20;
+  const left = form.left - 20;
+  const canDock = Math.max(right, left) >= 215;
+  const width = Math.min(330, canDock ? Math.max(right, left) : window.innerWidth - 24);
+  const panelLeft = canDock
+    ? (right >= left ? form.right + 8 : form.left - width - 8)
+    : Math.max(12, Math.min(anchor.left, window.innerWidth - width - 12));
+  panel.style.width = `${width}px`;
+  panel.style.left = `${panelLeft}px`;
+  panel.style.top = `${Math.max(12, Math.min(anchor.top, window.innerHeight - panel.offsetHeight - 12))}px`;
 }
 
 function renderIncidentTransportTarget(source) {
@@ -2255,37 +2479,71 @@ async function requestIncidentTargetTravelTime(source, destination) {
 }
 
 function renderDispositionSuggestion() {
-  if (!el.dispositionSuggestion) return;
-  const keyword = el.incidentKeyword.value.trim();
-  const defaults = keywordDefaults[keyword];
-  if (!defaults) {
-    el.dispositionSuggestion.hidden = true;
-    el.dispositionSuggestion.innerHTML = "";
-    return;
-  }
-  el.dispositionSuggestion.hidden = false;
-  el.dispositionSuggestion.innerHTML = "";
-  const copy = document.createElement("div");
-  copy.className = "disposition-copy";
-  const label = document.createElement("strong");
-  label.textContent = "Vorschlag";
-  const text = document.createElement("span");
   const source = currentIncidentDialogSource();
-  const required = addElrdToRequiredForDialog(defaults.required, source);
-  const disposition = formatDisposition(required, defaults.requiredServices);
-  text.textContent = `${disposition} · ${defaults.signal ? "SoSi" : "ohne SoSi"}`;
-  copy.append(label, text);
-  const button = document.createElement("button");
-  button.type = "button";
-  button.textContent = "Übernehmen";
-  button.addEventListener("click", applyDispositionSuggestion);
-  el.dispositionSuggestion.append(copy, button);
+  const defaults = dispositionDefaults(source);
+  const required = defaults ? addElrdToRequiredForDialog(defaults.required, source) : [];
+  el.dispositionSuggestion.hidden = !defaults;
+  el.applyDispositionSuggestion.hidden = !defaults;
+  if (defaults) {
+    const disposition = formatDisposition(required, defaults.requiredServices);
+    el.dispositionSuggestionText.textContent = `${disposition} · ${defaults.signal ? "SoSi" : "ohne SoSi"}`;
+  }
+  renderIncidentSelectedTypes(state.editingIncidentId ? source : null);
+}
+
+function confirmDispositionDeviation(issues) {
+  const dialog = el.dispositionDeviation;
+  hideIncidentCallText();
+  el.dispositionDeviationReason.value = "";
+  dialog.returnValue = "";
+  el.dispositionDeviationReasons.replaceChildren(...issues.map((issue) => {
+    const item = document.createElement("li");
+    item.textContent = issue;
+    return item;
+  }));
+  return new Promise((resolve) => {
+    dialog.addEventListener("close", () => {
+      resolve(dialog.returnValue === "confirm" ? el.dispositionDeviationReason.value : "");
+    }, { once: true });
+    showDialog(dialog);
+  });
+}
+
+function dispositionDeviationReasons(required, vehicles) {
+  const selected = vehicles.filter((type) => !isStabilizerVehicle(type));
+  if (!selected.length) return [];
+  const missing = missingDispositionVehicleTypes(required, selected);
+  const issues = [];
+  const plannedRtw = required.filter((type) => type === "RTW").length;
+  const selectedRtw = selected.filter((type) => type === "RTW").length;
+  const rtwCoveredByItw = plannedRtw - selectedRtw - missing.filter((type) => type === "RTW").length;
+  if (rtwCoveredByItw > 0) {
+    issues.push("Für dieses Stichwort ist ein RTW vorgesehen. Ein ITW übernimmt diese Aufgabe.");
+  }
+  const plannedKtw = required.filter((type) => type === "KTW").length;
+  const selectedKtw = selected.filter((type) => type === "KTW").length;
+  const otherKtwCoverage = plannedKtw - selectedKtw - missing.filter((type) => type === "KTW").length;
+  if (missing.includes("RTW")) {
+    issues.push(selectedKtw > plannedKtw
+      ? "Für dieses Stichwort ist ein RTW vorgesehen. Ein KTW deckt diese Anforderung nicht ab."
+      : "Für dieses Stichwort fehlt ein RTW oder ein gleichwertiges Fahrzeug.");
+  }
+  if (otherKtwCoverage > 0) {
+    const replacement = selected.includes("RTW") ? "Ein RTW" : "Ein ITW";
+    issues.push(`${replacement} übernimmt einen Transport, für den das Stichwort einen KTW vorsieht.`);
+  }
+  const missingDoctors = missing.filter(isDoctorRequirement).length;
+  if (missingDoctors) {
+    issues.push(missingDoctors === 1
+      ? "Das Stichwort sieht einen Notarzt vor. In der Auswahl fehlt ein Notarztmittel."
+      : `Für dieses Stichwort fehlen ${missingDoctors} Notarztmittel.`);
+  }
+  return issues;
 }
 
 function applyDispositionSuggestion() {
-  const keyword = el.incidentKeyword.value.trim();
-  const defaults = keywordDefaults[keyword];
   const source = currentIncidentDialogSource();
+  const defaults = dispositionDefaults(source);
   if (!defaults || !source) return;
   const incident = state.editingIncidentId ? state.incidents.find((item) => item.id === state.editingIncidentId) : null;
   const unavailableIds = new Set(incident?.assigned || []);
@@ -2303,7 +2561,7 @@ function applyDispositionSuggestion() {
   if (redispatchWarnings.length) {
     const message = `Warnung: Folgende Fahrzeuge sind bereits ohne SoSi auf Anfahrt und werden durch den Vorschlag umdisponiert:\n\n${redispatchWarnings.join("\n")}`;
     window.alert(message);
-    logRadio(message.replaceAll("\n", " "), "warn");
+    logRadio(message.replaceAll("\n", " "), "warn", incident?.id || source.id);
   }
   renderDialogVehicles(source, incident);
 }
@@ -2324,7 +2582,13 @@ function setIncidentSupportServices(services = []) {
 function currentIncidentDialogSource() {
   return state.editingIncidentId
     ? state.incidents.find((item) => item.id === state.editingIncidentId)
-    : state.pendingCall;
+    : state.testIncidentDraft || state.pendingCall;
+}
+
+function dispositionDefaults(source) {
+  const isTest = source && (source === state.testIncidentDraft || (source.assigned && source.isTestIncident));
+  return isTest ? { ...source, required: requiredVehiclesForCenter(source.required) }
+    : findDispositionKeyword(el.incidentKeyword.value.trim());
 }
 
 function nearestDispositionVehicle(call, type, unavailableIds, options = {}) {
@@ -2369,16 +2633,24 @@ function redispatchWarningText(vehicle) {
 }
 
 function formatDisposition(required = [], services = []) {
-  const counts = new Map();
-  normalizeRequiredVehicles(required).forEach((type) => counts.set(type, (counts.get(type) || 0) + 1));
-  return [
-    ...[...counts.entries()].map(([type, count]) => `${count} ${type}`),
-    ...(services || [])
-  ].join(", ") || "Lage erkunden";
+  return [...vehicleTypeCounts(normalizeRequiredVehicles(required)), ...(services || [])].join(", ") || "Lage erkunden";
 }
 
-function submitIncidentDialog(event) {
+function vehicleTypeCounts(types) {
+  const counts = new Map();
+  types.forEach((type) => counts.set(type, (counts.get(type) || 0) + 1));
+  return [...counts].map(([type, count]) => `${count} ${type === "HVO" ? "HvO" : type}`);
+}
+
+function missingDispositionVehicleTypes(required, selected) {
+  return missingRequiredTypesForResources(required, selected, (type, outstanding) =>
+    outstanding.filter((requirement) => vehicleSatisfiesRequirement(type, requirement))
+  );
+}
+
+async function submitIncidentDialog(event) {
   event.preventDefault();
+  if (el.dispositionDeviation.open) return;
   const submitter = event.submitter;
   if (submitter?.value === "cancel") {
     state.editingIncidentId = null;
@@ -2390,16 +2662,33 @@ function submitIncidentDialog(event) {
   const editingIncident = state.editingIncidentId
     ? state.incidents.find((item) => item.id === state.editingIncidentId)
     : null;
-  const source = editingIncident || state.pendingCall;
+  const source = currentIncidentDialogSource();
   if (!source) return;
+  const isTestDraft = source === state.testIncidentDraft;
+  if (isTestDraft && !canUseAdvancedAdmin()) return;
 
-  const keyword = el.incidentKeyword.value.trim() || source.keyword || "Eigener Einsatz";
-  const defaults = keywordDefaults[keyword] || keywordDefaults[source.keyword] || {
+  const keyword = keywordForCenter(el.incidentKeyword.value.trim() || source.keyword || "Eigener Einsatz");
+  const selectedKeyword = findDispositionKeyword(keyword);
+  const defaults = dispositionDefaults(source) || selectedKeyword || {
     type: source.type || "emergency",
     required: source.required || ["RTW"],
     signal: Boolean(source.signal)
   };
-  const defaultRequired = normalizeRequiredVehicles(defaults.required);
+  const defaultRequired = requiredVehiclesForCenter(defaults.required);
+  const selectedIds = [...state.selectedDialogVehicleIds];
+  let deviationReason = "";
+  if (submitter?.value === "alarm" && !isTestDraft && !editingIncident?.isTestIncident && selectedKeyword) {
+    const selected = state.vehicles.filter((vehicle) => state.selectedDialogVehicleIds.has(vehicle.id) && !isStabilizerVehicle(vehicle.type));
+    if (selected.length) {
+      const ids = new Set([...selected.map((vehicle) => vehicle.id), ...(editingIncident?.assigned || [])]);
+      const types = state.vehicles.filter((vehicle) => ids.has(vehicle.id)).map((vehicle) => vehicle.type);
+      const issues = dispositionDeviationReasons(defaultRequired, types);
+      if (issues.length) {
+        deviationReason = await confirmDispositionDeviation(issues);
+        if (!deviationReason || !el.incidentDialog.open || currentIncidentDialogSource() !== source) return;
+      }
+    }
+  }
   const fallbackLat = Number.isFinite(source.lat) ? source.lat : state.center.mapCenter[0];
   const fallbackLng = Number.isFinite(source.lng) ? source.lng : state.center.mapCenter[1];
   const existingServices = editingIncident?.services || source.services || {};
@@ -2421,7 +2710,7 @@ function submitIncidentDialog(event) {
     lng: fallbackLng,
     note: el.incidentNote.value.trim()
   };
-  const incident = editingIncident || createIncident(incidentData);
+  const incident = editingIncident || createIncident(incidentData, { testIncident: isTestDraft });
   if (editingIncident) {
     const updatedPatient = updatePatientProfile(editingIncident.patient, incidentData);
     Object.assign(editingIncident, incidentData, {
@@ -2429,15 +2718,17 @@ function submitIncidentDialog(event) {
       required: updatedPatient.requiredVehicles,
       requiredServices: requiredExternalServices(incidentData, updatedPatient)
     });
-    editingIncident.status = hasRequiredVehicles(editingIncident) ? editingIncident.status : "in Bearbeitung";
-    logRadio(`Einsatz bearbeitet: ${editingIncident.keyword} in ${editingIncident.location}.`, "radio");
+    if (!updatedPatient.patients.some((patient) => patient.transporting) && !hasRequiredVehicles(editingIncident)) {
+      editingIncident.status = "in Bearbeitung";
+    }
+    logRadio(`Einsatz bearbeitet: ${editingIncident.keyword} in ${editingIncident.location}.`, "radio", editingIncident.id);
   }
 
-  const selectedIds = [...state.selectedDialogVehicleIds];
-  if (!editingIncident) {
+  if (!editingIncident && !isTestDraft) {
     completePendingCall(source.id);
   }
   state.editingIncidentId = null;
+  state.testIncidentDraft = null;
   el.incidentDialog.close();
   updateCallControls();
   renderAll();
@@ -2446,14 +2737,13 @@ function submitIncidentDialog(event) {
   });
 
   if (submitter?.value === "alarm") {
+    if (deviationReason) logRadio(`${incident.keyword}: Abweichende Disposition bestätigt (${deviationReason}).`, "warn", incident.id);
     selectedIds.forEach((vehicleId) => assignVehicle(vehicleId, incident.id));
   }
 }
 
 function showPendingCallOnMap() {
-  const source = state.editingIncidentId
-    ? state.incidents.find((item) => item.id === state.editingIncidentId)
-    : state.pendingCall;
+  const source = el.incidentDialog.open ? currentIncidentDialogSource() : state.pendingCall;
   if (!source || !state.mapReady) return;
   const lat = Number.isFinite(source.lat) ? source.lat : state.center.mapCenter[0];
   const lng = Number.isFinite(source.lng) ? source.lng : state.center.mapCenter[1];
@@ -2464,17 +2754,18 @@ function showPendingCallOnMap() {
     .openOn(state.map);
 }
 
-function createIncident(call) {
+function createIncident(call, { testIncident = false } = {}) {
   const patientProfile = createPatientProfile(call);
   const incident = {
     id: call.id,
     type: call.type,
-    keyword: call.keyword,
+    keyword: keywordForCenter(call.keyword),
     location: call.location || defaultLocationLabel(),
     callerName: call.callerName,
     note: call.note || "",
     required: patientProfile.requiredVehicles,
     noElrd: Boolean(call.noElrd),
+    tnaProbability: clampProbability(call.tnaProbability),
     signal: call.signal,
     priority: call.priority,
     locationSource: call.locationSource || "",
@@ -2483,6 +2774,7 @@ function createIncident(call) {
     createdAtMinute: state.minute,
     createdAtAbsoluteMinute: state.absoluteMinute,
     status: "offen",
+    firstUnitOnSceneAtMinute: null,
     assigned: [],
     patient: patientProfile,
     transportRequest: null,
@@ -2493,9 +2785,13 @@ function createIncident(call) {
       POL: call.services?.POL || createServiceState()
     }
   };
+  if (testIncident) {
+    incident.isTestIncident = true;
+    incident.tnaTest = call.tnaTest;
+  }
   state.incidents.unshift(incident);
   state.selectedIncidentId = incident.id;
-  logRadio(`Neuer Einsatz: ${incident.keyword} in ${incident.location}.`, "warn");
+  logRadio(`Neuer Einsatz: ${incident.keyword} in ${incident.location}.`, "warn", incident.id);
   return incident;
 }
 
@@ -2543,6 +2839,7 @@ function createPatientProfile(call) {
     report: "",
     pendingReport: call.report || "",
     situationReport: call.situationReport || "",
+    assistanceReason: call.assistanceReason || "",
     patientCount: patients.length,
     patients,
     requiredVehicles,
@@ -2561,6 +2858,9 @@ function updatePatientProfile(existing, call) {
   const patients = applyPatientConditionReports(existing?.patients?.length ? existing.patients : next.patients, call.patientConditions);
   return {
     ...next,
+    situationReported: existing?.situationReported,
+    situationRequested: existing?.situationRequested,
+    situationReportText: existing?.situationReportText,
     status: existing?.status || next.status,
     treatmentStartedAt: existing?.treatmentStartedAt || null,
     readyForTransport: existing?.readyForTransport || false,
@@ -2568,7 +2868,10 @@ function updatePatientProfile(existing, call) {
     report: existing?.report || "",
     pendingReport: existing?.pendingReport || next.pendingReport,
     situationReport: existing?.situationReport || next.situationReport,
-    patients
+    assistanceReason: existing?.assistanceReason || next.assistanceReason,
+    patients,
+    patientCount: patients.length,
+    requiredVehicles: applyElrdRequirement(aggregateRequiredVehicles(patients, call.required), call, patients)
   };
 }
 
@@ -2582,7 +2885,9 @@ function applyPatientConditionReports(patients, patientConditions = {}) {
 function normalizePatients(call, fallbackDepartmentKey) {
   if (Array.isArray(call.patients) && call.patients.length) {
     return call.patients.map((patient, index) => {
-      const required = hardRequiredVehicles(resolvePatientRequirement(patient.required || patient.options || [{ vehicles: patient.vehicles || ["RTW"], probability: 1 }]));
+      const required = hardRequiredVehicles(requiredVehiclesForCenter(
+        resolvePatientRequirement(patient.required || patient.options || [{ vehicles: patient.vehicles || ["RTW"], probability: 1 }])
+      ));
       const acuity = normalizePatientAcuity(patient.acuity || patient.patientAcuity || (call.type === "scheduled" ? "planned-transport" : "stable"));
       const effectiveRequired = acuity === "reanimation" ? ["RTW", "NEF"] : required;
       const refOnly = acuity !== "reanimation" && required.length > 0 && required.every((type) => type === "REF");
@@ -2609,7 +2914,7 @@ function normalizePatients(call, fallbackDepartmentKey) {
     });
   }
   const count = Math.max(1, Number(call.patientCount) || 1);
-  const baseRequired = hardRequiredVehicles(call.required?.length ? call.required : ["RTW"]);
+  const baseRequired = hardRequiredVehicles(requiredVehiclesForCenter(call.required?.length ? call.required : ["RTW"]));
   const baseAcuity = normalizePatientAcuity(call.acuity || (call.type === "scheduled" ? "planned-transport" : "stable"));
   const effectiveBaseRequired = baseAcuity === "reanimation" ? ["RTW", "NEF"] : baseRequired;
   const baseRefOnly = baseAcuity !== "reanimation" && baseRequired.length > 0 && baseRequired.every((type) => type === "REF");

@@ -5,6 +5,8 @@ function unitName(id) {
 function clearLogs() {
   el.callLog.innerHTML = "";
   el.radioLog.innerHTML = "";
+  state.radioIncidentFilter = false;
+  renderRadioIncidentFilter();
   el.callActions.innerHTML = "";
 }
 
@@ -12,9 +14,14 @@ function logCall(message, kind = "call") {
   appendLog(el.callLog, message, kind);
 }
 
-function logRadio(message, kind = "radio") {
+function logRadio(message, kind = "radio", incidentIds = []) {
   playLoggedStatusTone(message);
-  appendLog(el.radioLog, message, kind);
+  const ids = [].concat(incidentIds).filter(Boolean);
+  const entry = appendLog(el.radioLog, message, kind);
+  entry.classList.toggle("radio-conversation", /Sprechwunsch|Sprechaufforderung/.test(message));
+  if (ids.length) entry.dataset.incidentIds = ids.join(" ");
+  const filteredId = el.radioLog.dataset.incidentId;
+  entry.hidden = Boolean(filteredId && !ids.includes(filteredId));
 }
 
 function appendLog(container, message, kind) {
@@ -27,6 +34,7 @@ function appendLog(container, message, kind) {
   appendLogFormattedText(paragraph, message, kind);
   entry.append(paragraph);
   container.prepend(entry);
+  return entry;
 }
 
 function appendLogFormattedText(parent, message, kind) {
@@ -82,8 +90,8 @@ function appendTextBlock(parent, tag, text) {
   parent.append(node);
 }
 
-function timeLabel() {
-  const displayMinute = Math.floor(state.minute);
+function timeLabel(minute = state.minute) {
+  const displayMinute = Math.floor(minute);
   const hours = String(Math.floor(displayMinute / 60)).padStart(2, "0");
   const minutes = String(displayMinute % 60).padStart(2, "0");
   return `${hours}:${minutes}`;
@@ -132,11 +140,10 @@ function showFloatingDialog(dialog, options = {}) {
 function positionFloatingDialog(dialog, options = {}) {
   const card = dialog?.querySelector(".modal-card");
   if (!dialog || !card) return;
-  const width = Math.min(
-    options.width || dialog.dataset.floatingWidth || dialog.getBoundingClientRect().width || 820,
-    window.innerWidth - 28
-  );
-  dialog.style.width = `${Math.max(320, width)}px`;
+  const preferredWidth = Number(options.width || dialog.dataset.floatingWidth) || dialog.getBoundingClientRect().width || 820;
+  dialog.dataset.floatingWidth = preferredWidth;
+  const width = Math.min(preferredWidth, window.innerWidth - 28);
+  dialog.style.width = `${width}px`;
   card.style.width = "100%";
   card.style.maxWidth = "100%";
   card.style.left = "";

@@ -1,7 +1,7 @@
 ﻿const state = {
   mapData: {
-    id: "ils-regensburg-testversion-stadt-regensburg",
-    name: "ILS Regensburg (Testversion Stadt Regensburg)",
+    id: "new-map",
+    name: "Neue Karte",
     weather: "Leichter Regen, 12 C",
     mapCenter: [49.0134, 12.1016],
     zoom: 13,
@@ -16,6 +16,7 @@
   editingId: null,
   editingUnits: [],
   editingUnitId: null,
+  editingPoiCategories: new Set(),
   pinMode: false,
   coverageMarkers: [],
   importedPoiResults: [],
@@ -30,6 +31,9 @@
   boundaryResults: [],
   weightBoundaryResults: [],
   pointListFilter: "station",
+  mapLoad: null,
+  mapOsmReady: true,
+  mapSaving: false,
   editingSupportGroupId: null,
   editingSupportUnits: [],
   editingSupportUnitId: null,
@@ -40,10 +44,10 @@
 };
 
 const el = Object.fromEntries([
-  "map-name", "type", "name", "address", "foreign-point", "foreign-availability-row", "foreign-availability", "geocode", "rtw", "ktw", "nef", "vef", "ref", "itw", "rth", "ith", "elrd", "hvo", "fr", "lat", "lng",
-  "rates",
+  "map-name", "type", "name", "address", "address-label", "foreign-point", "foreign-availability-row", "foreign-availability", "geocode", "lat", "lng",
+  "rates", "status3-signal", "status3-normal", "tna-enabled", "tna-failure",
   "new-station", "new-hospital", "new-poi", "new-support-group", "edit-coverage", "edit-weight-zones", "point-dialog", "point-form", "coverage-form", "weight-form", "form-title",
-  "cancel-edit", "cancel-coverage", "vehicle-count-section", "unit-section", "hospital-section", "departments", "hospital-unavailable-probability",
+  "cancel-edit", "cancel-coverage", "unit-section", "hospital-section", "departments", "hospital-unavailable-probability",
   "pediatric-only", "poi-section", "poi-category-search", "poi-categories", "coverage", "use-bounds", "apply-coverage",
   "boundary-query", "search-boundaries", "replace-boundaries", "add-boundaries", "clear-coverage", "boundary-status", "boundary-results",
   "cancel-weight", "weight-query", "weight-factor", "search-weight-boundaries", "add-weight-zones", "weight-status", "weight-results", "weight-zone-list",
@@ -53,12 +57,16 @@ const el = Object.fromEntries([
   "unit-type", "unit-name", "unit-short", "unit-shift", "unit-responder-availability", "add-unit", "cancel-unit-edit", "units-list",
   "support-dialog", "support-title", "cancel-support", "support-name", "support-station", "support-availability", "support-min", "support-max",
   "support-unit-type", "support-unit-name", "support-unit-short", "support-unit-availability", "add-support-unit", "cancel-support-unit-edit", "support-units-list", "save-support",
-  "use-center", "add", "new", "save", "points", "saved", "map"
+  "use-center", "add", "new", "save", "points", "saved", "map", "point-search", "map-status", "map-library", "map-title", "map-mode", "cancel-pin"
 ].map((id) => [id.replaceAll("-", "_"), document.querySelector(`#se-${id}`)]));
 
 init();
 
 function init() {
+  if (typeof L === "undefined") {
+    el.map.textContent = "Die Kartenbibliothek konnte nicht geladen werden. Bitte die Verbindung prüfen und die Seite neu laden.";
+    return;
+  }
   state.map = L.map(el.map).setView(state.mapData.mapCenter, state.mapData.zoom);
   L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
     maxZoom: 19,
@@ -66,10 +74,7 @@ function init() {
   }).addTo(state.map);
   state.map.on("click", (event) => {
     if (state.pinMode) {
-      setPointCoordinates(event.latlng);
-      state.pinMode = false;
-      state.map.getContainer().classList.remove("pin-mode");
-      if (!el.point_dialog.open) showDialog(el.point_dialog);
+      finishPinMode(event.latlng);
       return;
     }
     el.lat.value = event.latlng.lat.toFixed(6);
@@ -86,6 +91,7 @@ function init() {
   el.add_coverage_pin.addEventListener("click", addCoveragePin);
   el.geocode.addEventListener("click", geocodeAddress);
   el.set_pin.addEventListener("click", beginPinMode);
+  el.cancel_pin.addEventListener("click", () => finishPinMode());
   el.add.addEventListener("click", savePoint);
   el.add_unit.addEventListener("click", addUnit);
   el.cancel_unit_edit.addEventListener("click", cancelUnitEdit);
@@ -141,6 +147,8 @@ function init() {
   el.point_filter_hospitals.addEventListener("click", () => setPointListFilter("hospital"));
   el.point_filter_poi.addEventListener("click", () => setPointListFilter("poi"));
   el.point_filter_support.addEventListener("click", () => setPointListFilter("support"));
+  el.point_search.addEventListener("input", () => renderList(mapEditorPoints()));
+  el.map_name.addEventListener("input", updateMapTitle);
   el.cancel_edit.addEventListener("click", closeWorkbench);
   el.cancel_coverage.addEventListener("click", closeWorkbench);
   el.cancel_weight.addEventListener("click", closeWorkbench);
@@ -155,6 +163,7 @@ function init() {
   closeWorkbench();
   render();
   loadSavedMaps();
+  new ResizeObserver(() => state.map.invalidateSize({ pan: false })).observe(el.map);
 }
 
 function defaultCallRates() {
@@ -483,28 +492,35 @@ function setPointCoordinates(latlng) {
 
 function beginPinMode() {
   state.pinMode = true;
+  el.map_mode.hidden = false;
   state.map.getContainer().classList.add("pin-mode");
-  alert("Klicke jetzt auf die Karte, um den Pin zu setzen.");
+  el.point_dialog.close();
+  el.map_mode.scrollIntoView({ block: "nearest" });
+  el.cancel_pin.focus({ preventScroll: true });
+}
+
+function finishPinMode(latlng) {
+  if (latlng) setPointCoordinates(latlng);
+  state.pinMode = false;
+  state.map.getContainer().classList.remove("pin-mode");
+  el.map_mode.hidden = true;
+  showDialog(el.point_dialog);
 }
 
 function startPointEdit(type, point = null) {
   state.editingId = point?.id || null;
   el.coverage_form.hidden = true;
   el.type.value = type;
-  const typeLabel = type === "hospital" ? "Klinik" : type === "poi" ? "POI" : "Rettungswache";
-  el.form_title.textContent = point ? `${typeLabel} bearbeiten` : `Neuer ${typeLabel}`;
+  const titles = {
+    hospital: ["Neue Klinik", "Klinik bearbeiten"],
+    poi: ["Neuer POI", "POI bearbeiten"],
+    station: ["Neue Rettungswache", "Rettungswache bearbeiten"]
+  };
+  el.form_title.textContent = titles[type][point ? 1 : 0];
   if (point) fillPointForm(point);
   else {
     clearPointFields();
     useCenter();
-    if (type === "station") {
-      el.rtw.value = 1;
-      el.ktw.value = 0;
-      el.nef.value = 0;
-      el.ref.value = 0;
-      el.rth.value = 0;
-      el.elrd.value = 0;
-    }
   }
   updateVehicleInputs();
   showDialog(el.point_dialog);
@@ -514,12 +530,14 @@ function showCoverageForm() {
   state.editingId = null;
   el.coverage_form.hidden = false;
   el.weight_form.hidden = true;
+  el.coverage_form.querySelector("input")?.focus();
 }
 
 function showWeightForm() {
   state.editingId = null;
   el.coverage_form.hidden = true;
   el.weight_form.hidden = false;
+  el.weight_form.querySelector("input")?.focus();
   renderWeightZoneList();
 }
 
@@ -527,6 +545,9 @@ function closeWorkbench() {
   state.editingId = null;
   el.coverage_form.hidden = true;
   el.weight_form.hidden = true;
+  state.pinMode = false;
+  state.map?.getContainer().classList.remove("pin-mode");
+  el.map_mode.hidden = true;
   if (el.point_dialog.open) el.point_dialog.close();
   clearPointFields();
 }
@@ -557,12 +578,15 @@ function addUnit() {
   if (el.type.value !== "station") return;
   const unit = unitFromForm();
   if (state.editingUnitId) {
-    state.editingUnits = state.editingUnits.map((item) => item.id === state.editingUnitId ? { ...unit, id: item.id } : item);
+    state.editingUnits = state.editingUnits.map((item) => {
+      if (item.id !== state.editingUnitId) return item;
+      const { availabilityProbability, responderAvailabilityProbability, ...previous } = item;
+      return { ...previous, ...unit };
+    });
   } else {
     state.editingUnits.push(unit);
   }
   resetUnitForm();
-  syncCountsFromUnits();
   renderUnits();
 }
 
@@ -622,7 +646,7 @@ function renderUnits() {
     return;
   }
   if (!state.editingUnits.length) {
-    el.units_list.textContent = "Noch keine einzelnen Fahrzeuge angelegt. Alternativ zählen die Felder oben.";
+    el.units_list.textContent = "Noch keine Fahrzeuge angelegt.";
     return;
   }
   state.editingUnits.forEach((unit) => {
@@ -647,7 +671,6 @@ function renderUnits() {
     removeButton.addEventListener("click", () => {
       if (state.editingUnitId === unit.id) resetUnitForm();
       state.editingUnits = state.editingUnits.filter((item) => item.id !== unit.id);
-      syncCountsFromUnits();
       renderUnits();
     });
     actions.append(editButton, removeButton);
@@ -787,41 +810,30 @@ function saveSupportGroup() {
   render();
 }
 
-function syncCountsFromUnits() {
-  const counts = state.editingUnits.reduce((sum, unit) => {
-    sum[unit.type] = (sum[unit.type] || 0) + 1;
-    return sum;
-  }, {});
-  el.rtw.value = counts.RTW || 0;
-  el.ktw.value = counts.KTW || 0;
-  el.nef.value = counts.NEF || 0;
-  el.vef.value = counts.VEF || 0;
-  el.ref.value = counts.REF || 0;
-  el.itw.value = counts.ITW || 0;
-  el.rth.value = counts.RTH || 0;
-  el.ith.value = counts.ITH || 0;
-  el.elrd.value = counts.ELRD || 0;
-  el.hvo.value = counts.HVO || 0;
-  el.fr.value = counts.FR || 0;
-}
-
 function savePoint() {
   const type = el.type.value;
   state.mapData.poi ||= [];
   const lat = Number(el.lat.value.replace(",", "."));
   const lng = Number(el.lng.value.replace(",", "."));
   if (!el.name.value.trim() || Number.isNaN(lat) || Number.isNaN(lng)) return;
+  const points = type === "station" ? state.mapData.stations : type === "hospital" ? state.mapData.hospitals : state.mapData.poi;
+  const previous = points.find((point) => point.id === state.editingId);
   const point = {
+    ...previous,
     id: state.editingId || makeId(el.name.value),
     label: el.name.value.trim(),
-    address: el.address.value.trim() || "eigener Kartenpunkt",
+    address: el.address.value.trim() || (type === "hospital" ? "" : "eigener Kartenpunkt"),
     lat,
     lng,
     foreign: Boolean(el.foreign_point.checked)
   };
   if (type === "station") {
-    point.vehicles = vehicleCounts();
-    point.units = namedUnits(point.vehicles);
+    if (state.editingUnitId) addUnit();
+    point.units = state.editingUnits.map((unit) => ({ ...unit }));
+    point.vehicles = point.units.reduce((counts, unit) => {
+      counts[unit.type] = (counts[unit.type] || 0) + 1;
+      return counts;
+    }, {});
     point.foreignAvailabilityProbability = availabilityPercentToProbability(el.foreign_availability.value);
     upsert(state.mapData.stations, point);
     state.mapData.hospitals = state.mapData.hospitals.filter((item) => item.id !== point.id);
@@ -845,39 +857,6 @@ function savePoint() {
   render();
 }
 
-function vehicleCounts() {
-  if (state.editingUnits.length) {
-    return state.editingUnits.reduce((counts, unit) => {
-      counts[unit.type] = (counts[unit.type] || 0) + 1;
-      return counts;
-    }, {});
-  }
-  return {
-    RTW: Number(el.rtw.value) || 0,
-    KTW: Number(el.ktw.value) || 0,
-    NEF: Number(el.nef.value) || 0,
-    VEF: Number(el.vef.value) || 0,
-    REF: Number(el.ref.value) || 0,
-    ITW: Number(el.itw.value) || 0,
-    RTH: Number(el.rth.value) || 0,
-    ITH: Number(el.ith.value) || 0,
-    ELRD: Number(el.elrd.value) || 0,
-    HVO: Number(el.hvo.value) || 0,
-    FR: Number(el.fr.value) || 0
-  };
-}
-
-function stationHasOnlyStabilizers(point) {
-  const vehicles = point?.vehicles || {};
-  const entries = Object.entries(vehicles).filter(([, count]) => Number(count) > 0);
-  return entries.length > 0 && entries.every(([type]) => type === "HVO" || type === "FR");
-}
-
-function stationEditorMarkerLabel(point) {
-  if (!stationHasOnlyStabilizers(point)) return "RW";
-  return Number(point?.vehicles?.HVO) > 0 ? "HvO" : "FR";
-}
-
 function availabilityPercentToProbability(value, fallback = 0.5) {
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;
@@ -891,23 +870,16 @@ function probabilityToPercent(value, fallback = 50) {
   return Math.round(Math.max(0, Math.min(1, normalized)) * 100);
 }
 
-function namedUnits(vehicles) {
-  if (state.editingUnits.length) return state.editingUnits.map((unit) => ({ ...unit }));
-  return Object.entries(vehicles).flatMap(([type, count]) =>
-    Array.from({ length: count }, (_, index) => ({ type, name: `${type} ${index + 1}`, shortName: `${type} ${index + 1}`, shift: "" }))
-  );
-}
-
 function updateVehicleInputs() {
   const disabled = el.type.value !== "station";
-  el.vehicle_count_section.hidden = disabled;
   el.unit_section.hidden = disabled;
   el.hospital_section.hidden = el.type.value !== "hospital";
+  el.address_label.textContent = el.type.value === "hospital" ? "Adresse zur Standortsuche" : "Adresse";
   el.poi_section.hidden = el.type.value !== "poi";
   el.foreign_point.disabled = el.type.value === "poi";
   el.foreign_availability_row.hidden = el.type.value !== "station";
   el.foreign_availability.disabled = el.type.value !== "station";
-  [el.rtw, el.ktw, el.nef, el.ref, el.rth, el.elrd, el.unit_type, el.unit_name, el.unit_short, el.unit_shift, el.unit_responder_availability, el.add_unit, el.cancel_unit_edit].forEach((input) => {
+  [el.unit_type, el.unit_name, el.unit_short, el.unit_shift, el.unit_responder_availability, el.add_unit, el.cancel_unit_edit].forEach((input) => {
     input.disabled = disabled;
   });
   el.hospital_section.open = el.type.value === "hospital";
@@ -916,7 +888,6 @@ function updateVehicleInputs() {
   });
   el.pediatric_only.disabled = el.type.value !== "hospital";
   el.hospital_unavailable_probability.disabled = el.type.value !== "hospital";
-  el.poi_categories.disabled = el.type.value !== "poi";
   el.poi_category_search.disabled = el.type.value !== "poi";
   renderUnits();
 }
@@ -953,39 +924,78 @@ function render() {
     layer.on("mouseout", () => layer.setStyle(baseStyle));
     state.layers.push(layer);
   });
-  const points = [
+  const points = mapEditorPoints();
+  for (const point of points) {
+    if (point.type === "hospital") continue;
+    if (point.type === "poi" && !state.showPoiMarkers) continue;
+    if (point.lat == null || point.lng == null || !Number.isFinite(Number(point.lat)) || !Number.isFinite(Number(point.lng))) continue;
+    renderEditorPointMarker([point]);
+  }
+  groupHospitalsByLocation(points.filter((point) => point.type === "hospital")).forEach(renderEditorPointMarker);
+  renderOsmAddressTileOverlay();
+  renderList(points);
+}
+
+function renderEditorPointMarker(entries) {
+  const [point] = entries;
+  const grouped = entries.length > 1;
+  const isStation = point.type === "station";
+  const kind = isStation ? "station station-available" : point.type;
+  const foreign = entries.every(isForeignMapPoint);
+  const label = isStation ? stationMapSymbol(point) : { hospital: "+", poi: "POI", support: "UGRD" }[point.type];
+  const title = grouped ? hospitalMapMarkerTitle(entries) : point.label || point.stationLabel || label;
+  const classes = `${kind}${foreign ? " foreign-map-point" : ""}`;
+  const icon = createMapPointIcon(label, classes, grouped ? entries.length : undefined);
+  const marker = L.marker([point.lat, point.lng], { icon, title }).addTo(state.map);
+  marker.getElement()?.setAttribute("aria-label", title);
+  if (grouped) {
+    const popup = document.createElement("div");
+    popup.className = "map-popup-actions";
+    for (const entry of entries) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = entry.label || "Klinik";
+      button.addEventListener("click", () => {
+        marker.closePopup();
+        editPoint(entry);
+      });
+      popup.append(button);
+    }
+    marker.bindPopup(popup);
+  } else {
+    marker.bindPopup(escapeHtml(title));
+  }
+  marker.on("click", () => {
+    if (state.pinMode) {
+      marker.closePopup();
+      finishPinMode(marker.getLatLng());
+    } else if (!grouped && point.type === "support") {
+      startSupportGroupEdit(point);
+    } else if (!grouped) {
+      editPoint(point);
+    }
+  });
+  state.layers.push(marker);
+}
+
+function mapEditorPoints() {
+  return [
     ...state.mapData.stations.map((point) => ({ ...point, type: "station" })),
     ...state.mapData.hospitals.map((point) => ({ ...point, type: "hospital" })),
     ...(state.mapData.poi || []).map((point) => ({ ...point, type: "poi" })),
     ...(state.mapData.supportGroups || []).map((point) => ({ ...point, type: "support" }))
   ];
-  points.forEach((point) => {
-    if (point.type === "poi" && !state.showPoiMarkers) return;
-    if (!Number.isFinite(Number(point.lat)) || !Number.isFinite(Number(point.lng))) return;
-    const foreignClass = point.foreign ? " foreign-map-point" : "";
-    const markerClass = point.type === "hospital" ? "hospital" : point.type === "poi" ? "poi" : point.type === "support" ? "support" : `station station-available${stationHasOnlyStabilizers(point) ? " station-stabilizer" : ""}`;
-    const markerLabel = point.type === "hospital" ? (point.foreign ? "FKH" : "KH") : point.type === "poi" ? "POI" : point.type === "support" ? "UGRD" : (point.foreign ? "FRW" : stationEditorMarkerLabel(point));
-    const icon = L.divIcon({
-      className: "",
-      html: `<span class="map-marker ${markerClass}${foreignClass}">${markerLabel}</span>`,
-      iconSize: point.type === "support" ? [42, 28] : [34, 34],
-      iconAnchor: point.type === "support" ? [21, 14] : [17, 17]
-    });
-    const marker = L.marker([point.lat, point.lng], { icon }).bindPopup(point.label || point.stationLabel || "UGRD/SEG").addTo(state.map);
-    marker.on("click", () => point.type === "support" ? startSupportGroupEdit(point) : editPoint(point));
-    state.layers.push(marker);
-  });
-  renderOsmAddressTileOverlay();
-  renderList(points);
 }
 
 function renderList(points) {
   el.points.innerHTML = "";
   updatePointListTabs();
-  const filtered = points.filter((point) => point.type === state.pointListFilter);
+  const query = el.point_search.value.trim().toLocaleLowerCase("de");
+  const filtered = points.filter((point) => point.type === state.pointListFilter &&
+    (!query || `${point.label || ""} ${point.address || ""}`.toLocaleLowerCase("de").includes(query)));
   if (!filtered.length) {
     el.points.className = "editor-point-list empty-state";
-    el.points.textContent = emptyPointListText(state.pointListFilter);
+    el.points.textContent = query ? "Keine passenden Objekte." : emptyPointListText(state.pointListFilter);
     return;
   }
   el.points.className = "editor-point-list";
@@ -999,10 +1009,17 @@ function renderList(points) {
         : point.type === "support"
           ? ` | ${(point.units || []).length} Fahrzeug(e) | ${point.stationLabel || "keine Wache"} | ${probabilityToPercent(point.availabilityProbability)}%`
           : ` | ${(point.categories || []).join(", ") || "keine Kategorien"}`;
-    row.innerHTML = `<div><h3>${escapeHtml(point.label)}</h3><p>${point.type}${escapeHtml(extra)}</p></div>`;
+    const detail = [point.type === "hospital" ? "" : point.address, ...extra.split(" | ").filter(Boolean)].filter(Boolean).join(" · ");
+    row.innerHTML = `<div><h3>${escapeHtml(point.label)}</h3><p>${escapeHtml(detail)}</p></div>`;
     const actions = document.createElement("div");
     actions.className = "row-actions";
-    [["Bearbeiten", () => point.type === "support" ? startSupportGroupEdit(point) : editPoint(point)], ["Löschen", () => deletePoint(point)]].forEach(([label, handler]) => {
+    const actionsForPoint = [["Bearbeiten", () => point.type === "support" ? startSupportGroupEdit(point) : editPoint(point)]];
+    if (Number.isFinite(point.lat) && Number.isFinite(point.lng)) actionsForPoint.push(["Auf Karte", () => {
+      state.map.setView([point.lat, point.lng], Math.max(state.map.getZoom(), 15));
+      el.map.scrollIntoView({ block: "nearest" });
+    }]);
+    actionsForPoint.push(["Löschen", () => deletePoint(point)]);
+    actionsForPoint.forEach(([label, handler]) => {
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = label;
@@ -1032,7 +1049,7 @@ function stationListExtra(point) {
 
 function setPointListFilter(filter) {
   state.pointListFilter = filter;
-  render();
+  renderList(mapEditorPoints());
 }
 
 function updatePointListTabs() {
@@ -1041,7 +1058,11 @@ function updatePointListTabs() {
     [el.point_filter_hospitals, "hospital"],
     [el.point_filter_poi, "poi"],
     [el.point_filter_support, "support"]
-  ].forEach(([button, filter]) => button?.classList.toggle("active", state.pointListFilter === filter));
+  ].forEach(([button, filter]) => {
+    const active = state.pointListFilter === filter;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
 }
 
 function emptyPointListText(filter) {
@@ -1065,36 +1086,36 @@ function fillPointForm(point) {
   el.address.value = point.address || "";
   el.lat.value = point.lat.toFixed(6);
   el.lng.value = point.lng.toFixed(6);
-  el.foreign_point.checked = Boolean(point.foreign);
+  el.foreign_point.checked = isForeignMapPoint(point);
   el.foreign_availability.value = probabilityToPercent(point.foreignAvailabilityProbability);
-  el.rtw.value = point.vehicles?.RTW || 0;
-  el.ktw.value = point.vehicles?.KTW || 0;
-  el.nef.value = point.vehicles?.NEF || 0;
-  el.vef.value = point.vehicles?.VEF || 0;
-  el.ref.value = point.vehicles?.REF || 0;
-  el.itw.value = point.vehicles?.ITW || 0;
-  el.rth.value = point.vehicles?.RTH || 0;
-  el.ith.value = point.vehicles?.ITH || 0;
-  el.elrd.value = point.vehicles?.ELRD || 0;
-  el.hvo.value = point.vehicles?.HVO || 0;
-  el.fr.value = point.vehicles?.FR || 0;
-  state.editingUnits = (point.units || []).map((unit) => ({
-    id: unit.id || makeId(`${unit.type}-${unit.name}-${Date.now()}`),
-    type: unit.type || "RTW",
-    name: unit.fullName || unit.name || "",
-    fullName: unit.fullName || unit.name || "",
-    shortName: unit.shortName || unit.short || unit.name || "",
-    shift: unit.shift || "",
-    ...(unit.availabilityProbability !== undefined ? { availabilityProbability: unit.availabilityProbability } : {}),
-    ...(unit.responderAvailabilityProbability !== undefined ? { responderAvailabilityProbability: unit.responderAvailabilityProbability } : {})
-  }));
+  state.editingUnits = point.type === "station" ? stationUnitsForEditing(point) : [];
   resetUnitForm();
   renderDepartmentChecks(point.departments || []);
   el.pediatric_only.checked = Boolean(point.pediatricOnly);
   el.hospital_unavailable_probability.value = probabilityToPercent(point.unavailableProbability, 0);
-  renderPoiCategorySelect(point.categories || []);
+  state.editingPoiCategories = new Set(point.categories || []);
+  el.poi_category_search.value = "";
+  renderPoiCategorySelect();
   el.add.textContent = "Änderungen speichern";
   renderUnits();
+}
+
+function stationUnitsForEditing(point) {
+  const stationNumber = state.mapData.stations.findIndex((station) => station.id === point.id) + 1;
+  if (Array.isArray(point.units) && point.units.length) {
+    return point.units.map((unit, index) => {
+      const type = unit.type || unit.name?.split(" ")[0]?.toUpperCase() || "RTW";
+      const name = unit.fullName || unit.name || `${type} ${stationNumber}/${index + 1}`;
+      return { ...unit, id: unit.id || `${type}-${stationNumber}-${index + 1}`, type, name, fullName: name, shortName: unit.shortName || unit.short || name, shift: unit.shift || "" };
+    });
+  }
+  return Object.entries(point.vehicles || { RTW: 1 }).flatMap(([type, count]) => {
+    const length = Number.isFinite(Number(count)) ? Math.ceil(Number(count)) : 0;
+    return Array.from({ length }, (_, index) => {
+      const name = `${type} ${stationNumber}/${index + 1}`;
+      return { id: `${type}-${stationNumber}-${index + 1}`, type, name, fullName: name, shortName: name, shift: "" };
+    });
+  });
 }
 
 function deletePoint(point) {
@@ -1106,27 +1127,41 @@ function deletePoint(point) {
 }
 
 async function saveMapFile() {
-  state.mapData.name = el.map_name.value.trim() || "Neue Karte";
-  state.mapData.callRates = normalizeCallRates(state.mapData.callRates);
-  state.mapData.id = makeId(state.mapData.name);
-  state.mapData.mapCenter = [state.map.getCenter().lat, state.map.getCenter().lng];
-  state.mapData.zoom = state.map.getZoom();
+  if (state.mapLoad || !state.mapOsmReady || state.mapSaving || state.osmImportRunning) return;
+  state.mapSaving = true;
+  updateMapControls();
+  setMapStatus("Karte wird gespeichert …");
+  const name = el.map_name.value.trim() || "Neue Karte";
+  const id = state.mapData.id !== "new-map" && state.mapData.name === name ? state.mapData.id : makeId(name);
+  const mapSettings = {
+    id,
+    name,
+    callRates: normalizeCallRates(state.mapData.callRates),
+    status3Radio: normalizeStatus3Radio({ signal: el.status3_signal.value, normal: el.status3_normal.value }),
+    tnaEnabled: el.tna_enabled.checked,
+    tnaFailureProbability: availabilityPercentToProbability(el.tna_failure.value, .05),
+    mapCenter: [state.map.getCenter().lat, state.map.getCenter().lng],
+    zoom: state.map.getZoom()
+  };
   try {
-    const response = await fetch("/api/maps", {
+    const response = await fetch("/api/maps?summary=1", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(state.mapData)
+      body: JSON.stringify({ ...state.mapData, ...mapSettings })
     });
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       throw new Error(error.error || `Speichern fehlgeschlagen (${response.status})`);
     }
-    el.saved.textContent = "Karte gespeichert.";
+    Object.assign(state.mapData, mapSettings);
+    setMapStatus("Karte gespeichert.");
+    loadSavedMaps();
   } catch (error) {
-    el.saved.textContent = `Karte konnte nicht gespeichert werden: ${error.message || error}`;
-    return;
+    setMapStatus(`Karte konnte nicht gespeichert werden: ${error.message || error}`, true);
+  } finally {
+    state.mapSaving = false;
+    updateMapControls();
   }
-  loadSavedMaps();
 }
 
 async function loadSavedMaps() {
@@ -1152,15 +1187,59 @@ async function loadSavedMaps() {
 }
 
 async function loadMap(id) {
-  const response = await fetch(`/api/maps/${id}`);
-  if (!response.ok) return;
-  state.mapData = await response.json();
+  if (state.mapSaving || state.osmImportRunning) return;
+  state.mapLoad?.abort();
+  const controller = new AbortController();
+  state.mapLoad = controller;
+  el.map_library.open = false;
+  updateMapControls();
+  setMapStatus("Karte wird geladen …");
+  try {
+    const overview = await fetchMapOverview(id, { signal: controller.signal });
+    if (state.mapLoad !== controller) return;
+    state.mapOsmReady = !overview.osmRevision;
+    showMapData(overview.map);
+    if (overview.osmRevision) {
+      setMapStatus("Karte geöffnet. OSM-Daten werden im Hintergrund geladen …");
+      const osmData = await fetchMapOsmData(overview, { signal: controller.signal });
+      if (state.mapLoad !== controller) return;
+      state.mapData.osmData = osmData;
+      state.mapOsmReady = true;
+      updateAddressDiagnosticsToggle();
+    }
+    setMapStatus("Karte geladen.");
+  } catch (error) {
+    if (state.mapLoad === controller) setMapStatus(error.message || "Karte konnte nicht geladen werden.", true);
+  } finally {
+    if (state.mapLoad === controller) {
+      state.mapLoad = null;
+      updateMapControls();
+    }
+  }
+}
+
+function showMapData(map) {
+  state.mapData = map;
   state.mapData.poi ||= [];
   state.mapData.osmData ||= emptyImportedOsmData();
   state.mapData.supportGroups ||= [];
   state.mapData.weightZones ||= [];
   state.mapData.callRates = normalizeCallRates(state.mapData.callRates);
+  const status3Radio = normalizeStatus3Radio(state.mapData.status3Radio);
+  el.status3_signal.value = status3Radio.signal;
+  el.status3_normal.value = status3Radio.normal;
+  el.tna_enabled.checked = state.mapData.tnaEnabled === true;
+  el.tna_failure.value = Math.round(Math.max(0, Math.min(1, Number(state.mapData.tnaFailureProbability ?? .05))) * 100);
   el.map_name.value = state.mapData.name;
+  updateMapTitle();
+  el.point_search.value = "";
+  state.importedPoiResults = [];
+  state.importedOsmData = null;
+  state.failedOsmTiles = [];
+  el.retry_osm_failed.disabled = true;
+  el.apply_imported_pois.disabled = true;
+  setOsmImportStatus("Keine Suche gestartet.");
+  renderOsmImportPreview();
   el.coverage.value = state.mapData.coverageGeoJson ? JSON.stringify(state.mapData.coverageGeoJson, null, 2) : "";
   state.editingId = null;
   state.editingUnits = [];
@@ -1176,17 +1255,30 @@ async function loadMap(id) {
 }
 
 function newMap() {
-  state.mapData = { id: "new-map", name: "Neue Karte", weather: "", mapCenter: [49.00761514468197, 12.09749221801758], zoom: 14, stations: [], hospitals: [], poi: [], supportGroups: [], osmData: emptyImportedOsmData(), coverageGeoJson: null, weightZones: [], callRates: defaultCallRates() };
-  el.map_name.value = state.mapData.name;
-  el.coverage.value = "";
-  state.showOsmAddressDiagnostics = false;
-  state.showAllRoadDiagnostics = false;
-  el.show_address_diagnostics.checked = false;
-  el.show_all_road_diagnostics.checked = false;
-  updateAddressDiagnosticsToggle();
-  renderRateEditor();
-  closeWorkbench();
-  render();
+  if (state.mapSaving || state.osmImportRunning) return;
+  state.mapLoad?.abort();
+  state.mapLoad = null;
+  state.mapOsmReady = true;
+  showMapData({ id: "new-map", name: "Neue Karte", weather: "", mapCenter: [49.00761514468197, 12.09749221801758], zoom: 14, stations: [], hospitals: [], poi: [], supportGroups: [], coverageGeoJson: null, weightZones: [], callRates: defaultCallRates() });
+  el.map_library.open = false;
+  updateMapControls();
+  setMapStatus("");
+}
+
+function updateMapTitle() {
+  el.map_title.textContent = el.map_name.value.trim() || "Neue Karte";
+}
+
+function setMapStatus(message, error = false) {
+  el.map_status.textContent = message;
+  el.map_status.classList.toggle("error-text", error);
+}
+
+function updateMapControls() {
+  const busy = state.mapSaving || state.osmImportRunning;
+  el.save.disabled = busy || Boolean(state.mapLoad) || !state.mapOsmReady;
+  el.new.disabled = busy;
+  el.import_pois.disabled = busy || Boolean(state.mapLoad) || !state.mapOsmReady;
 }
 
 function editCoveragePins() {
@@ -1223,7 +1315,8 @@ function addCoveragePin() {
 }
 
 function addCoverageMarker(point) {
-  const marker = L.marker([point.lat, point.lng], { draggable: true }).addTo(state.map);
+  const icon = createMapPointIcon("◆", "coverage");
+  const marker = L.marker([point.lat, point.lng], { icon, title: "Grenzpunkt verschieben", draggable: true }).addTo(state.map);
   marker.on("drag", syncCoverageFromMarkers);
   marker.on("dragend", syncCoverageFromMarkers);
   state.coverageMarkers.push(marker);
@@ -1270,11 +1363,13 @@ function clearPointFields() {
   el.foreign_availability.value = 50;
   el.hospital_unavailable_probability.value = 0;
   state.editingUnits = [];
+  el.unit_type.value = "RTW";
   resetUnitForm();
-  syncCountsFromUnits();
   renderDepartmentChecks();
   el.pediatric_only.checked = false;
-  renderPoiCategorySelect([]);
+  state.editingPoiCategories = new Set();
+  el.poi_category_search.value = "";
+  renderPoiCategorySelect();
   renderUnits();
 }
 
@@ -1295,23 +1390,30 @@ function selectedDepartments() {
   return [...el.departments.querySelectorAll("input:checked")].map((input) => input.value);
 }
 
-function renderPoiCategorySelect(selected = selectedPoiCategories()) {
-  const selectedSet = new Set(selected);
+function renderPoiCategorySelect() {
   const query = normalizeSearch(el.poi_category_search?.value || "");
   el.poi_categories.innerHTML = "";
   (window.poiCategoryCatalog || [])
     .filter((category) => !query || normalizeSearch(`${category.id || category.key} ${category.label}`).includes(query))
     .forEach((category) => {
-      const option = document.createElement("option");
-      option.value = category.id || category.key;
-      option.textContent = category.label;
-      option.selected = selectedSet.has(option.value);
-      el.poi_categories.append(option);
+      const key = category.id || category.key;
+      const label = document.createElement("label");
+      label.className = "check-row";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = state.editingPoiCategories.has(key);
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) state.editingPoiCategories.add(key);
+        else state.editingPoiCategories.delete(key);
+      });
+      label.append(checkbox, category.label);
+      el.poi_categories.append(label);
     });
+  if (!el.poi_categories.childElementCount) el.poi_categories.textContent = "Keine passenden Kategorien.";
 }
 
 function selectedPoiCategories() {
-  return [...el.poi_categories.selectedOptions].map((option) => option.value);
+  return [...state.editingPoiCategories];
 }
 
 function renderOsmImportCategories() {
@@ -1344,6 +1446,7 @@ function selectedOsmImportCategories() {
 }
 
 async function importOsmPois() {
+  if (state.mapLoad || !state.mapOsmReady || state.mapSaving) return;
   const categories = selectedOsmImportCategories();
   const layers = selectedOsmImportLayers();
   if (!categories.length && !layers.length) {
@@ -1364,6 +1467,7 @@ async function importOsmPois() {
   el.apply_imported_pois.disabled = true;
   el.import_pois.textContent = "Suche...";
   state.osmImportRunning = true;
+  updateMapControls();
   state.osmImportPauseAfterTile = false;
   state.osmImportAbort = false;
   state.failedOsmTiles = [];
@@ -1372,7 +1476,7 @@ async function importOsmPois() {
   updateRetryFailedOsmButton();
   setOsmImportStatus("OSM wird abgefragt...");
   try {
-    const poiData = { poi: [] };
+    const poisById = new Map();
     const osmData = emptyImportedOsmData();
     const warnings = [];
     for (const layer of layers) {
@@ -1384,7 +1488,7 @@ async function importOsmPois() {
     for (let index = 0; index < categoryChunks.length; index += 1) {
       if (state.osmImportAbort || state.osmImportPauseAfterTile) break;
       const chunk = categoryChunks[index];
-      setOsmImportStatus(`OSM wird abgefragt: POI ${index + 1}/${categoryChunks.length} (${state.importedPoiResults.length + poiData.poi.length} POI bisher)...`);
+      setOsmImportStatus(`OSM wird abgefragt: POI ${index + 1}/${categoryChunks.length} (${poisById.size} POI bisher)...`);
       const response = await fetch("/api/osm-pois", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -1393,22 +1497,24 @@ async function importOsmPois() {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) warnings.push(`POI ${chunk.join(", ")}: ${data.error || "fehlgeschlagen"}`);
       else {
-        poiData.poi.push(...(Array.isArray(data.poi) ? data.poi : []));
+        for (const poi of Array.isArray(data.poi) ? data.poi : []) {
+          const key = poi.id || `${poi.lat},${poi.lng},${poi.label}`;
+          const previous = poisById.get(key);
+          const categories = [...new Set([...(previous?.categories || []), ...(poi.categories || [])])];
+          poisById.set(key, { ...previous, ...poi, categories });
+        }
         warnings.push(...(data.warnings || []));
       }
-      state.importedPoiResults = uniqueByImportId(Array.isArray(poiData.poi) ? poiData.poi : []);
+      state.importedPoiResults = [...poisById.values()];
       renderOsmImportPreview();
-      el.apply_imported_pois.disabled = !osmImportHasResults();
       await pauseOsmImportStep();
     }
-    state.importedPoiResults = uniqueByImportId(Array.isArray(poiData.poi) ? poiData.poi : []);
     state.importedOsmData = {
       roads: uniqueByImportId(osmData.roads),
       outdoorAreas: uniqueByImportId(osmData.outdoorAreas)
     };
     updateAddressDiagnosticsToggle();
     renderOsmImportPreview();
-    el.apply_imported_pois.disabled = !osmImportHasResults();
     if (!osmImportHasResults() && warnings.length) throw new Error(warnings[0] || "OSM-Import fehlgeschlagen");
     const endLabel = state.osmImportAbort
       ? "abgebrochen"
@@ -1423,13 +1529,14 @@ async function importOsmPois() {
     setOsmImportStatus(error.message || "OSM-Import fehlgeschlagen.", true);
   } finally {
     state.osmImportRunning = false;
-    el.import_pois.disabled = false;
+    el.apply_imported_pois.disabled = !osmImportHasResults();
+    updateMapControls();
     updateRetryFailedOsmButton();
     el.pause_osm_import.disabled = true;
     el.abort_osm_import.disabled = true;
     el.pause_osm_import.textContent = "Nach Schritt pausieren";
     el.abort_osm_import.textContent = "Abbrechen";
-    el.import_pois.textContent = "OSM suchen";
+    el.import_pois.textContent = "Import starten";
   }
 }
 
@@ -1482,11 +1589,14 @@ async function importOsmDataLayerWithProgress(layer, payload, osmData, warnings)
 }
 
 async function retryFailedOsmTiles() {
+  if (state.mapLoad || !state.mapOsmReady || state.mapSaving) return;
   if (!state.failedOsmTiles.length || state.osmImportRunning) return;
   state.osmImportRunning = true;
+  el.apply_imported_pois.disabled = true;
   state.osmImportPauseAfterTile = false;
   state.osmImportAbort = false;
   el.import_pois.disabled = true;
+  updateMapControls();
   el.retry_osm_failed.disabled = true;
   el.pause_osm_import.disabled = false;
   el.abort_osm_import.disabled = false;
@@ -1539,7 +1649,8 @@ async function retryFailedOsmTiles() {
     setOsmImportStatus(error.message || "Retry fehlgeschlagen.", true);
   } finally {
     state.osmImportRunning = false;
-    el.import_pois.disabled = false;
+    el.apply_imported_pois.disabled = !osmImportHasResults();
+    updateMapControls();
     el.pause_osm_import.disabled = true;
     el.abort_osm_import.disabled = true;
     el.pause_osm_import.textContent = "Nach Schritt pausieren";
@@ -1570,7 +1681,6 @@ function updateOsmDataProgressPreview(osmData) {
   updateAddressDiagnosticsToggle();
   renderOsmImportPreview();
   renderOsmAddressTileOverlay();
-  el.apply_imported_pois.disabled = !osmImportHasResults();
 }
 
 function osmDataProgressText(osmData) {
@@ -1695,7 +1805,7 @@ function roundImportCoord(value) {
 }
 
 function applyImportedPois() {
-  if (!osmImportHasResults()) return;
+  if (state.mapLoad || !state.mapOsmReady || state.mapSaving || state.osmImportRunning || !osmImportHasResults()) return;
   state.mapData.osmData ||= emptyImportedOsmData();
   const imported = normalizeImportedOsmData(state.importedOsmData);
   mergeOsmDataList("roads", imported.roads);

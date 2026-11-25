@@ -9,3 +9,4 @@ server.err.log
 !.env.example
 test-admin.local.js
 *.local.js
+/Leitstellen-SIM-vor-TNA-*.zip

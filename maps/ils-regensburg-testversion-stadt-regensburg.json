@@ -199,7 +199,8 @@
         "trauma",
         "pediatrics",
         "stroke",
-        "icu"
+        "icu",
+        "radiotherapy"
       ]
     },
     {
@@ -231,7 +232,9 @@
         "trauma",
         "pediatrics",
         "stroke",
-        "icu"
+        "icu",
+        "radiotherapy",
+        "ophthalmology"
       ]
     },
     {
@@ -245,7 +248,8 @@
         "cardiology",
         "trauma",
         "obstetrics",
-        "icu"
+        "icu",
+        "gynecology"
       ]
     },
     {
@@ -268,7 +272,8 @@
       "lat": 49.016879,
       "lng": 12.078812,
       "departments": [
-        "obstetrics"
+        "obstetrics",
+        "gynecology"
       ],
       "pediatricOnly": false
     }

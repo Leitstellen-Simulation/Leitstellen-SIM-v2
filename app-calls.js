@@ -104,7 +104,8 @@ function callFromIncidentTemplate(template, extra = {}) {
     location: resolved.location || defaultLocationLabel(),
     lat: Number.isFinite(resolved.lat) ? resolved.lat : state.center.mapCenter[0],
     lng: Number.isFinite(resolved.lng) ? resolved.lng : state.center.mapCenter[1],
-    ...extra
+    ...extra,
+    keyword: keywordForCenter(extra.keyword ?? resolved.keyword)
   };
 }
 
@@ -150,6 +151,7 @@ function activePendingCall() {
 
 function setActivePendingCall(callId) {
   const call = pendingCallQueue().find((item) => item.id === callId) || null;
+  if (el.callDispositionDialog.open && el.callDispositionDialog.dataset.callId !== callId) el.callDispositionDialog.close();
   state.pendingCall = call;
   updateCallControls();
   return call;
@@ -170,6 +172,7 @@ function completePendingCall(callId) {
 
 function updateCallControls() {
   const queue = pendingCallQueue();
+  updateDispatchBadge(el.mobileCallCount, queue.length);
   const active = activePendingCall();
   const busy = el.callDispositionDialog?.open || el.incidentDialog?.open;
   el.answerButton.disabled = !active || busy;
@@ -201,15 +204,29 @@ function answerCall() {
 function renderCallDisposition() {
   const call = activePendingCall();
   if (!call) return;
-  const tag = callTypeTag(call.type);
+  el.callDispositionDialog.dataset.callId = call.id;
+  el.callDispositionNumber.textContent = callTypeTag(call.type);
+  const caller = call.callerName?.trim();
   el.callDispositionText.innerHTML = `
     <section class="call-disposition-summary">
-      <span class="call-type">${escapeHtml(tag)}</span>
-      <h3>${escapeHtml(call.callerName || "Anrufer")}</h3>
-      <p class="call-location">${escapeHtml(call.location || defaultLocationLabel())}</p>
-      <p>${escapeHtml(call.callerText || "")}</p>
+      <h3 class="call-location">${escapeHtml(call.location || defaultLocationLabel())}</h3>
+      ${caller && caller !== "Anrufer" ? `<p class="call-caller">${escapeHtml(caller)}</p>` : ""}
+      ${call.callerText ? `<p class="call-message">${escapeHtml(call.callerText)}</p>` : ""}
     </section>
   `;
+  renderCallElapsed(call);
+}
+
+function renderCallElapsed(call = state.pendingCall) {
+  if (!call || el.callDispositionDialog.dataset.callId !== call.id) return;
+  const receivedAt = call.receivedAtAbsoluteMinute ?? state.absoluteMinute;
+  const seconds = Math.max(0, Math.floor((state.absoluteMinute - receivedAt) * 60 + 0.000001));
+  const minutesLabel = String(Math.floor(seconds / 60)).padStart(2, "0");
+  const secondsLabel = String(seconds % 60).padStart(2, "0");
+  const label = `${minutesLabel}:${secondsLabel}`;
+  if (el.callDispositionTimer.textContent === label) return;
+  el.callDispositionTimer.textContent = label;
+  el.callDispositionTimer.dateTime = `PT${seconds}S`;
 }
 
 function handleCallDispositionClosed() {
@@ -218,6 +235,7 @@ function handleCallDispositionClosed() {
 }
 
 function renderPendingCallActions() {
+  renderDispatchQueue();
   if (!el.callActions) return;
   const queue = pendingCallQueue();
   const active = activePendingCall();
@@ -325,7 +343,7 @@ function rejectPendingCall(callId = state.pendingCall?.id) {
 function referPendingCall(service) {
   const call = activePendingCall();
   if (!call) return;
-  const labels = { FW: "Feuerwehr", POL: "Polizei", AEND: "Aerztlichen Notdienst" };
+  const labels = { FW: "die Feuerwehr", POL: "die Polizei", AELRD: "die Ärztliche Leitung Rettungsdienst (ÄLRD)" };
   logCall(`Anruf an ${labels[service] || service} verwiesen.`, "warn");
   removePendingCall(call.id);
   el.callDispositionDialog.close();

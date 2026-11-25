@@ -1558,7 +1558,10 @@
         "pediatrics",
         "obstetrics",
         "stroke",
-        "icu"
+        "icu",
+        "gynecology",
+        "radiotherapy",
+        "ophthalmology"
       ],
       "pediatricOnly": false
     },
@@ -1669,7 +1672,10 @@
         "pediatrics",
         "obstetrics",
         "stroke",
-        "icu"
+        "icu",
+        "gynecology",
+        "radiotherapy",
+        "ophthalmology"
       ],
       "pediatricOnly": false,
       "unavailableProbability": 0
