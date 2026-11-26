@@ -150,8 +150,14 @@ test("mod-owned incidents use the explicit dispatch requirements and assignments
 });
 
 test("only RD 4, RD 5 and MANV allow UGRD in automatic disposition with the ABeK group defaults", () => {
+  const app = read("app.js");
+  const el = { incidentKeyword: { value: "" } };
+  const state = { manvAvailable: true };
   const api = runInNewContext("const window = {};" + read("keywords.js") + "\nconst { rdKeywords } = window;\n"
-    + definition(read("app.js"), "automaticDispositionPolicy") + "\n({ automaticDispositionPolicy, rdKeywords })");
+    + ["automaticDispositionPolicy", "dispositionDefaults", "findDispositionKeyword", "dispositionKeywords",
+      "keywordForCenter", "requiredVehiclesForCenter", "normalizeRequiredVehicles", "isManvOnlyVehicleType"]
+      .map((name) => definition(app, name)).join("\n")
+    + "\n({ automaticDispositionPolicy, dispositionDefaults, rdKeywords })", { el, state });
   const policyFor = (source, label, transportCount) => api.automaticDispositionPolicy(source, label, transportCount, true);
   const rd4 = api.rdKeywords.find(({ label }) => label.startsWith("RD 4 "));
   const rd5 = api.rdKeywords.find(({ label }) => label.startsWith("RD 5 "));
@@ -172,9 +178,19 @@ test("only RD 4, RD 5 and MANV allow UGRD in automatic disposition with the ABeK
   }), [[1, 0], [2, 1], [5, 2], [10, 3], [18, 3]]);
   assert.equal(policyFor(null, "RD MANV 26-50", 0).components.transport, 0);
   assert.deepEqual(Object.entries(api.automaticDispositionPolicy(null, "RD MANV 26-50", undefined, false).components), [["transport", 5]]);
-  const school = { modId: "manv", modScenario: { data: { count: 40, segTransport: 5, segTreatmentCount: 1, ug: false } } };
+  const school = { modId: "manv", keyword: "MANV-Schulübung", required: ["RTW", "RTW", "NEF", "NEF"],
+    requiredServices: ["POL"], modScenario: { data: { count: 40, segTransport: 5, segTreatmentCount: 1, ug: false } } };
   const policy = policyFor(school, "", 9);
   assert.deepEqual([policy.components.transport, policy.components.treatment, policy.components.sanel], [5, 1, 0]);
+  el.incidentKeyword.value = school.keyword;
+  assert.equal(api.dispositionDefaults(school).required.join(), "RTW,RTW,NEF,NEF");
+  el.incidentKeyword.value = rd5.label;
+  assert.equal(api.dispositionDefaults(school).required.join(), rd5.required.join());
+  assert.ok(api.dispositionDefaults(school).requiredServices.includes("POL"));
+  assert.equal(policyFor(school, rd5.label, 9).components.transport, 1);
+  assert.equal(policyFor(school, rd5.label, 9).components.sanel, 1);
+  el.incidentKeyword.value = "RD MANV 26-50";
+  assert.equal(api.dispositionDefaults(school).required.filter((type) => type === "RTW").length, 25);
 });
 
 test("without MANV, only ordinary UGRD vehicles and both SEG transport KTW remain available", () => {

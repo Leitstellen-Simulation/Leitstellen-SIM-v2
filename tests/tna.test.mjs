@@ -95,6 +95,33 @@ test("disabled, zero probability, CPR and multiple patients preserve physical de
     assert.equal(f.draws(), 0);
     assert.equal(f.patientEffectiveRequiredTypes(f.patient).join(), "RTW,NEF");
   }
+  const legacyCpr = fixture();
+  legacyCpr.patient.reanimationCase = true;
+  assert.equal(legacyCpr.tna.requestAtScene(legacyCpr.rtw, legacyCpr.incident, legacyCpr.patient), false);
+  assert.equal(legacyCpr.draws(), 0);
+  const manv = fixture();
+  manv.incident.modId = "manv";
+  assert.equal(manv.tna.requestAtScene(manv.rtw, manv.incident, manv.patient), false);
+  assert.equal(manv.draws(), 0);
+});
+
+test("every new catalog variant defines a TNA share and only eligible doctor cases have a positive share", () => {
+  const catalog = JSON.parse(readFileSync(new URL("../incidents-dynamic.json", import.meta.url), "utf8"));
+  const newIncidents = catalog.filter(({ id }) => /^erg-2026-\d{3}$/.test(id));
+  assert.equal(newIncidents.length, 100);
+  let positive = 0;
+  for (const { variants } of newIncidents) {
+    for (const { id, patients, tnaProbability } of variants) {
+      const [patient] = patients;
+      const eligible = patients.length === 1 && patient.acuity !== "reanimation" && !patient.reanimationCase
+        && !patient.requiresDoctorAccompaniment && patient.options.some(({ probability, vehicles }) =>
+          probability > 0 && vehicles.some((type) => ["NEF", "VEF", "RTH"].includes(type)));
+      assert.ok(Number.isFinite(tnaProbability) && tnaProbability >= 0 && tnaProbability <= 1, id);
+      assert.equal(tnaProbability > 0, eligible, id);
+      if (tnaProbability > 0) positive++;
+    }
+  }
+  assert.equal(positive, 30);
 });
 
 test("only the assigned RTW at the scene can request TNA", () => {

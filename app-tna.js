@@ -10,9 +10,9 @@ const tna = (() => {
 
   function requestAtScene(vehicle, incident, patient) {
     if ((state.center.tnaEnabled !== true && !incident.tnaTest) || !incident.tnaProbability || sessions.has(incident)) return false;
-    if (vehicle.type !== "RTW" || vehicle.status !== 4 || incident.patient.patients.length !== 1
+    if (vehicle.type !== "RTW" || vehicle.status !== 4 || incident.modId === "manv" || incident.patient.patients.length !== 1
       || !patient || vehicle.patientId !== patient.id || patient.completed || patient.transporting
-      || patient.acuity === "reanimation" || patient.requiresDoctorAccompaniment
+      || patient.acuity === "reanimation" || patient.reanimationCase || patient.requiresDoctorAccompaniment
       || physicalDoctor(incident) || incident.assistanceDecision?.missing?.some(isDoctorRequirement)
       || !patientMissingTypes(patient).some(isDoctorRequirement)) return false;
     const session = { vehicleId: vehicle.id, patientId: patient.id, phase: "ended", since: simMinuteNow() };

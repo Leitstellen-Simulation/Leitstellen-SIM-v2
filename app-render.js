@@ -228,7 +228,6 @@ function renderMap() {
     });
     marker.bindPopup(stationPopupContent(station), { autoClose: true, closeOnClick: true, closeButton: true });
   });
-  if (state.incidents.some((incident) => incident.modId === "manv" && incident.status !== "geschlossen")) renderSupportLocations();
   renderHospitalMarkers();
   const occupied = [];
   const mapSize = state.map.getSize();
@@ -289,27 +288,6 @@ function renderMap() {
     }
     state.layers.vehicles.push(marker);
   });
-}
-
-function renderSupportLocations() {
-  const groups = state.center.supportGroups || [];
-  const stations = state.center.supportStations || [];
-  const stationIds = new Set(stations.map((station) => station.id));
-  for (const station of stations) {
-    const components = groups.filter((group) => group.supportStationId === station.id);
-    const popup = stationPopupContent(station);
-    for (const group of components) appendTextBlock(popup, "p", supportGroupDisplayName(group));
-    addMapMarker("stations", station.lat, station.lng, "SEG", "support", popup, {
-      title: station.label, count: stationAvailableVehicles(station).length || undefined
-    });
-  }
-  for (const group of groups) {
-    if (stationIds.has(group.supportStationId)) continue;
-    const point = supportGroupLocation(state.center, group);
-    const name = supportGroupDisplayName(group);
-    const symbol = supportGroupKind(group) === "ugrd" ? "UGRD" : "SEG";
-    addMapMarker("stations", point.lat, point.lng, symbol, "support", escapeHtml(name), { title: name });
-  }
 }
 
 function vehicleMarkerOffset(point, mapSize, occupied, width, height) {

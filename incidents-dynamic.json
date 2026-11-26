@@ -3181,6 +3181,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -3219,6 +3220,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -3282,6 +3284,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -3348,7 +3351,7 @@
           "recommendedVehicles": []
         }
       ],
-      "tnaProbability": 0.55
+      "tnaProbability": 0.25
     }
   ]
 },
@@ -3387,6 +3390,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -3425,6 +3429,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -3488,6 +3493,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -3526,6 +3532,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -3588,6 +3595,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -3626,6 +3634,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0.08,
       "patients": [
         {
           "id": "pat-1",
@@ -3689,6 +3698,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -3727,6 +3737,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -3790,6 +3801,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -3892,6 +3904,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -3958,7 +3971,7 @@
           "recommendedVehicles": []
         }
       ],
-      "tnaProbability": 0.55
+      "tnaProbability": 0.1
     }
   ]
 },
@@ -3994,6 +4007,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -4032,6 +4046,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -4094,6 +4109,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -4132,6 +4148,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -4194,6 +4211,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -4232,6 +4250,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0.24,
       "patients": [
         {
           "id": "pat-1",
@@ -4295,6 +4314,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -4333,6 +4353,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -4396,6 +4417,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -4434,6 +4456,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0.12,
       "patients": [
         {
           "id": "pat-1",
@@ -4497,6 +4520,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -4563,7 +4587,7 @@
           "recommendedVehicles": []
         }
       ],
-      "tnaProbability": 0.55
+      "tnaProbability": 0.2
     }
   ]
 },
@@ -4599,6 +4623,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -4637,6 +4662,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -4700,6 +4726,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -4738,6 +4765,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -4801,6 +4829,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -4867,7 +4896,7 @@
           "recommendedVehicles": []
         }
       ],
-      "tnaProbability": 0.55
+      "tnaProbability": 0.2
     }
   ]
 },
@@ -4903,6 +4932,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -4941,6 +4971,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -5004,6 +5035,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -5042,6 +5074,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0.25,
       "patients": [
         {
           "id": "pat-1",
@@ -5105,6 +5138,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -5143,6 +5177,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -5206,6 +5241,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -5244,6 +5280,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -5307,6 +5344,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -5373,7 +5411,7 @@
           "recommendedVehicles": []
         }
       ],
-      "tnaProbability": 0.4
+      "tnaProbability": 0.08
     }
   ]
 },
@@ -5409,6 +5447,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -5475,7 +5514,7 @@
           "recommendedVehicles": []
         }
       ],
-      "tnaProbability": 0.55
+      "tnaProbability": 0.08
     }
   ]
 },
@@ -5511,6 +5550,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -5549,6 +5589,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -5611,6 +5652,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -5677,7 +5719,7 @@
           "recommendedVehicles": []
         }
       ],
-      "tnaProbability": 0.4
+      "tnaProbability": 0.05
     }
   ]
 },
@@ -5713,6 +5755,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -5779,7 +5822,7 @@
           "recommendedVehicles": []
         }
       ],
-      "tnaProbability": 0.55
+      "tnaProbability": 0.1
     }
   ]
 },
@@ -5815,6 +5858,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -5853,6 +5897,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -5916,6 +5961,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -5954,6 +6000,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -6019,6 +6066,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -6057,6 +6105,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0.08,
       "patients": [
         {
           "id": "pat-1",
@@ -6120,6 +6169,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -6158,6 +6208,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -6221,6 +6272,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -6259,6 +6311,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -6321,6 +6374,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -6359,6 +6413,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -6422,6 +6477,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -6524,6 +6580,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -6562,6 +6619,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -6627,6 +6685,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -6729,6 +6788,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -6767,6 +6827,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -6832,6 +6893,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -6898,7 +6960,7 @@
           "recommendedVehicles": []
         }
       ],
-      "tnaProbability": 0.4
+      "tnaProbability": 0.55
     }
   ]
 },
@@ -6934,6 +6996,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -6972,6 +7035,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0.1,
       "patients": [
         {
           "id": "pat-1",
@@ -7035,6 +7099,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -7073,6 +7138,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -7136,6 +7202,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -7174,6 +7241,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -7237,6 +7305,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -7275,6 +7344,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0.2,
       "patients": [
         {
           "id": "pat-1",
@@ -7338,6 +7408,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -7376,6 +7447,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -7439,6 +7511,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -7477,6 +7550,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0.24,
       "patients": [
         {
           "id": "pat-1",
@@ -7540,6 +7614,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -7578,6 +7653,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -7640,6 +7716,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -7706,7 +7783,7 @@
           "recommendedVehicles": []
         }
       ],
-      "tnaProbability": 0.25
+      "tnaProbability": 0.12
     }
   ]
 },
@@ -7742,6 +7819,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -7780,6 +7858,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -7843,6 +7922,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -7881,6 +7961,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0.1,
       "patients": [
         {
           "id": "pat-1",
@@ -7944,6 +8025,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -8010,7 +8092,7 @@
           "recommendedVehicles": []
         }
       ],
-      "tnaProbability": 0.25
+      "tnaProbability": 0.35
     }
   ]
 },
@@ -8046,6 +8128,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -8084,6 +8167,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -8146,6 +8230,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -8184,6 +8269,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -8247,6 +8333,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -8285,6 +8372,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -8348,6 +8436,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -8386,6 +8475,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -8448,6 +8538,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -8486,6 +8577,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -8549,6 +8641,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -8587,6 +8680,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -8649,6 +8743,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -8687,6 +8782,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -8750,6 +8846,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -8788,6 +8885,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -8851,6 +8949,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -8889,6 +8988,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -8951,6 +9051,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -9017,7 +9118,7 @@
           "recommendedVehicles": []
         }
       ],
-      "tnaProbability": 0.4
+      "tnaProbability": 0.05
     }
   ]
 },
@@ -9053,6 +9154,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -9091,6 +9193,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -9154,6 +9257,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -9192,6 +9296,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -9255,6 +9360,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -9293,6 +9399,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0.05,
       "patients": [
         {
           "id": "pat-1",
@@ -9356,6 +9463,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -9394,6 +9502,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -9457,6 +9566,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -9495,6 +9605,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -9558,6 +9669,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -9596,6 +9708,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -9658,6 +9771,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -9696,6 +9810,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -9758,6 +9873,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -9796,6 +9912,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -9859,6 +9976,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -9925,7 +10043,7 @@
           "recommendedVehicles": []
         }
       ],
-      "tnaProbability": 0.4
+      "tnaProbability": 0.07
     }
   ]
 },
@@ -9961,6 +10079,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -9999,6 +10118,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -10062,6 +10182,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -10100,6 +10221,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -10163,6 +10285,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -10201,6 +10324,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -10264,6 +10388,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -10302,6 +10427,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -10366,6 +10492,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -10404,6 +10531,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -10466,6 +10594,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -10504,6 +10633,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -10565,6 +10695,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -10603,6 +10734,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -10668,6 +10800,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -10706,6 +10839,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -10768,6 +10902,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -10806,6 +10941,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -10869,6 +11005,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -10907,6 +11044,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -10970,6 +11108,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -11008,6 +11147,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -11074,6 +11214,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -11112,6 +11253,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -11173,6 +11315,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -11211,6 +11354,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -11274,6 +11418,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -11312,6 +11457,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0.09,
       "patients": [
         {
           "id": "pat-1",
@@ -11375,6 +11521,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -11438,6 +11585,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -11526,6 +11674,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -11564,6 +11713,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0.12,
       "patients": [
         {
           "id": "pat-1",
@@ -11626,6 +11776,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -11714,6 +11865,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -11828,6 +11980,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -11866,6 +12019,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -11928,6 +12082,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -11966,6 +12121,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -12029,6 +12185,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -12067,6 +12224,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -12130,6 +12288,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -12168,6 +12327,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -12231,6 +12391,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -12269,6 +12430,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -12331,6 +12493,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -12369,6 +12532,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -12431,6 +12595,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -12469,6 +12634,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0.1,
       "patients": [
         {
           "id": "pat-1",
@@ -12534,6 +12700,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -12572,6 +12739,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -12637,6 +12805,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -12675,6 +12844,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0.12,
       "patients": [
         {
           "id": "pat-1",
@@ -12738,6 +12908,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -12776,6 +12947,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -12838,6 +13010,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -12876,6 +13049,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -12939,6 +13113,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -12977,6 +13152,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -13041,6 +13217,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -13104,6 +13281,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -13192,6 +13370,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -13258,7 +13437,7 @@
           "recommendedVehicles": []
         }
       ],
-      "tnaProbability": 0.55
+      "tnaProbability": 0.5
     }
   ]
 },
@@ -13294,6 +13473,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -13332,6 +13512,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -13395,6 +13576,7 @@
       "requiredServices": [],
       "signal": false,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",
@@ -13433,6 +13615,7 @@
       "requiredServices": [],
       "signal": true,
       "noElrd": false,
+      "tnaProbability": 0,
       "patients": [
         {
           "id": "pat-1",

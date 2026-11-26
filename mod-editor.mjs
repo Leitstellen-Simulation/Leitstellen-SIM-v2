@@ -72,10 +72,11 @@ function fieldLabel(text, control) {
 function makeField(field, value, sources) {
   if (field.type === "weights") {
     const fieldset = document.createElement("fieldset");
+    fieldset.className = "mod-editor-weights";
     const legend = document.createElement("legend");
     legend.textContent = field.label;
     const grid = document.createElement("div");
-    grid.className = "form-grid two";
+    grid.className = "form-grid two mod-editor-weight-grid";
     const hint = document.createElement("small");
     hint.className = "inline-hint";
     const options = field.source === "options" ? field.options : sources[field.source] || [];
@@ -113,8 +114,11 @@ function makeField(field, value, sources) {
     input.type = "checkbox";
     input.required = false;
     input.checked = (value ?? field.default) === true;
-    const label = fieldLabel(field.label, input);
+    const label = document.createElement("label");
     label.className = "check-row";
+    const text = document.createElement("span");
+    text.textContent = field.label;
+    label.append(input, text);
     return { node: label, read: () => input.checked };
   } else {
     input.type = field.type;
@@ -131,7 +135,7 @@ function makeField(field, value, sources) {
 export function createModEditorFields(fields, values, sources, onChange) {
   const data = { ...(isRecord(values) ? values : {}) };
   const container = document.createElement("div");
-  container.className = "form-grid two";
+  container.className = "form-grid two mod-editor-fields";
   const editors = fields.map((field) => [field, makeField(field, Object.hasOwn(data, field.key) ? data[field.key] : undefined, sources)]);
   for (const [, editor] of editors) container.append(editor.node);
   const read = () => {

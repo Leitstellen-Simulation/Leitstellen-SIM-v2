@@ -2496,8 +2496,8 @@ function renderDispositionSuggestion() {
 
 function automaticDispositionPolicy(source, keyword, mapTransportCount, manvAvailable) {
   const label = (keyword ?? source?.keyword ?? "").trim();
-  const manv = source?.modId === "manv" || /\bMANV\b/i.test(label);
   const plan = rdKeywords.find((entry) => entry.label === label);
+  const manv = /\bMANV\b/i.test(label) || (!plan && source?.modId === "manv");
   if (!manv) {
     const components = plan?.components || {};
     return { allowUgrd: /^RD\s+[45]\b/i.test(label),
@@ -2647,10 +2647,22 @@ function currentIncidentDialogSource() {
 }
 
 function dispositionDefaults(source) {
+  const keyword = findDispositionKeyword(el.incidentKeyword.value.trim());
+  if (source?.modId === "manv" && keyword && /^RD\s+(?:[45]|MANV)\b/i.test(keyword.label)) {
+    const data = source.modScenario?.data;
+    const required = /^RD\s+MANV\b/i.test(keyword.label)
+      ? keyword.required.filter((type) => (type !== "ELRD" || data?.elrd !== false)
+        && (!["LNA", "ORGL"].includes(type) || data?.sanel !== false))
+      : keyword.required;
+    return {
+      ...keyword,
+      required: requiredVehiclesForCenter(required),
+      requiredServices: [...new Set([...(keyword.requiredServices || []), ...(source.requiredServices || [])])]
+    };
+  }
   if (source?.modId) return { ...source, required: requiredVehiclesForCenter(source.required) };
   const isTest = source && (source === state.testIncidentDraft || (source.assigned && source.isTestIncident));
-  return isTest ? { ...source, required: requiredVehiclesForCenter(source.required) }
-    : findDispositionKeyword(el.incidentKeyword.value.trim());
+  return isTest ? { ...source, required: requiredVehiclesForCenter(source.required) } : keyword;
 }
 
 function nearestDispositionVehicle(call, type, unavailableIds, options = {}) {

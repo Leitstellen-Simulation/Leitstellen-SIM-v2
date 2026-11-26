@@ -200,52 +200,56 @@
                   <label><input id="ie-variant-fw" type="checkbox"> FW erforderlich</label>
                   <label><input id="ie-variant-pol" type="checkbox"> POL erforderlich</label>
                   <label><input id="ie-variant-signal" type="checkbox"> Anfahrt mit SoSi</label>
-                  <label><input id="ie-variant-no-elrd" type="checkbox"> Kein ELRD</label>
+                  <label id="ie-variant-no-elrd-field"><input id="ie-variant-no-elrd" type="checkbox"> Kein ELRD</label>
                 </div>
-                <label>TNA-Anteil unter den geeigneten Notarztfällen (%)
-                  <input id="ie-variant-tna-probability" type="number" min="0" max="100" step="1" value="0">
-                </label>
-                <p class="inline-hint">Die Quote greift erst, wenn für den einzelnen Patienten ein Notarztbedarf ausgewürfelt wurde.</p>
-
-                <div class="subhead">
-                  <h3>Patienten</h3>
-                  <button id="ie-add-patient" type="button">Patient hinzufügen</button>
-                </div>
-                <div id="ie-patient-list" class="patient-list"></div>
-
-                <div class="patient-editor">
-                  <div class="form-grid two">
-                    <label>Patient <input id="ie-patient-label" placeholder="Pat 1"></label>
-                    <label>Fahrzeugoptionen <input id="ie-patient-options" placeholder="1:RTW+NEF;0.3:REF"></label>
-                  </div>
-                  <label>Patientenzustand
-                    <select id="ie-patient-acuity">
-                      <option value="planned-transport">planbarer Krankentransport</option>
-                      <option value="stable">stabil</option>
-                      <option value="potential-critical">potentiell kritisch</option>
-                      <option value="critical">kritisch</option>
-                      <option value="reanimation">Reanimation</option>
-                    </select>
+                <div id="ie-variant-tna-fields" class="variant-fields">
+                  <label>TNA-Anteil unter den geeigneten Notarztfällen (%)
+                    <input id="ie-variant-tna-probability" type="number" min="0" max="100" step="1" value="0">
                   </label>
-                  <label>Zustand / Einzelrückmeldung <textarea id="ie-patient-condition-report" rows="2"></textarea></label>
-                  <div class="department-box">
-                    <strong>Fachrichtungen</strong>
-                    <div id="ie-departments" class="check-grid department-grid"></div>
+                  <p class="inline-hint">Die Quote greift erst, wenn für den einzelnen Patienten ein Notarztbedarf ausgewürfelt wurde.</p>
+                </div>
+
+                <div id="ie-variant-patients" class="variant-fields">
+                  <div class="subhead">
+                    <h3>Patienten</h3>
+                    <button id="ie-add-patient" type="button">Patient hinzufügen</button>
                   </div>
-                  <div class="form-grid two">
-                    <label>SoSi-Transport % <input id="ie-patient-signal" type="text" inputmode="decimal" placeholder="50% oder 50"></label>
-                    <label>Ambulant % <input id="ie-patient-no-transport" type="text" inputmode="decimal" placeholder="20% oder 20"></label>
-                  </div>
-                  <label>Freimeldungstext ambulant <input id="ie-patient-no-transport-text" placeholder="Ambulante Versorgung ausreichend, kein Transport."></label>
-                  <div class="toggle-row">
-                    <label><input id="ie-patient-doctor-required" type="checkbox"> NA zwingend</label>
-                    <label><input id="ie-patient-reanimation-case" type="checkbox"> Reanimationseinsatz</label>
-                    <label><input id="ie-patient-fw" type="checkbox"> FW</label>
-                    <label><input id="ie-patient-pol" type="checkbox"> POL</label>
-                  </div>
-                  <div class="patient-actions">
-                    <button id="ie-save-patient" class="primary-action" type="button">Änderungen in Entwurf übernehmen</button>
-                    <button id="ie-remove-patient" type="button">Patient entfernen</button>
+                  <div id="ie-patient-list" class="patient-list"></div>
+
+                  <div class="patient-editor">
+                    <div class="form-grid two">
+                      <label>Patient <input id="ie-patient-label" placeholder="Pat 1"></label>
+                      <label>Fahrzeugoptionen <input id="ie-patient-options" placeholder="1:RTW+NEF;0.3:REF"></label>
+                    </div>
+                    <label>Patientenzustand
+                      <select id="ie-patient-acuity">
+                        <option value="planned-transport">planbarer Krankentransport</option>
+                        <option value="stable">stabil</option>
+                        <option value="potential-critical">potentiell kritisch</option>
+                        <option value="critical">kritisch</option>
+                        <option value="reanimation">Reanimation</option>
+                      </select>
+                    </label>
+                    <label>Zustand / Einzelrückmeldung <textarea id="ie-patient-condition-report" rows="2"></textarea></label>
+                    <div class="department-box">
+                      <strong>Fachrichtungen</strong>
+                      <div id="ie-departments" class="check-grid department-grid"></div>
+                    </div>
+                    <div class="form-grid two">
+                      <label>SoSi-Transport % <input id="ie-patient-signal" type="text" inputmode="decimal" placeholder="50% oder 50"></label>
+                      <label>Ambulant % <input id="ie-patient-no-transport" type="text" inputmode="decimal" placeholder="20% oder 20"></label>
+                    </div>
+                    <label>Freimeldungstext ambulant <input id="ie-patient-no-transport-text" placeholder="Ambulante Versorgung ausreichend, kein Transport."></label>
+                    <div class="toggle-row">
+                      <label><input id="ie-patient-doctor-required" type="checkbox"> NA zwingend</label>
+                      <label><input id="ie-patient-reanimation-case" type="checkbox"> Reanimationseinsatz</label>
+                      <label><input id="ie-patient-fw" type="checkbox"> FW</label>
+                      <label><input id="ie-patient-pol" type="checkbox"> POL</label>
+                    </div>
+                    <div class="patient-actions">
+                      <button id="ie-save-patient" class="primary-action" type="button">Änderungen in Entwurf übernehmen</button>
+                      <button id="ie-remove-patient" type="button">Patient entfernen</button>
+                    </div>
                   </div>
                 </div>
           </section>

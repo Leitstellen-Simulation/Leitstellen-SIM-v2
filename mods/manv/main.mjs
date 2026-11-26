@@ -893,14 +893,8 @@ export default function startManv(api) {
     return area;
   }
 
-  function groupSection(scene, snapshot) {
+  function groupSection(scene, snapshot, activeGroups) {
     const area = node("div", "", "stack");
-    const activeGroups = snapshot.groups.filter((group) => group.incidentId === scene.id);
-    if (!scene.closed && snapshot.groups.length) {
-      area.append(button("SEG / UGRD disponieren", "dispatch-support", () => run(() =>
-        api.command("incident.disposition", { incidentId: scene.id, supportGroups: true }))));
-    }
-    if (!activeGroups.length) area.append(node("p", "Keine Komponenten für diesen Einsatz alarmiert.", "muted"));
     for (const group of activeGroups) {
       const row = node("div", "", "actions");
       const onSite = snapshot.vehicles.filter((unit) => unit.supportGroupId === group.id && unit.incidentId === scene.id && unit.status === 4).length;
@@ -1031,10 +1025,13 @@ export default function startManv(api) {
       }
       const assignedIds = new Set(snapshot.incidents.find((entry) => entry.id === scene.id)?.assigned);
       const assigned = snapshot.vehicles.filter((unit) => assignedIds.has(unit.id));
+      const activeGroups = snapshot.groups.filter((group) => group.incidentId === scene.id);
       root.append(situation,
-        detail("Klinik-Alarm", "alarm", alarmSection(scene, snapshot), oldSections.get("alarm") ?? true),
-        detail("SEG / UGRD", "groups", groupSection(scene, snapshot), oldSections.get("groups") ?? false),
-        detail(`Fahrzeuge im Einsatz (${assigned.length})`, "vehicles", vehicleSection(assigned), oldSections.get("vehicles") ?? false));
+        detail("Klinik-Alarm", "alarm", alarmSection(scene, snapshot), oldSections.get("alarm") ?? true));
+      if (activeGroups.length) {
+        root.append(detail("Alarmierte SEG / UGRD", "groups", groupSection(scene, snapshot, activeGroups), oldSections.get("groups") ?? false));
+      }
+      root.append(detail(`Fahrzeuge im Einsatz (${assigned.length})`, "vehicles", vehicleSection(assigned), oldSections.get("vehicles") ?? false));
 
       const roleBar = node("div", "", "bar");
       for (const unit of assigned.filter((entry) => entry.role || leaders[entry.type])) roleBar.append(node("span", `${roles[unit.role] || leaders[unit.type]} · ${unit.name}`, "tag"));

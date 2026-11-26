@@ -24,7 +24,8 @@ const el = Object.fromEntries([
   "ai-mode", "ai-variations", "ai-prompt", "ai-generate", "ai-status",
   "add-variant", "variant-list", "current-variant-title", "remove-variant",
   "variant-label", "variant-weight", "variant-report", "variant-situation-report", "variant-assistance-reason",
-  "variant-fw", "variant-pol", "variant-signal", "variant-no-elrd", "variant-tna-probability",
+  "tab-variants", "variant-fw", "variant-pol", "variant-signal", "variant-no-elrd", "variant-no-elrd-field",
+  "variant-tna-probability", "variant-tna-fields", "variant-patients",
   "add-patient", "patient-list", "patient-label", "patient-options", "patient-condition-report", "departments",
   "patient-acuity", "patient-signal", "patient-no-transport", "patient-no-transport-text", "patient-doctor-required",
   "patient-reanimation-case", "patient-fw", "patient-pol", "save-patient", "remove-patient"
@@ -110,6 +111,10 @@ function incidentCatalogUrl() {
   return state.catalogId ? modScenarioCatalogUrl(state.catalogId) : "/api/incidents";
 }
 
+function isManvCatalog() {
+  return state.catalogId === "manv";
+}
+
 function renderScenarioModFields() {
   const manifest = state.modManifests?.find((entry) => entry.id === state.catalogId);
   const fields = manifest?.editor?.scenario;
@@ -120,7 +125,8 @@ function renderScenarioModFields() {
   const heading = document.createElement("h3");
   heading.textContent = manifest.name;
   state.scenarioModEditor = state.createModEditorFields(fields, state.current.modData, {
-    departments: (window.departmentCatalog || []).map(({ key, label }) => ({ value: key, label }))
+    departments: (window.departmentCatalog || []).filter(({ key }) => !isManvCatalog() || key !== "none")
+      .map(({ key, label }) => ({ value: key, label }))
   }, (data) => { state.current.modData = data; });
   el.mod_fields.append(heading, state.scenarioModEditor.container);
 }
@@ -172,7 +178,7 @@ function newIncident() {
   state.current = createEmptyIncident();
   state.savedIncidentId = null;
   state.selectedVariantId = state.current.variants[0].id;
-  state.selectedPatientId = state.current.variants[0].patients[0].id;
+  state.selectedPatientId = state.current.variants[0].patients?.[0]?.id || null;
   fillFormFromCurrent();
   markClean();
   renderEverything();
@@ -217,8 +223,7 @@ function createEmptyVariant() {
     situationReport: "",
     requiredServices: [],
     signal: false,
-    noElrd: false,
-    patients: [createEmptyPatient()]
+    ...(isManvCatalog() ? {} : { noElrd: false, patients: [createEmptyPatient()] })
   };
 }
 
@@ -288,9 +293,11 @@ function collectFormIntoCurrent() {
   state.current.type = el.type.value;
   state.current.weight = parseWeight(el.weight.value);
   state.current.timeWindows = parseTimeWindows(el.time_windows.value);
+  const locationLabel = state.current.call?.locationLabel;
   state.current.call = {
     callerName: el.caller_name.value.trim() || "Anrufer",
     callerText: el.caller_text.value.trim(),
+    ...(locationLabel ? { locationLabel } : {}),
     locationMode: el.location_mode.value,
     locationRoadTypes: selectedLocationRoadTypes(),
     poiCategories: selectedPoiCategories(),
@@ -300,6 +307,7 @@ function collectFormIntoCurrent() {
     destinationPoiCategories: selectedDestinationPoiCategories(),
     destinationPoiIds: splitList(el.destination_poi_ids.value)
   };
+  state.current.variants = state.current.variants.map(sanitizeVariant);
   return state.current;
 }
 
@@ -440,10 +448,13 @@ function renderList() {
     const type = { emergency: "Notfall", transport: "Transport", scheduled: "Planbar" }[incident.type] || "";
     const variants = Array.isArray(incident.variants) ? incident.variants.length : 0;
     const patients = (incident.variants || []).reduce((sum, variant) => sum + (variant.patients || []).length, 0);
+    const patientSummary = isManvCatalog()
+      ? (incident.modData?.count ? ` · ${escapeHtml(incident.modData.count)} Patienten (Soll)` : "")
+      : ` · ${patients} ${patients === 1 ? "Patientenprofil" : "Patientenprofile"}`;
     row.innerHTML = `
       <strong>${escapeHtml(incident.title || incident.keyword || "Einsatz")}</strong>
       <span>${escapeHtml([incident.category, type].filter(Boolean).join(" · "))}</span>
-      <small>${variants} ${variants === 1 ? "Variante" : "Varianten"} · ${patients} ${patients === 1 ? "Patientenprofil" : "Patientenprofile"}</small>
+      <small>${variants} ${variants === 1 ? "Variante" : "Varianten"}${patientSummary}</small>
     `;
     row.addEventListener("click", () => {
       if (!confirmDiscardUnsavedChanges()) return;
@@ -462,7 +473,7 @@ function renderVariantList() {
     button.className = `variant-chip ${variant.id === state.selectedVariantId ? "active" : ""}`;
     button.innerHTML = `
       <strong>${escapeHtml(variant.label || `Variante ${index + 1}`)}</strong>
-      <span>Gewicht ${escapeHtml(formatWeight(variant.weight))} | ${(variant.patients || []).length} Pat</span>
+      <span>Gewicht ${escapeHtml(formatWeight(variant.weight))}${isManvCatalog() ? "" : ` · ${variant.patients.length} Pat`}</span>
     `;
     button.addEventListener("click", () => selectVariant(variant.id));
     el.variant_list.append(button);
@@ -483,7 +494,7 @@ function addVariant() {
   variant.label = `Variante ${(state.current?.variants || []).length + 1}`;
   state.current.variants.push(variant);
   state.selectedVariantId = variant.id;
-  state.selectedPatientId = variant.patients[0].id;
+  state.selectedPatientId = variant.patients?.[0]?.id || null;
   markDirty();
   renderEverything();
 }
@@ -499,6 +510,11 @@ function removeSelectedVariant() {
 
 function fillVariantEditor() {
   const variant = selectedVariant();
+  const manv = isManvCatalog();
+  el.tab_variants.textContent = manv ? "Varianten" : "Varianten & Patienten";
+  el.variant_patients.hidden = manv;
+  el.variant_no_elrd_field.hidden = manv;
+  el.variant_tna_fields.hidden = manv || variant?.patients?.length !== 1;
   el.current_variant_title.textContent = variant?.label || "Keine Variante";
   el.variant_label.value = variant?.label || "";
   el.variant_weight.value = formatWeight(variant?.weight ?? 1);
@@ -524,8 +540,12 @@ function syncSelectedVariant() {
   else delete variant.assistanceReason;
   variant.requiredServices = [el.variant_fw.checked ? "FW" : null, el.variant_pol.checked ? "POL" : null].filter(Boolean);
   variant.signal = el.variant_signal.checked;
-  variant.noElrd = el.variant_no_elrd.checked;
-  variant.tnaProbability = clampRuntimeProbability(Number(el.variant_tna_probability.value) / 100);
+  if (!isManvCatalog()) {
+    variant.noElrd = el.variant_no_elrd.checked;
+    if (variant.patients.length === 1) {
+      variant.tnaProbability = clampRuntimeProbability(Number(el.variant_tna_probability.value) / 100);
+    }
+  }
 }
 
 function renderPatientList() {
@@ -552,6 +572,8 @@ function selectPatient(patientId) {
 }
 
 function addPatient() {
+  if (isManvCatalog()) return;
+  syncSelectedVariant();
   syncSelectedPatient({ silent: true });
   const variant = selectedVariant();
   if (!variant) return;
@@ -567,6 +589,7 @@ function addPatient() {
 function removeSelectedPatient() {
   const variant = selectedVariant();
   if (!variant?.patients?.length || variant.patients.length <= 1) return;
+  syncSelectedVariant();
   variant.patients = variant.patients.filter((patient) => patient.id !== state.selectedPatientId);
   state.selectedPatientId = variant.patients[0]?.id || null;
   markDirty();
@@ -762,7 +785,7 @@ function legacyIncidentToDynamic(input) {
 }
 
 function sanitizeVariant(variant, index) {
-  return {
+  const normalized = {
     id: variant.id || `var-${index + 1}-${randomToken()}`,
     label: variant.label || variant.title || variant.keyword || `Variante ${index + 1}`,
     weight: parseWeight(variant.weight),
@@ -771,13 +794,15 @@ function sanitizeVariant(variant, index) {
     ...(typeof variant.assistanceReason === "string" && variant.assistanceReason.trim()
       ? { assistanceReason: variant.assistanceReason.trim() } : {}),
     requiredServices: listValue(variant.requiredServices).filter((item) => ["FW", "POL"].includes(item)),
-    signal: Boolean(variant.signal),
-    noElrd: Boolean(variant.noElrd),
-    tnaProbability: clampRuntimeProbability(variant.tnaProbability),
-    patients: Array.isArray(variant.patients) && variant.patients.length
-      ? variant.patients.map((patient, patientIndex) => sanitizePatient(patient, patientIndex))
-      : [createEmptyPatient()]
+    signal: Boolean(variant.signal)
   };
+  if (isManvCatalog()) return normalized;
+  normalized.noElrd = Boolean(variant.noElrd);
+  normalized.patients = Array.isArray(variant.patients) && variant.patients.length
+    ? variant.patients.map(sanitizePatient)
+    : [createEmptyPatient()];
+  if (normalized.patients.length === 1) normalized.tnaProbability = clampRuntimeProbability(variant.tnaProbability);
+  return normalized;
 }
 
 function sanitizePatient(patient, index) {
