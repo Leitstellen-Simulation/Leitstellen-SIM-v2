@@ -105,6 +105,9 @@ function callFromIncidentTemplate(template, extra = {}) {
     lat: Number.isFinite(resolved.lat) ? resolved.lat : state.center.mapCenter[0],
     lng: Number.isFinite(resolved.lng) ? resolved.lng : state.center.mapCenter[1],
     ...extra,
+    modId: extra.modId,
+    modScenarioId: extra.modScenarioId,
+    modScenario: undefined,
     keyword: keywordForCenter(extra.keyword ?? resolved.keyword)
   };
 }
@@ -129,6 +132,7 @@ function queueIncomingCall(call, options = {}) {
 function reduceSpeedForIncomingCall() {
   const oldSpeed = state.speed || 1;
   if (oldSpeed <= 2) return;
+  advanceShiftClock();
   state.speed = 2;
   if (el.speedSelect) el.speedSelect.value = "2";
   if (typeof rescaleActiveTimers === "function") rescaleActiveTimers(oldSpeed, state.speed);
@@ -219,14 +223,25 @@ function renderCallDisposition() {
 
 function renderCallElapsed(call = state.pendingCall) {
   if (!call || el.callDispositionDialog.dataset.callId !== call.id) return;
+  updateCallTimer(el.callDispositionTimer, call);
+}
+
+function updateCallTimer(timer, call) {
   const receivedAt = call.receivedAtAbsoluteMinute ?? state.absoluteMinute;
   const seconds = Math.max(0, Math.floor((state.absoluteMinute - receivedAt) * 60 + 0.000001));
   const minutesLabel = String(Math.floor(seconds / 60)).padStart(2, "0");
   const secondsLabel = String(seconds % 60).padStart(2, "0");
   const label = `${minutesLabel}:${secondsLabel}`;
-  if (el.callDispositionTimer.textContent === label) return;
-  el.callDispositionTimer.textContent = label;
-  el.callDispositionTimer.dateTime = `PT${seconds}S`;
+  if (timer.textContent === label) return;
+  timer.textContent = label;
+  timer.dateTime = `PT${seconds}S`;
+}
+
+function updatePendingCallTimers() {
+  el.callActions.querySelectorAll("[data-call-timer]").forEach((timer) => {
+    const call = state.pendingCalls.find((entry) => entry.id === timer.dataset.callTimer);
+    if (call) updateCallTimer(timer, call);
+  });
 }
 
 function handleCallDispositionClosed() {
@@ -261,10 +276,24 @@ function renderPendingCallActions() {
     const selectButton = document.createElement("button");
     selectButton.type = "button";
     selectButton.className = "call-queue-select";
+    const caller = `${index + 1}. ${callTypeTag(call.type)} ${call.callerName || "Anrufer"}`;
+    const location = call.noticeOnly ? call.callerText : call.location || defaultLocationLabel();
+    selectButton.title = `${caller}\n${location}`;
     selectButton.innerHTML = `
-      <strong>${index + 1}. ${escapeHtml(callTypeTag(call.type))} ${escapeHtml(call.callerName || "Anrufer")}</strong>
-      <span>${escapeHtml(call.noticeOnly ? call.callerText : (call.location || defaultLocationLabel()))}</span>
+      <span class="call-queue-heading"><strong>${escapeHtml(caller)}</strong></span>
+      <span class="call-queue-location">${escapeHtml(location)}</span>
     `;
+    const elapsed = document.createElement("span");
+    elapsed.className = "call-queue-elapsed";
+    elapsed.title = call.answered ? "Seit Anruf" : "Wartet seit";
+    const timerLabel = document.createElement("span");
+    timerLabel.className = "call-queue-timer-label";
+    timerLabel.textContent = `${elapsed.title} `;
+    const timer = document.createElement("time");
+    timer.dataset.callTimer = call.id;
+    updateCallTimer(timer, call);
+    elapsed.append(timerLabel, timer);
+    selectButton.querySelector(".call-queue-heading").append(elapsed);
     selectButton.addEventListener("click", () => {
       setActivePendingCall(call.id);
       if (call.noticeOnly) return;
@@ -301,7 +330,10 @@ function renderPendingCallActions() {
       showPendingCallOnMap();
     });
 
-    item.append(selectButton, answerButton, rejectButton, mapButton);
+    const actions = document.createElement("div");
+    actions.className = "call-queue-buttons";
+    actions.append(answerButton, rejectButton, mapButton);
+    item.append(selectButton, actions);
     el.callActions.append(item);
   });
 }
@@ -343,7 +375,7 @@ function rejectPendingCall(callId = state.pendingCall?.id) {
 function referPendingCall(service) {
   const call = activePendingCall();
   if (!call) return;
-  const labels = { FW: "die Feuerwehr", POL: "die Polizei", AELRD: "die Ärztliche Leitung Rettungsdienst (ÄLRD)" };
+  const labels = { FW: "die Feuerwehr", POL: "die Polizei", AEND: "den Ärztlichen Notdienst (ÄND)" };
   logCall(`Anruf an ${labels[service] || service} verwiesen.`, "warn");
   removePendingCall(call.id);
   el.callDispositionDialog.close();

@@ -17,6 +17,12 @@
     <main class="incident-editor-workspace">
       <aside class="dynamic-list-panel incident-catalog" aria-label="Einsatzkatalog">
         <h2>Einsatzkatalog</h2>
+        <label>Katalog
+          <select id="ie-catalog">
+            <option value="">Regelbetrieb</option>
+            <option value="manv">MANV (Mod-Katalog)</option>
+          </select>
+        </label>
         <div class="dynamic-toolbar" data-catalog-controls>
           <input id="ie-search" type="search" aria-label="Einsätze suchen" placeholder="Einsätze suchen">
           <button id="ie-new" class="primary-action" type="button">Neuer Einsatz</button>
@@ -98,6 +104,7 @@
                 <label>ID <input id="ie-id" placeholder="automatisch"></label>
               </div>
             </section>
+            <section id="ie-mod-fields" class="dynamic-section" hidden></section>
 
           </div>
           <div class="dynamic-scroll" id="ie-call" role="tabpanel" aria-labelledby="ie-tab-call" data-catalog-controls hidden>
@@ -250,6 +257,7 @@
     <script src="departments.js"></script>
     <script src="poi.js"></script>
     <script src="editor-layout.js"></script>
+    <script src="mod-scenarios.js"></script>
     <script src="incident-editor.js"></script>
   </body>
 </html>

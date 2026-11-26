@@ -76,10 +76,13 @@ Der lokale Server speichert Karten und Einsatzdaten ueber die eingebauten API-En
 - Funkleiste mit Status 0/5, Sprechaufforderung und Rueckmeldungen.
 - Status-8-Logik mit Rueckfrage "Einsatzklar?" und verzogener Freimeldung.
 - Fremdwachen und Fremdfahrzeuge mit fahrzeugbezogener Verfuegbarkeitswahrscheinlichkeit und 15-Minuten-Neuwuerfelung.
-- Fremdfahrzeuge koennen im Einsatzdialog bei Bedarf eingeblendet werden.
+- Fremdfahrzeuge und SEG-/UGRD-Komponenten lassen sich in der gemeinsamen Fahrzeugauswahl jedes Einsatzes separat einblenden.
+- Der Dispositionsvorschlag und die Fahrzeug-Schnellwahl vergleichen freie Eigen- und Fremdfahrzeuge nach Luftlinie. UGRD-Einzelfahrzeuge kommen automatisch bei RD 4, RD 5 und MANV infrage.
+- Der MANV-Vorschlag verwendet die SEG-Staffelung des Stichworts. Unter **Karte → Dispositionsvorschlag** kann die Anzahl der SEG-Transport für die Karte vorgegeben werden. Bei eigenen MANV-Szenarien hat der Wert aus dem Einsatzeditor Vorrang.
 - Fremdwachen und Fremd-KH sind optisch abgesetzt.
 - Feuerwehr/Polizei/AeND als externe Unterstuetzung.
-- UGRD/SEG-Alarmierung mit Hintergrundfahrzeugen und Rueckmeldung, wenn eine Gruppe nicht ausrueckt.
+- Eine UGRD-/SEG-Wache enthält regulär disponierbare Einzelfahrzeuge und alarmierbare Komponenten. SEG-Behandlung hat einen GW-SAN, SEG-Transport zwei KTW und UG SanEL ein Führungsfahrzeug. Fahrzeuge und Komponenten werden gemeinsam im Wachen-Editor angelegt.
+- Pro Komponente lassen sich Ausrückwahrscheinlichkeit und Ausrückzeit einstellen. Standard sind 5 bis 15 Simulationsminuten. Bei Nichtausrücken erscheint nach Ablauf der maximalen Zeit eine rote Funkmeldung.
 - Karteneditor fuer Wachen, Fahrzeuge, Kliniken, Fremdwachen, Fremd-KH, POI, Einsatzgebiet und Gewichtungszonen.
 - Import von Landkreis-/Stadtgrenzen fuer Einsatzgebiete und OSM-Datenimport fuer POI, Strassen und Outdoor-Flaechen.
 - Einsatzeditor mit dynamischen Einsatzvarianten, POI-Kategorien, Mehrfachauswahl, Zeitfenstern, Gewichtung und individuellen Patientenzustandsmeldungen.

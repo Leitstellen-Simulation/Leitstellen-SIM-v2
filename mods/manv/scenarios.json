@@ -1,0 +1,203 @@
+[
+  {
+    "id": "test-schule-manv40",
+    "schemaVersion": 2,
+    "title": "Übung · Amoklage an einer Schule",
+    "type": "emergency",
+    "weight": 0,
+    "keyword": "MANV 40 · Amoklage Schule",
+    "patientCount": 40,
+    "signal": true,
+    "required": ["RTW", "RTW", "NEF", "NEF", "ELRD", "LNA", "ORGL", "UG-SANEL"],
+    "requiredServices": ["FW", "POL"],
+    "call": {
+      "locationMode": "random",
+      "locationLabel": "Übungsschule · fiktiver Einsatzort",
+      "callerName": "Schulpersonal",
+      "callerText": "Hier ist die Schule. Wir haben Schüsse gehört. Es gibt viele Verletzte, einige reagieren kaum noch. Auch Kinder sind darunter. Wir können die Zahl noch nicht sicher einschätzen. Bitte schicken Sie sofort Polizei, Feuerwehr und viele Rettungskräfte."
+    },
+    "variants": [
+      {
+        "id": "schadenslage",
+        "label": "Schul-MANV · Erstmeldung",
+        "weight": 1,
+        "signal": true,
+        "requiredServices": ["FW", "POL"],
+        "report": "Lage auf Sicht: Viele Verletzte im Umfeld der Schule. Die Anzahl ist noch unklar. Feuerwehr und Polizei werden benötigt.",
+        "situationReport": "Bestätigte Großschadenslage an der Schule. Die Einsatzabschnitte werden mit Feuerwehr und Polizei abgestimmt. Wir beginnen mit der Sichtung und benötigen zusätzliche RTW, KTW und die Sanitätseinsatzleitung.",
+        "assistanceReason": "Hohe Zahl Verletzter, mehrere zeitkritische Transporte und Bedarf an geordneter Zuweisung der Zielkliniken."
+      }
+    ],
+    "modData": {
+      "count": 40,
+      "mix": {"red":35,"yellow":25,"green":40},
+      "departments": {"trauma":85,"internal":15},
+      "otherPercent": 5,
+      "elrd": true,
+      "sanel": true,
+      "ug": true,
+      "segTreatmentCount": 1,
+      "segTransport": 5
+    }
+  },
+  {
+    "id": "test-busunfall-manv8",
+    "schemaVersion": 2,
+    "title": "Übung · MANV nach Busunfall",
+    "type": "emergency",
+    "weight": 0,
+    "keyword": "MANV 8 · Busunfall",
+    "patientCount": 8,
+    "signal": true,
+    "required": ["RTW", "RTW", "NEF", "NEF", "ELRD", "LNA", "ORGL", "UG-SANEL"],
+    "requiredServices": ["FW", "POL"],
+    "call": {
+      "locationMode": "random",
+      "callerName": "Fahrgast",
+      "callerText": "Unser Bus ist mit einem Auto zusammengestoßen. Einige Fahrgäste können aussteigen, andere sind gestürzt und bleiben im Bus. Eine Person im Auto kommt nicht heraus. Ich zähle ungefähr acht Verletzte."
+    },
+    "variants": [
+      {
+        "id": "bus-pkw",
+        "label": "Bus gegen Pkw",
+        "weight": 1,
+        "signal": true,
+        "requiredServices": ["FW", "POL"],
+        "report": "Lage auf Sicht: Bus und Pkw nach Zusammenstoß, mehrere Verletzte im Bus und eine eingeschlossene Person im Pkw. Feuerwehr zur technischen Rettung und Polizei zur Verkehrsabsicherung benötigt.",
+        "situationReport": "Wir beginnen die Sichtung im Bus und am Pkw. Es gibt mehrere gehfähige Verletzte und Patienten, die liegend transportiert werden müssen. Wir benötigen weitere Transportmittel und die Sanitätseinsatzleitung.",
+        "assistanceReason": "Mehrere Patienten müssen parallel versorgt und auf geeignete Kliniken verteilt werden."
+      }
+    ],
+    "modData": {
+      "count": 8,
+      "mix": {"red":25,"yellow":35,"green":40},
+      "departments": {"trauma":85,"internal":15},
+      "otherPercent": 5,
+      "elrd": true,
+      "sanel": true,
+      "ug": true,
+      "segTreatmentCount": 0,
+      "segTransport": 1
+    }
+  },
+  {
+    "id": "manv-verkehrsunfall-mehrere-fahrzeuge-12",
+    "schemaVersion": 2,
+    "title": "MANV · Verkehrsunfall mit mehreren Fahrzeugen",
+    "type": "emergency",
+    "weight": 1,
+    "keyword": "RD MANV 10-15",
+    "patientCount": 12,
+    "signal": true,
+    "required": ["RTW", "RTW", "NEF", "NEF", "ELRD", "LNA", "ORGL", "UG-SANEL"],
+    "requiredServices": ["FW", "POL"],
+    "call": {
+      "locationMode": "road",
+      "callerName": "Ersthelfer",
+      "callerText": "Hier sind mehrere Autos zusammengestoßen. Ein Kleinbus ist auch dabei. Überall stehen oder liegen Menschen, und in einem Auto ist noch jemand eingeschlossen. Ich kann die Verletzten nicht genau zählen, es sind wohl mehr als zehn."
+    },
+    "variants": [
+      {
+        "id": "kollision-kleinbus",
+        "label": "Kleinbus und Pkw",
+        "weight": 1,
+        "signal": true,
+        "requiredServices": ["FW", "POL"],
+        "report": "Lage auf Sicht: Mehrere Fahrzeuge nach Verkehrsunfall, darunter ein Kleinbus. Zahlreiche Betroffene an der Straße, mindestens eine Person noch im Fahrzeug. Feuerwehr und Polizei werden benötigt.",
+        "situationReport": "Mehrere Verletzte unterschiedlicher Schwere nach Kollision von Kleinbus und Pkw. Gehfähige werden gesammelt, eine technische Rettung läuft. Wir beginnen die Vorsichtung und richten die Patientenablage mit der Feuerwehr ein.",
+        "assistanceReason": "Mehrere Patienten müssen gleichzeitig gesichtet und versorgt werden. Zusätzliche Transportfahrzeuge und die Sanitätseinsatzleitung werden benötigt."
+      }
+    ],
+    "modData": {
+      "count": 12,
+      "mix": {"red":25,"yellow":35,"green":40},
+      "departments": {"trauma":85,"internal":15},
+      "otherPercent": 8,
+      "elrd": true,
+      "sanel": true,
+      "ug": true,
+      "segTreatmentCount": 0,
+      "segTransport": 1
+    }
+  },
+  {
+    "id": "manv-gebaeudebrand-rauchgas-25",
+    "schemaVersion": 2,
+    "title": "MANV · Gebäudebrand mit Rauchgasverletzten",
+    "type": "emergency",
+    "weight": 1,
+    "keyword": "RD MANV 16-25",
+    "patientCount": 25,
+    "signal": true,
+    "required": ["RTW", "RTW", "NEF", "NEF", "ELRD", "LNA", "ORGL", "UG-SANEL"],
+    "requiredServices": ["FW", "POL"],
+    "call": {
+      "locationMode": "address",
+      "callerName": "Hausbewohnerin",
+      "callerText": "In unserem Gebäude brennt es. Aus dem Treppenhaus kommt dichter Rauch, und viele Menschen sind bereits draußen. Einige husten stark, andere sind beim Verlassen gestürzt. Wir wissen noch nicht, ob alle draußen sind."
+    },
+    "variants": [
+      {
+        "id": "rauchausbreitung",
+        "label": "Rauchgas und Evakuierung",
+        "weight": 1,
+        "signal": true,
+        "requiredServices": ["FW", "POL"],
+        "report": "Lage auf Sicht: Brand in einem größeren Gebäude, mehrere Personen im Freien mit Atembeschwerden. Feuerwehr und Polizei übernehmen Brandbekämpfung, Räumung und Absperrung.",
+        "situationReport": "Nach Rauchentwicklung und Evakuierung gibt es zahlreiche Betroffene. Mehrere Personen sind deutlich beeinträchtigt, weitere haben leichtere Beschwerden oder Sturzverletzungen. Die Zahl wird durch die Sichtung konkretisiert.",
+        "assistanceReason": "Viele Betroffene benötigen Sichtung und Untersuchung, mehrere Patienten voraussichtlich zeitnah einen Transport. Zusätzliche Transportmittel und eine Behandlungsgruppe sind erforderlich."
+      }
+    ],
+    "modData": {
+      "count": 25,
+      "mix": {"red":20,"yellow":30,"green":50},
+      "departments": {"internal":80,"trauma":20},
+      "otherPercent": 8,
+      "elrd": true,
+      "sanel": true,
+      "ug": true,
+      "segTreatmentCount": 1,
+      "segTransport": 2
+    }
+  },
+  {
+    "id": "manv-veranstaltung-tribuene-40",
+    "schemaVersion": 2,
+    "title": "MANV · Teileinsturz einer Veranstaltungstribüne",
+    "type": "emergency",
+    "weight": 1,
+    "keyword": "RD MANV 26-50",
+    "patientCount": 40,
+    "signal": true,
+    "required": ["RTW", "RTW", "NEF", "NEF", "ELRD", "LNA", "ORGL", "UG-SANEL"],
+    "requiredServices": ["FW", "POL"],
+    "call": {
+      "locationMode": "outdoor",
+      "callerName": "Veranstaltungspersonal",
+      "callerText": "Bei einer Veranstaltung ist ein Teil der Tribüne zusammengebrochen. Viele Besucher sind gestürzt oder unter Teilen eingeklemmt. Andere können herumlaufen, sind aber verletzt. Wir brauchen dringend Rettungsdienst, Feuerwehr und Polizei."
+    },
+    "variants": [
+      {
+        "id": "tribuenenteile-eingestuerzt",
+        "label": "Tribüneneinsturz",
+        "weight": 1,
+        "signal": true,
+        "requiredServices": ["FW", "POL"],
+        "report": "Lage auf Sicht: Teile einer Veranstaltungstribüne eingestürzt, zahlreiche Verletzte im Umfeld. Feuerwehr zur Rettung und Sicherung sowie Polizei zur Absperrung erforderlich.",
+        "situationReport": "Die Schadensstelle wird gemeinsam mit Feuerwehr und Polizei gesichert. Viele Menschen sind verletzt, teils schwer, teils gehfähig. Wir richten eine Patientenablage ein und beginnen mit der Sichtung.",
+        "assistanceReason": "Hohe Verletztenzahl mit mehreren schwer betroffenen Personen. Erforderlich sind weitere Rettungs- und Transportmittel, Behandlungsgruppen und die Sanitätseinsatzleitung."
+      }
+    ],
+    "modData": {
+      "count": 40,
+      "mix": {"red":30,"yellow":35,"green":35},
+      "departments": {"trauma":85,"internal":15},
+      "otherPercent": 10,
+      "elrd": true,
+      "sanel": true,
+      "ug": true,
+      "segTreatmentCount": 2,
+      "segTransport": 5
+    }
+  }
+]

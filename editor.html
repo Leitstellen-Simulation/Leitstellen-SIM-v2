@@ -56,7 +56,7 @@
                 <button id="se-new-station" type="button">Rettungswache</button>
                 <button id="se-new-hospital" type="button">Krankenhaus</button>
                 <button id="se-new-poi" type="button">POI</button>
-                <button id="se-new-support-group" type="button">UGRD / SEG</button>
+                <button id="se-new-support-station" type="button">UGRD-/SEG-Wache</button>
               </div>
             </details>
             <div class="editor-list-tabs" aria-label="Objekttyp auswählen">
@@ -179,6 +179,16 @@
               <input id="se-tna-failure" type="number" min="0" max="100" step="1" value="5">
             </label>
           </fieldset>
+          <fieldset class="map-radio-settings">
+            <legend>Dispositionsvorschlag</legend>
+            <label>SEG-Transport bei MANV
+              <input id="se-manv-seg-transport-count" type="number" min="0" max="25" step="1" placeholder="Nach MANV-Größe">
+            </label>
+          </fieldset>
+          <details class="editor-rates-panel">
+            <summary>Mod-Einsatzintervalle</summary>
+            <div id="se-mod-scenarios"></div>
+          </details>
           <details class="editor-rates-panel">
             <summary>Einsatzintervalle je Stunde</summary>
             <p class="inline-hint">Durchschnitt pro Stunde. Die Simulation würfelt um diese Werte herum.</p>
@@ -225,7 +235,8 @@
               <div id="se-poi-categories" class="check-grid" role="group" aria-label="Kategorien des POI"></div>
             </section>
             <section id="se-unit-section" class="editor-subform">
-              <h3>Fahrzeuge</h3>
+              <h3 id="se-unit-section-title">Fahrzeuge</h3>
+              <p id="se-unit-section-hint" class="inline-hint" hidden>Diese Fahrzeuge werden einzeln über die normale Fahrzeugauswahl disponiert.</p>
               <div id="se-units-list" class="unit-list"></div>
               <div class="unit-editor">
                 <label>Typ
@@ -239,6 +250,10 @@
                     <option value="ITW">ITW</option>
                     <option value="REF">REF</option>
                     <option value="ELRD">ELRD</option>
+                    <option value="LNA">LNA</option>
+                    <option value="ORGL">OrgL</option>
+                    <option value="UG-SANEL">UG SanEL</option>
+                    <option value="GW-SAN">GW-SAN</option>
                     <option value="HVO">HvO</option>
                     <option value="FR">FR</option>
                     <option value="SONST">Sonstige</option>
@@ -247,10 +262,17 @@
                 <label>Funkrufname lang <input id="se-unit-name" placeholder="Rettung Regensburg 71/1"></label>
                 <label>Funkrufname kurz <input id="se-unit-short" placeholder="RT R 71/1"></label>
                 <label>Schichtzeit <input id="se-unit-shift" placeholder="7-19, 19-7"></label>
-                <label>Ausrück-/Fremdwachenverfügbarkeit (%) <input id="se-unit-responder-availability" type="number" min="0" max="100" step="5" placeholder="100"></label>
+                <label id="se-unit-availability-row" hidden><span id="se-unit-availability-label">Ausrückwahrscheinlichkeit (%)</span> <input id="se-unit-responder-availability" type="number" min="0" max="100" step="1" placeholder="100"></label>
+                <label id="se-unit-turnout-row" hidden>Ausrückezeit ab Wache (Sollwert in min) <input id="se-unit-turnout" type="number" min="0" max="90" step="0.1" placeholder="Standardzeit"></label>
                 <button id="se-add-unit" type="button">Fahrzeug hinzufügen</button>
                 <button id="se-cancel-unit-edit" type="button" hidden>Bearbeitung abbrechen</button>
               </div>
+            </section>
+            <section id="se-support-components-section" class="editor-subform" hidden>
+              <h3>Alarmierbare Komponenten</h3>
+              <p class="inline-hint">SEG-Transport, SEG-Behandlung und UG SanEL werden jeweils als Einheit alarmiert.</p>
+              <div id="se-support-components-list" class="unit-list"></div>
+              <button id="se-add-support-component" type="button">Komponente hinzufügen</button>
             </section>
           </div>
           <footer class="modal-footer">
@@ -262,27 +284,33 @@
       <dialog id="se-support-dialog" class="modal">
         <form method="dialog" class="modal-card editor-point-dialog">
           <header class="modal-header">
-            <h2 id="se-support-title">UGRD/SEG bearbeiten</h2>
+            <h2 id="se-support-title">Komponente bearbeiten</h2>
             <button id="se-cancel-support" class="icon-button" value="cancel" type="submit" aria-label="Schließen">x</button>
           </header>
           <div class="modal-body editor-dialog-body">
             <section class="editor-subform">
               <h3>Gruppe</h3>
               <label>Name <input id="se-support-name" placeholder="z.B. UGRD 1 Regensburg"></label>
-              <label>Standort/Wache
-                <select id="se-support-station"></select>
+              <label>Komponente
+                <select id="se-support-kind">
+                  <option value="ugrd" hidden>Bestehende UGRD-Gruppe</option>
+                  <option value="treatment">SEG Behandlung · 1 GW-SAN</option>
+                  <option value="transport">SEG Transport · 2 KTW</option>
+                  <option value="sanel">UG SanEL · 1 UG-SanEL-Fahrzeug</option>
+                </select>
               </label>
-              <label>Verfügbarkeit je Fahrzeug (%) <input id="se-support-availability" type="number" min="0" max="100" step="5" value="75"></label>
+              <label><span id="se-support-availability-label">Verfügbarkeit je Fahrzeug (%)</span> <input id="se-support-availability" type="number" min="0" max="100" step="5" value="75"></label>
               <div class="form-grid two">
-                <label>Rückmeldung frühestens (min) <input id="se-support-min" type="number" min="1" max="60" value="5"></label>
-                <label>spätestens (min) <input id="se-support-max" type="number" min="1" max="90" value="15"></label>
+                <label>Frühestes Ausrücken (min) <input id="se-support-min" type="number" min="1" max="60" value="5" required></label>
+                <label>Maximale Ausrückzeit (min) <input id="se-support-max" type="number" min="1" max="90" value="15" required></label>
               </div>
             </section>
             <section class="editor-subform">
-              <h3>Hintergrundfahrzeuge</h3>
-              <div class="unit-editor">
+              <h3>Fahrzeuge der Komponente</h3>
+              <div id="se-legacy-support-unit-form" class="unit-editor" hidden>
                 <label>Typ
                   <select id="se-support-unit-type">
+                    <option value="GW-SAN">GW-SAN</option>
                     <option value="RTW">RTW</option>
                     <option value="KTW">KTW</option>
                     <option value="NEF">NEF</option>
@@ -291,22 +319,25 @@
                     <option value="ITH">ITH</option>
                     <option value="REF">REF</option>
                     <option value="ELRD">ELRD</option>
+                    <option value="LNA">LNA</option>
+                    <option value="ORGL">OrgL</option>
+                    <option value="UG-SANEL">UG SanEL</option>
                     <option value="HVO">HvO</option>
                     <option value="FR">FR</option>
                   </select>
                 </label>
                 <label>Funkrufname lang <input id="se-support-unit-name" placeholder="Rotkreuz Regensburg 71/70"></label>
                 <label>Funkrufname kurz <input id="se-support-unit-short" placeholder="RK R 71/70"></label>
-                <label>eigene Verfügbarkeit (%) <input id="se-support-unit-availability" type="number" min="0" max="100" step="5" placeholder="optional"></label>
+                <label id="se-support-unit-availability-field">eigene Verfügbarkeit (%) <input id="se-support-unit-availability" type="number" min="0" max="100" step="5" placeholder="optional"></label>
                 <button id="se-add-support-unit" type="button">Fahrzeug hinzufügen</button>
                 <button id="se-cancel-support-unit-edit" type="button" hidden>Bearbeitung abbrechen</button>
-                <div id="se-support-units-list" class="unit-list"></div>
               </div>
+              <div id="se-support-units-list" class="unit-list"></div>
             </section>
           </div>
           <footer class="modal-footer">
             <button value="cancel" type="submit">Abbrechen</button>
-            <button id="se-save-support" class="primary-action" type="button">Gruppe speichern</button>
+            <button id="se-save-support" class="primary-action" type="button">Komponente übernehmen</button>
           </footer>
         </form>
       </dialog>
@@ -316,6 +347,7 @@
     <script src="poi.js"></script>
     <script src="map-client.js"></script>
     <script src="editor-layout.js"></script>
+    <script src="mod-scenarios.js"></script>
     <script src="editor.js"></script>
   </body>
 </html>

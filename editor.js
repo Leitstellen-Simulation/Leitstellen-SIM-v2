@@ -9,6 +9,7 @@
     hospitals: [],
     poi: [],
     supportGroups: [],
+    supportStations: [],
     coverageGeoJson: null,
     weightZones: [],
     callRates: defaultCallRates()
@@ -34,6 +35,9 @@
   mapLoad: null,
   mapOsmReady: true,
   mapSaving: false,
+  scenarioMods: [],
+  modMapEditors: [],
+  editingSupportComponents: [],
   editingSupportGroupId: null,
   editingSupportUnits: [],
   editingSupportUnitId: null,
@@ -45,18 +49,21 @@
 
 const el = Object.fromEntries([
   "map-name", "type", "name", "address", "address-label", "foreign-point", "foreign-availability-row", "foreign-availability", "geocode", "lat", "lng",
-  "rates", "status3-signal", "status3-normal", "tna-enabled", "tna-failure",
-  "new-station", "new-hospital", "new-poi", "new-support-group", "edit-coverage", "edit-weight-zones", "point-dialog", "point-form", "coverage-form", "weight-form", "form-title",
-  "cancel-edit", "cancel-coverage", "unit-section", "hospital-section", "departments", "hospital-unavailable-probability",
+  "rates", "mod-scenarios", "status3-signal", "status3-normal", "tna-enabled", "tna-failure", "manv-seg-transport-count",
+  "new-station", "new-hospital", "new-poi", "new-support-station", "edit-coverage", "edit-weight-zones", "point-dialog", "point-form", "coverage-form", "weight-form", "form-title",
+  "cancel-edit", "cancel-coverage", "unit-section", "unit-section-title", "unit-section-hint", "hospital-section", "departments", "hospital-unavailable-probability",
   "pediatric-only", "poi-section", "poi-category-search", "poi-categories", "coverage", "use-bounds", "apply-coverage",
   "boundary-query", "search-boundaries", "replace-boundaries", "add-boundaries", "clear-coverage", "boundary-status", "boundary-results",
   "cancel-weight", "weight-query", "weight-factor", "search-weight-boundaries", "add-weight-zones", "weight-status", "weight-results", "weight-zone-list",
   "osm-poi-categories", "osm-select-all-poi", "osm-clear-poi", "osm-only-roads", "import-roads", "import-outdoor", "import-pois", "retry-osm-failed", "pause-osm-import", "abort-osm-import", "apply-imported-pois", "show-address-diagnostics", "show-all-road-diagnostics", "osm-poi-status", "osm-poi-preview",
   "show-poi-markers", "point-filter-stations", "point-filter-hospitals", "point-filter-poi", "point-filter-support",
   "set-pin", "edit-coverage-pins", "add-coverage-pin",
-  "unit-type", "unit-name", "unit-short", "unit-shift", "unit-responder-availability", "add-unit", "cancel-unit-edit", "units-list",
-  "support-dialog", "support-title", "cancel-support", "support-name", "support-station", "support-availability", "support-min", "support-max",
-  "support-unit-type", "support-unit-name", "support-unit-short", "support-unit-availability", "add-support-unit", "cancel-support-unit-edit", "support-units-list", "save-support",
+  "unit-type", "unit-name", "unit-short", "unit-shift", "unit-responder-availability", "unit-availability-row", "unit-availability-label",
+  "unit-turnout", "unit-turnout-row", "add-unit", "cancel-unit-edit", "units-list",
+  "support-components-section", "support-components-list", "add-support-component", "legacy-support-unit-form",
+  "support-dialog", "support-title", "cancel-support", "support-name",
+  "support-kind", "support-availability", "support-availability-label", "support-min", "support-max",
+  "support-unit-type", "support-unit-name", "support-unit-short", "support-unit-availability", "support-unit-availability-field", "add-support-unit", "cancel-support-unit-edit", "support-units-list", "save-support",
   "use-center", "add", "new", "save", "points", "saved", "map", "point-search", "map-status", "map-library", "map-title", "map-mode", "cancel-pin"
 ].map((id) => [id.replaceAll("-", "_"), document.querySelector(`#se-${id}`)]));
 
@@ -98,12 +105,14 @@ function init() {
   el.new_station.addEventListener("click", () => startPointEdit("station"));
   el.new_hospital.addEventListener("click", () => startPointEdit("hospital"));
   el.new_poi.addEventListener("click", () => startPointEdit("poi"));
-  el.new_support_group.addEventListener("click", () => startSupportGroupEdit());
+  el.add_support_component.addEventListener("click", () => startSupportGroupEdit());
+  el.new_support_station.addEventListener("click", () => startPointEdit("supportStation"));
   el.edit_coverage.addEventListener("click", showCoverageForm);
   el.edit_weight_zones.addEventListener("click", showWeightForm);
   el.search_weight_boundaries.addEventListener("click", searchWeightBoundaries);
   el.add_weight_zones.addEventListener("click", addSelectedWeightZones);
   el.add_support_unit.addEventListener("click", addSupportUnit);
+  el.support_kind.addEventListener("change", updateSupportComponent);
   el.cancel_support_unit_edit.addEventListener("click", cancelSupportUnitEdit);
   el.save_support.addEventListener("click", saveSupportGroup);
   el.osm_select_all_poi.addEventListener("click", () => setOsmPoiSelection(true));
@@ -154,10 +163,15 @@ function init() {
   el.cancel_weight.addEventListener("click", closeWorkbench);
   el.new.addEventListener("click", newMap);
   el.save.addEventListener("click", saveMapFile);
+  document.querySelector("#se-tab-settings").addEventListener("click", renderModScenarioEditor);
   el.type.addEventListener("change", updateVehicleInputs);
+  el.foreign_point.addEventListener("change", updateVehicleInputs);
+  el.unit_type.addEventListener("change", updateUnitAvailabilityInput);
   renderDepartmentChecks();
   renderOsmImportCategories();
   renderRateEditor();
+  renderModScenarioEditor();
+  void loadScenarioMods();
   useCenter();
   updateVehicleInputs();
   closeWorkbench();
@@ -200,6 +214,96 @@ function renderRateEditor() {
       el.rates.append(input);
     });
   });
+}
+
+async function loadScenarioMods() {
+  try {
+    const [response, renderer] = await Promise.all([
+      fetch("/api/mods", { signal: AbortSignal.timeout(3000) }), import("./mod-editor.mjs")
+    ]);
+    if (!response.ok) return;
+    const data = await response.json();
+    if (Array.isArray(data.mods)) state.scenarioMods = data.mods;
+    state.createModEditorFields = renderer.createModEditorFields;
+    renderModScenarioEditor();
+  } catch {
+    // Der Karteneditor kann Mod-Einstellungen auch ohne installiertes Paket bearbeiten.
+  }
+}
+
+function renderModScenarioEditor() {
+  const configured = state.mapData.modScenarios;
+  state.modMapEditors = [];
+  el.mod_scenarios.replaceChildren(...modScenarioOptions(state.scenarioMods, configured).map((mod) => {
+    const section = document.createElement("fieldset");
+    section.className = "map-radio-settings";
+    const title = document.createElement("legend");
+    title.textContent = mod.name;
+    const config = normalizeModScenarioConfig(configured?.[mod.id]);
+    const save = () => {
+      state.mapData.modScenarios = { ...state.mapData.modScenarios, [mod.id]: config };
+    };
+    const toggleLabel = document.createElement("label");
+    toggleLabel.className = "check-row";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = config.enabled;
+    toggleLabel.append(checkbox, document.createTextNode(` ${mod.name} für diese ILS aktivieren`));
+    const rates = document.createElement("div");
+    rates.className = "form-grid two";
+    const hint = document.createElement("small");
+    hint.className = "inline-hint";
+    hint.textContent = mod.installed
+      ? "Chance auf einen Einsatz pro Zeitblock."
+      : "Mod fehlt. Die Einstellungen werden gespeichert und sind bis zur Installation inaktiv.";
+    const inputs = modScenarioWindows.map((window, index) => {
+      const label = document.createElement("label");
+      label.textContent = `${mod.name} ${window} (%)`;
+      const input = document.createElement("input");
+      input.type = "number";
+      input.min = "0";
+      input.max = "100";
+      input.step = "0.01";
+      input.value = config.chanceByBlock[index];
+      input.disabled = !config.enabled;
+      input.addEventListener("input", () => {
+        config.chanceByBlock[index] = Math.max(0, Math.min(100, Number(input.value) || 0));
+        save();
+      });
+      label.append(input);
+      rates.append(label);
+      return input;
+    });
+    checkbox.addEventListener("change", () => {
+      config.enabled = checkbox.checked;
+      inputs.forEach((input) => { input.disabled = !config.enabled; });
+      save();
+    });
+    section.append(title, toggleLabel, hint, rates);
+    const fields = state.scenarioMods.find((entry) => entry.id === mod.id)?.editor?.map;
+    if (fields?.length && state.createModEditorFields) {
+      const sources = {
+        hospitals: [...new Map(state.mapData.hospitals.filter((hospital) => hospital.id)
+          .map((hospital) => [hospital.id, { value: hospital.id, label: hospital.label || hospital.id }])).values()],
+        departments: (window.departmentCatalog || []).map(({ key, label }) => ({ value: key, label }))
+      };
+      let edited = false;
+      const fieldEditor = state.createModEditorFields(fields, config.data, sources, (data) => {
+        edited = true;
+        config.data = data;
+        save();
+      });
+      state.modMapEditors.push(() => {
+        if (!config.enabled && !edited) return true;
+        if (!fieldEditor.validate()) return false;
+        config.data = fieldEditor.read();
+        save();
+        return true;
+      });
+      section.append(fieldEditor.container);
+    }
+    return section;
+  }));
 }
 
 function normalizeCallRates(rates) {
@@ -511,10 +615,14 @@ function startPointEdit(type, point = null) {
   state.editingId = point?.id || null;
   el.coverage_form.hidden = true;
   el.type.value = type;
+  state.editingSupportComponents = type === "supportStation" && point
+    ? (state.mapData.supportGroups || []).filter((group) => group.supportStationId === point.id)
+    : [];
   const titles = {
     hospital: ["Neue Klinik", "Klinik bearbeiten"],
     poi: ["Neuer POI", "POI bearbeiten"],
-    station: ["Neue Rettungswache", "Rettungswache bearbeiten"]
+    station: ["Neue Rettungswache", "Rettungswache bearbeiten"],
+    supportStation: ["Neue UGRD-/SEG-Wache", "UGRD-/SEG-Wache bearbeiten"]
   };
   el.form_title.textContent = titles[type][point ? 1 : 0];
   if (point) fillPointForm(point);
@@ -574,20 +682,36 @@ async function geocodeAddress() {
   }
 }
 
+function supportsStationUnits(type) {
+  return type === "station" || type === "supportStation";
+}
+
+function isResponderUnitType(type) {
+  return ["HVO", "FR"].includes(String(type).toUpperCase());
+}
+
+function stationUnitProbability(unit) {
+  if (el.type.value === "supportStation") {
+    return unit.ugrdAvailabilityProbability ?? unit.responderAvailabilityProbability ?? unit.availabilityProbability;
+  }
+  if (isResponderUnitType(unit.type)) return unit.responderAvailabilityProbability;
+  return el.foreign_point.checked ? unit.availabilityProbability : undefined;
+}
+
 function addUnit() {
-  if (el.type.value !== "station") return;
+  if (!supportsStationUnits(el.type.value) || !el.unit_responder_availability.reportValidity() || !el.unit_turnout.reportValidity()) return false;
   const unit = unitFromForm();
   if (state.editingUnitId) {
     state.editingUnits = state.editingUnits.map((item) => {
       if (item.id !== state.editingUnitId) return item;
-      const { availabilityProbability, responderAvailabilityProbability, ...previous } = item;
-      return { ...previous, ...unit };
+      return { ...item, ...unit };
     });
   } else {
     state.editingUnits.push(unit);
   }
   resetUnitForm();
   renderUnits();
+  return true;
 }
 
 function unitFromForm() {
@@ -603,9 +727,13 @@ function unitFromForm() {
     fullName: name,
     shortName: el.unit_short.value.trim() || name,
     shift: el.unit_shift.value.trim(),
-    ...(type === "HVO" || type === "FR"
-      ? availability === undefined ? {} : { responderAvailabilityProbability: availability }
-      : availability === undefined ? {} : { availabilityProbability: availability })
+    ...(el.type.value === "supportStation" ? {
+      ugrdAvailabilityProbability: availability ?? 1,
+      ugrdTurnoutMinutes: el.unit_turnout.value === "" ? undefined : el.unit_turnout.valueAsNumber
+    } : {
+      responderAvailabilityProbability: isResponderUnitType(type) ? availability : undefined,
+      ...(el.foreign_point.checked && !isResponderUnitType(type) ? { availabilityProbability: availability } : {})
+    })
   };
 }
 
@@ -613,14 +741,16 @@ function startUnitEdit(unitId) {
   const unit = state.editingUnits.find((item) => item.id === unitId);
   if (!unit) return;
   state.editingUnitId = unit.id;
-  el.unit_type.value = unit.type || "RTW";
+  el.unit_type.value = String(unit.type || "RTW").toUpperCase();
   el.unit_name.value = unit.name || unit.fullName || "";
   el.unit_short.value = unit.shortName || "";
   el.unit_shift.value = unit.shift || "";
-  const availability = unit.responderAvailabilityProbability ?? unit.availabilityProbability;
+  const availability = stationUnitProbability(unit);
   el.unit_responder_availability.value = availability === undefined ? "" : probabilityToPercent(availability);
+  el.unit_turnout.value = unit.ugrdTurnoutMinutes ?? "";
   el.add_unit.textContent = "Fahrzeug speichern";
   el.cancel_unit_edit.hidden = false;
+  updateUnitAvailabilityInput();
   renderUnits();
 }
 
@@ -635,30 +765,29 @@ function resetUnitForm() {
   el.unit_short.value = "";
   el.unit_shift.value = "";
   el.unit_responder_availability.value = "";
+  el.unit_turnout.value = "";
   el.add_unit.textContent = "Fahrzeug hinzufügen";
   el.cancel_unit_edit.hidden = true;
+  updateUnitAvailabilityInput();
 }
 
 function renderUnits() {
   el.units_list.innerHTML = "";
-  if (el.type.value !== "station") {
-    el.units_list.textContent = "Fahrzeuge nur bei Rettungswachen.";
-    return;
-  }
+  if (!supportsStationUnits(el.type.value)) return;
   if (!state.editingUnits.length) {
-    el.units_list.textContent = "Noch keine Fahrzeuge angelegt.";
+    el.units_list.textContent = el.type.value === "supportStation"
+      ? "Noch keine UGRD-Einzelfahrzeuge angelegt."
+      : "Noch keine Fahrzeuge angelegt.";
     return;
   }
   state.editingUnits.forEach((unit) => {
     const row = document.createElement("article");
     row.className = `unit-row${state.editingUnitId === unit.id ? " editing" : ""}`;
-    const responderAvailability = unit.responderAvailabilityProbability !== undefined
-      ? ` | Ausrücken ${probabilityToPercent(unit.responderAvailabilityProbability)}%`
-      : "";
-    const foreignAvailability = unit.availabilityProbability !== undefined
-      ? ` | Verfügbar ${probabilityToPercent(unit.availabilityProbability)}%`
-      : "";
-    row.innerHTML = `<div><strong>${escapeHtml(unit.shortName)}</strong><span>${escapeHtml(unit.name)} | ${escapeHtml(unit.type)}${unit.shift ? ` | ${escapeHtml(unit.shift)}` : ""}${responderAvailability}${foreignAvailability}</span></div>`;
+    const probability = stationUnitProbability(unit);
+    const availability = probability === undefined ? "" : ` | ${probabilityToPercent(probability)} %`;
+    const turnout = el.type.value === "supportStation" && Number.isFinite(unit.ugrdTurnoutMinutes)
+      ? ` | ${unit.ugrdTurnoutMinutes} min Ausrückezeit` : "";
+    row.innerHTML = `<div><strong>${escapeHtml(unit.shortName)}</strong><span>${escapeHtml(unit.name)} | ${escapeHtml(unit.type)}${unit.shift ? ` | ${escapeHtml(unit.shift)}` : ""}${availability}${turnout}</span></div>`;
     const actions = document.createElement("div");
     actions.className = "unit-row-actions";
     const editButton = document.createElement("button");
@@ -679,29 +808,64 @@ function renderUnits() {
   });
 }
 
+function renderSupportComponents() {
+  el.support_components_list.replaceChildren();
+  if (!state.editingSupportComponents.length) {
+    el.support_components_list.textContent = "Keine Komponenten an dieser Wache.";
+    return;
+  }
+  for (const component of state.editingSupportComponents) {
+    const row = document.createElement("article");
+    row.className = "unit-row";
+    const names = supportGroupUnits(component).map((unit) => unit.shortName || unit.name || unit.type);
+    const label = document.createElement("span");
+    label.textContent = [supportGroupDisplayName(component), ...names].join(" · ");
+    row.append(label);
+    const actions = document.createElement("div");
+    actions.className = "unit-row-actions";
+    for (const [label, action] of [
+      ["Bearbeiten", () => startSupportGroupEdit(component)],
+      ["Entfernen", () => {
+        state.editingSupportComponents = state.editingSupportComponents.filter((entry) => entry.id !== component.id);
+        renderSupportComponents();
+      }]
+    ]) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.addEventListener("click", action);
+      actions.append(button);
+    }
+    row.append(actions);
+    el.support_components_list.append(row);
+  }
+}
+
 function startSupportGroupEdit(group = null) {
   state.editingSupportGroupId = group?.id || null;
   state.editingSupportUnits = (group?.units || []).map((unit) => ({ ...unit }));
-  resetSupportUnitForm();
-  el.support_title.textContent = group ? "UGRD/SEG bearbeiten" : "Neue UGRD/SEG";
+  el.support_title.textContent = group ? "Komponente bearbeiten" : "Neue Komponente";
   el.support_name.value = group?.label || "";
+  const kind = group ? supportGroupKind(group) : "transport";
+  el.support_kind.querySelector('[value="ugrd"]').hidden = kind !== "ugrd";
+  el.support_kind.value = kind;
   el.support_availability.value = probabilityToPercent(group?.availabilityProbability ?? 0.75);
-  el.support_min.value = group?.minResponseMinutes || 5;
-  el.support_max.value = group?.maxResponseMinutes || 15;
-  renderSupportStationOptions(group?.stationId || "");
-  renderSupportUnits();
+  const { min, max } = supportGroupResponseWindow(group || {});
+  el.support_min.value = min;
+  el.support_max.value = max;
+  updateSupportComponent();
   showDialog(el.support_dialog);
 }
 
-function renderSupportStationOptions(selectedId = "") {
-  el.support_station.innerHTML = "";
-  (state.mapData.stations || []).forEach((station) => {
-    const option = document.createElement("option");
-    option.value = station.id;
-    option.textContent = station.label;
-    option.selected = station.id === selectedId;
-    el.support_station.append(option);
-  });
+function updateSupportComponent() {
+  const kind = el.support_kind.value;
+  const previous = state.editingSupportUnits;
+  state.editingSupportUnits = supportGroupUnits({ kind, units: previous }).map((unit) =>
+    previous.includes(unit) ? unit : { ...unit, name: "" });
+  el.support_availability_label.textContent = kind === "ugrd" ? "Verfügbarkeit je Fahrzeug (%)" : "Ausrückwahrscheinlichkeit der Komponente (%)";
+  el.legacy_support_unit_form.hidden = kind !== "ugrd";
+  resetSupportUnitForm();
+  renderSupportUnits();
 }
 
 function addSupportUnit() {
@@ -724,7 +888,8 @@ function supportUnitFromForm() {
     name,
     fullName: name,
     shortName: el.support_unit_short.value.trim() || name,
-    availabilityProbability: el.support_unit_availability.value === "" ? undefined : availabilityPercentToProbability(el.support_unit_availability.value)
+    availabilityProbability: el.support_kind.value !== "ugrd" || el.support_unit_availability.value === ""
+      ? undefined : availabilityPercentToProbability(el.support_unit_availability.value)
   };
 }
 
@@ -748,6 +913,7 @@ function cancelSupportUnitEdit() {
 
 function resetSupportUnitForm() {
   state.editingSupportUnitId = null;
+  el.support_unit_type.value = { treatment: "GW-SAN", transport: "KTW" }[el.support_kind.value] || "RTW";
   el.support_unit_name.value = "";
   el.support_unit_short.value = "";
   el.support_unit_availability.value = "";
@@ -756,7 +922,33 @@ function resetSupportUnitForm() {
 }
 
 function renderSupportUnits() {
-  el.support_units_list.innerHTML = "";
+  el.support_units_list.replaceChildren();
+  if (el.support_kind.value !== "ugrd") {
+    state.editingSupportUnits.forEach((unit, index) => {
+      const row = document.createElement("div");
+      row.className = "form-grid two";
+      for (const [label, field, required] of [
+        [`${unit.type} ${index + 1} · Funkrufname`, "name", true],
+        ["Funkrufname kurz", "shortName", false]
+      ]) {
+        const wrapper = document.createElement("label");
+        const input = document.createElement("input");
+        input.required = required;
+        input.value = unit[field] || (field === "name" ? unit.fullName || "" : "");
+        input.addEventListener("input", () => {
+          unit[field] = input.value.trim();
+          if (field === "name") {
+            unit.fullName = unit.name;
+            input.setCustomValidity(input.value && !unit.name ? "Bitte einen Funkrufnamen eingeben." : "");
+          }
+        });
+        wrapper.append(label, input);
+        row.append(wrapper);
+      }
+      el.support_units_list.append(row);
+    });
+    return;
+  }
   if (!state.editingSupportUnits.length) {
     el.support_units_list.textContent = "Noch keine Hintergrundfahrzeuge angelegt.";
     return;
@@ -786,28 +978,32 @@ function renderSupportUnits() {
 }
 
 function saveSupportGroup() {
-  const station = (state.mapData.stations || []).find((item) => item.id === el.support_station.value);
-  const label = el.support_name.value.trim() || "UGRD/SEG";
+  if (!el.support_min.reportValidity() || !el.support_max.reportValidity()) return;
+  if (![...el.support_units_list.querySelectorAll("input")].every((input) => input.reportValidity())) return;
+  const kind = el.support_kind.value;
+  const label = el.support_name.value.trim() || SUPPORT_COMPONENT_LABELS[kind];
+  const original = state.editingSupportComponents.find((group) => group.id === state.editingSupportGroupId);
+  const units = state.editingSupportUnits.map((unit) => unit.id === state.editingSupportUnitId
+    ? { ...unit, ...supportUnitFromForm() } : { ...unit });
+  const { min, max } = supportGroupResponseWindow({
+    minResponseMinutes: el.support_min.valueAsNumber,
+    maxResponseMinutes: el.support_max.valueAsNumber
+  });
   const group = {
-    id: state.editingSupportGroupId || makeId(label),
+    ...original,
+    id: state.editingSupportGroupId || makeId(`seg-${label}-${crypto.randomUUID()}`),
     label,
-    stationId: station?.id || "",
-    stationLabel: station?.label || "",
-    lat: station?.lat,
-    lng: station?.lng,
+    kind,
     availabilityProbability: availabilityPercentToProbability(el.support_availability.value),
-    minResponseMinutes: Math.max(1, Number(el.support_min.value) || 5),
-    maxResponseMinutes: Math.max(1, Number(el.support_max.value) || 15),
-    units: state.editingSupportUnits.map((unit) => ({ ...unit }))
+    minResponseMinutes: min,
+    maxResponseMinutes: max,
+    units: units.map(({ stationId, ...unit }) => ({
+      ...unit, fullName: unit.name || unit.fullName, shortName: unit.shortName || unit.name || unit.fullName
+    }))
   };
-  if (group.maxResponseMinutes < group.minResponseMinutes) group.maxResponseMinutes = group.minResponseMinutes;
-  state.mapData.supportGroups ||= [];
-  upsert(state.mapData.supportGroups, group);
-  state.editingSupportGroupId = null;
-  state.editingSupportUnits = [];
+  upsert(state.editingSupportComponents, group);
   el.support_dialog.close();
-  setPointListFilter("support");
-  render();
+  renderSupportComponents();
 }
 
 function savePoint() {
@@ -816,19 +1012,21 @@ function savePoint() {
   const lat = Number(el.lat.value.replace(",", "."));
   const lng = Number(el.lng.value.replace(",", "."));
   if (!el.name.value.trim() || Number.isNaN(lat) || Number.isNaN(lng)) return;
-  const points = type === "station" ? state.mapData.stations : type === "hospital" ? state.mapData.hospitals : state.mapData.poi;
+  const collections = { station: state.mapData.stations, hospital: state.mapData.hospitals,
+    supportStation: state.mapData.supportStations ||= [], poi: state.mapData.poi };
+  const points = collections[type];
   const previous = points.find((point) => point.id === state.editingId);
   const point = {
     ...previous,
-    id: state.editingId || makeId(el.name.value),
+    id: state.editingId || makeId(type === "supportStation" ? `seg-wache-${el.name.value}` : el.name.value),
     label: el.name.value.trim(),
     address: el.address.value.trim() || (type === "hospital" ? "" : "eigener Kartenpunkt"),
     lat,
     lng,
-    foreign: Boolean(el.foreign_point.checked)
+    foreign: type !== "supportStation" && Boolean(el.foreign_point.checked)
   };
   if (type === "station") {
-    if (state.editingUnitId) addUnit();
+    if (state.editingUnitId && !addUnit()) return;
     point.units = state.editingUnits.map((unit) => ({ ...unit }));
     point.vehicles = point.units.reduce((counts, unit) => {
       counts[unit.type] = (counts[unit.type] || 0) + 1;
@@ -838,6 +1036,15 @@ function savePoint() {
     upsert(state.mapData.stations, point);
     state.mapData.hospitals = state.mapData.hospitals.filter((item) => item.id !== point.id);
     state.mapData.poi = (state.mapData.poi || []).filter((item) => item.id !== point.id);
+  } else if (type === "supportStation") {
+    if (state.editingUnitId && !addUnit()) return;
+    point.units = state.editingUnits.map((unit) => ({ ...unit }));
+    upsert(points, point);
+    state.mapData.supportGroups = (state.mapData.supportGroups || []).filter((group) => group.supportStationId !== point.id);
+    state.mapData.supportGroups.push(...state.editingSupportComponents.map((group) => ({
+      ...group, supportStationId: point.id, lat: point.lat, lng: point.lng
+    })));
+    state.pointListFilter = "support";
   } else if (type === "poi") {
     point.categories = selectedPoiCategories();
     upsert(state.mapData.poi, point);
@@ -870,16 +1077,35 @@ function probabilityToPercent(value, fallback = 50) {
   return Math.round(Math.max(0, Math.min(1, normalized)) * 100);
 }
 
+function updateUnitAvailabilityInput() {
+  const responder = isResponderUnitType(el.unit_type.value);
+  const support = el.type.value === "supportStation";
+  el.unit_availability_row.hidden = !support && (el.type.value !== "station" || (!responder && !el.foreign_point.checked));
+  el.unit_responder_availability.disabled = el.unit_availability_row.hidden;
+  el.unit_responder_availability.placeholder = support || responder ? "100" : "Verfügbarkeit der Wache";
+  el.unit_availability_label.textContent = support || responder ? "Ausrückwahrscheinlichkeit (%)" : "Verfügbarkeit bei Fremdwache (%)";
+}
+
 function updateVehicleInputs() {
-  const disabled = el.type.value !== "station";
+  const supportStation = el.type.value === "supportStation";
+  const disabled = !supportsStationUnits(el.type.value);
   el.unit_section.hidden = disabled;
+  el.unit_section_title.textContent = supportStation ? "Reguläre UGRD-Einzelfahrzeuge" : "Fahrzeuge";
+  el.unit_section_hint.hidden = !supportStation;
+  el.support_components_section.hidden = !supportStation;
+  if (supportStation) renderSupportComponents();
   el.hospital_section.hidden = el.type.value !== "hospital";
   el.address_label.textContent = el.type.value === "hospital" ? "Adresse zur Standortsuche" : "Adresse";
   el.poi_section.hidden = el.type.value !== "poi";
-  el.foreign_point.disabled = el.type.value === "poi";
-  el.foreign_availability_row.hidden = el.type.value !== "station";
-  el.foreign_availability.disabled = el.type.value !== "station";
-  [el.unit_type, el.unit_name, el.unit_short, el.unit_shift, el.unit_responder_availability, el.add_unit, el.cancel_unit_edit].forEach((input) => {
+  el.foreign_point.disabled = el.type.value === "poi" || el.type.value === "supportStation";
+  el.foreign_point.closest("label").hidden = el.type.value === "supportStation";
+  const foreignStation = el.type.value === "station" && el.foreign_point.checked;
+  el.foreign_availability_row.hidden = !foreignStation;
+  el.foreign_availability.disabled = !foreignStation;
+  updateUnitAvailabilityInput();
+  el.unit_turnout_row.hidden = !supportStation;
+  el.unit_turnout.disabled = !supportStation;
+  [el.unit_type, el.unit_name, el.unit_short, el.unit_shift, el.add_unit, el.cancel_unit_edit].forEach((input) => {
     input.disabled = disabled;
   });
   el.hospital_section.open = el.type.value === "hospital";
@@ -940,9 +1166,9 @@ function renderEditorPointMarker(entries) {
   const [point] = entries;
   const grouped = entries.length > 1;
   const isStation = point.type === "station";
-  const kind = isStation ? "station station-available" : point.type;
+  const kind = isStation ? "station station-available" : point.type === "supportStation" ? "support" : point.type;
   const foreign = entries.every(isForeignMapPoint);
-  const label = isStation ? stationMapSymbol(point) : { hospital: "+", poi: "POI", support: "UGRD" }[point.type];
+  const label = isStation ? stationMapSymbol(point) : { hospital: "+", poi: "POI", supportStation: "SEG" }[point.type];
   const title = grouped ? hospitalMapMarkerTitle(entries) : point.label || point.stationLabel || label;
   const classes = `${kind}${foreign ? " foreign-map-point" : ""}`;
   const icon = createMapPointIcon(label, classes, grouped ? entries.length : undefined);
@@ -969,8 +1195,6 @@ function renderEditorPointMarker(entries) {
     if (state.pinMode) {
       marker.closePopup();
       finishPinMode(marker.getLatLng());
-    } else if (!grouped && point.type === "support") {
-      startSupportGroupEdit(point);
     } else if (!grouped) {
       editPoint(point);
     }
@@ -979,11 +1203,12 @@ function renderEditorPointMarker(entries) {
 }
 
 function mapEditorPoints() {
+  const supportStations = state.mapData.supportStations || [];
   return [
     ...state.mapData.stations.map((point) => ({ ...point, type: "station" })),
     ...state.mapData.hospitals.map((point) => ({ ...point, type: "hospital" })),
     ...(state.mapData.poi || []).map((point) => ({ ...point, type: "poi" })),
-    ...(state.mapData.supportGroups || []).map((point) => ({ ...point, type: "support" }))
+    ...supportStations.map((point) => ({ ...point, type: "supportStation" }))
   ];
 }
 
@@ -991,7 +1216,8 @@ function renderList(points) {
   el.points.innerHTML = "";
   updatePointListTabs();
   const query = el.point_search.value.trim().toLocaleLowerCase("de");
-  const filtered = points.filter((point) => point.type === state.pointListFilter &&
+  const filtered = points.filter((point) => (point.type === state.pointListFilter
+    || (state.pointListFilter === "support" && point.type === "supportStation")) &&
     (!query || `${point.label || ""} ${point.address || ""}`.toLocaleLowerCase("de").includes(query)));
   if (!filtered.length) {
     el.points.className = "editor-point-list empty-state";
@@ -1006,14 +1232,14 @@ function renderList(points) {
       ? stationListExtra(point)
       : point.type === "hospital"
         ? `${point.foreign ? " | Fremdkrankenhaus" : ""} | ${(point.departments || []).map(departmentLabel).join(", ") || "keine Fachrichtungen"}${point.pediatricOnly ? " | reine Kinderklinik" : ""} | Abmeldung ${probabilityToPercent(point.unavailableProbability, 0)}%`
-        : point.type === "support"
-          ? ` | ${(point.units || []).length} Fahrzeug(e) | ${point.stationLabel || "keine Wache"} | ${probabilityToPercent(point.availabilityProbability)}%`
+        : point.type === "supportStation"
+          ? ` | ${(point.units || []).length} Einzelfahrzeuge | ${(state.mapData.supportGroups || []).filter((group) => group.supportStationId === point.id).length} Komponenten`
           : ` | ${(point.categories || []).join(", ") || "keine Kategorien"}`;
     const detail = [point.type === "hospital" ? "" : point.address, ...extra.split(" | ").filter(Boolean)].filter(Boolean).join(" · ");
     row.innerHTML = `<div><h3>${escapeHtml(point.label)}</h3><p>${escapeHtml(detail)}</p></div>`;
     const actions = document.createElement("div");
     actions.className = "row-actions";
-    const actionsForPoint = [["Bearbeiten", () => point.type === "support" ? startSupportGroupEdit(point) : editPoint(point)]];
+    const actionsForPoint = [["Bearbeiten", () => editPoint(point)]];
     if (Number.isFinite(point.lat) && Number.isFinite(point.lng)) actionsForPoint.push(["Auf Karte", () => {
       state.map.setView([point.lat, point.lng], Math.max(state.map.getZoom(), 15));
       el.map.scrollIntoView({ block: "nearest" });
@@ -1068,7 +1294,7 @@ function updatePointListTabs() {
 function emptyPointListText(filter) {
   if (filter === "station") return "Noch keine Wachen angelegt.";
   if (filter === "hospital") return "Noch keine Krankenhäuser angelegt.";
-  if (filter === "support") return "Noch keine UGRD/SEG-Gruppen angelegt.";
+  if (filter === "support") return "Noch keine UGRD-/SEG-Wachen oder Komponenten angelegt.";
   return "Noch keine POI angelegt.";
 }
 
@@ -1088,7 +1314,8 @@ function fillPointForm(point) {
   el.lng.value = point.lng.toFixed(6);
   el.foreign_point.checked = isForeignMapPoint(point);
   el.foreign_availability.value = probabilityToPercent(point.foreignAvailabilityProbability);
-  state.editingUnits = point.type === "station" ? stationUnitsForEditing(point) : [];
+  state.editingUnits = el.type.value === "station" ? stationUnitsForEditing(point)
+    : el.type.value === "supportStation" ? (point.units || []).map((unit) => ({ ...unit })) : [];
   resetUnitForm();
   renderDepartmentChecks(point.departments || []);
   el.pediatric_only.checked = Boolean(point.pediatricOnly);
@@ -1119,6 +1346,12 @@ function stationUnitsForEditing(point) {
 }
 
 function deletePoint(point) {
+  if (point.type === "supportStation") {
+    state.mapData.supportGroups = (state.mapData.supportGroups || []).filter((group) => group.supportStationId !== point.id);
+    state.mapData.supportStations = state.mapData.supportStations.filter((station) => station.id !== point.id);
+    render();
+    return;
+  }
   state.mapData.stations = state.mapData.stations.filter((item) => item.id !== point.id);
   state.mapData.hospitals = state.mapData.hospitals.filter((item) => item.id !== point.id);
   state.mapData.poi = (state.mapData.poi || []).filter((item) => item.id !== point.id);
@@ -1128,6 +1361,16 @@ function deletePoint(point) {
 
 async function saveMapFile() {
   if (state.mapLoad || !state.mapOsmReady || state.mapSaving || state.osmImportRunning) return;
+  if (!el.manv_seg_transport_count.validity.valid) {
+    document.querySelector("#se-tab-settings").click();
+    el.manv_seg_transport_count.reportValidity();
+    return;
+  }
+  if (!state.modMapEditors.every((collect) => collect())) {
+    document.querySelector("#se-tab-settings").click();
+    setMapStatus("Bitte die Mod-Einstellungen prüfen.", true);
+    return;
+  }
   state.mapSaving = true;
   updateMapControls();
   setMapStatus("Karte wird gespeichert …");
@@ -1140,6 +1383,7 @@ async function saveMapFile() {
     status3Radio: normalizeStatus3Radio({ signal: el.status3_signal.value, normal: el.status3_normal.value }),
     tnaEnabled: el.tna_enabled.checked,
     tnaFailureProbability: availabilityPercentToProbability(el.tna_failure.value, .05),
+    manvSegTransportCount: el.manv_seg_transport_count.value === "" ? undefined : el.manv_seg_transport_count.valueAsNumber,
     mapCenter: [state.map.getCenter().lat, state.map.getCenter().lng],
     zoom: state.map.getZoom()
   };
@@ -1223,12 +1467,14 @@ function showMapData(map) {
   state.mapData.poi ||= [];
   state.mapData.osmData ||= emptyImportedOsmData();
   state.mapData.supportGroups ||= [];
+  attachLegacySupportGroups(state.mapData);
   state.mapData.weightZones ||= [];
   state.mapData.callRates = normalizeCallRates(state.mapData.callRates);
   const status3Radio = normalizeStatus3Radio(state.mapData.status3Radio);
   el.status3_signal.value = status3Radio.signal;
   el.status3_normal.value = status3Radio.normal;
   el.tna_enabled.checked = state.mapData.tnaEnabled === true;
+  el.manv_seg_transport_count.value = state.mapData.manvSegTransportCount ?? "";
   el.tna_failure.value = Math.round(Math.max(0, Math.min(1, Number(state.mapData.tnaFailureProbability ?? .05))) * 100);
   el.map_name.value = state.mapData.name;
   updateMapTitle();
@@ -1251,6 +1497,7 @@ function showMapData(map) {
   closeWorkbench();
   state.map.setView(state.mapData.mapCenter, state.mapData.zoom);
   renderRateEditor();
+  renderModScenarioEditor();
   render();
 }
 

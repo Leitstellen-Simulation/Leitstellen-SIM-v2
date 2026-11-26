@@ -1,6 +1,8 @@
 node_modules/
 dist/
 dist-fresh/
+.DS_Store
+/mods.zip
 server.out.log
 server.err.log
 *.tmp
@@ -10,3 +12,8 @@ server.err.log
 test-admin.local.js
 *.local.js
 /Leitstellen-SIM-vor-TNA-*.zip
+/mods/*
+!/mods/manv/
+/mod-settings.json
+/mod-data/
+/mod-catalogs/

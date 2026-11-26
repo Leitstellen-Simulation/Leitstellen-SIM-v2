@@ -9,6 +9,70 @@ function normalizeStatus3Radio(settings) {
 }
 
 const MAP_RESPONDER_SYMBOL = "♥";
+const SUPPORT_COMPONENT_LABELS = { ugrd: "UGRD", treatment: "SEG-Behandlung", transport: "SEG-Transport", sanel: "UG SanEL" };
+
+function supportGroupKind(group) {
+  if (Object.hasOwn(SUPPORT_COMPONENT_LABELS, group.kind)) return group.kind;
+  if (/\bSEG[\s-]+Behandlung\b/i.test(group.label || "")) return "treatment";
+  if (/\bSEG[\s-]+Transport\b/i.test(group.label || "")) return "transport";
+  if (/^UG[\s-]+SanEL\b/i.test(group.label || "")) return "sanel";
+  return "ugrd";
+}
+
+function supportGroupUnits(group) {
+  const configured = Array.isArray(group.units) ? group.units : [];
+  const kind = supportGroupKind(group);
+  if (kind === "ugrd") return configured;
+  const type = { treatment: "GW-SAN", transport: "KTW", sanel: "UG-SANEL" }[kind];
+  const count = kind === "transport" ? 2 : 1;
+  const matching = configured.filter((unit) => unit.type === type);
+  return Array.from({ length: count }, (_, index) => matching[index]
+    || { id: `${kind}-${index + 1}`, type, name: `${group.label || SUPPORT_COMPONENT_LABELS[kind]} · ${type}${count > 1 ? ` ${index + 1}` : ""}` });
+}
+
+function supportGroupDisplayName(group) {
+  const label = String(group.label || "").trim();
+  const kind = supportGroupKind(group);
+  const prefixes = { ugrd: /^UGRD\b/i, treatment: /^SEG[\s-]+Behandlung\b/i, transport: /^SEG[\s-]+Transport\b/i, sanel: /^UG[\s-]+SanEL\b/i };
+  const prefix = prefixes[kind];
+  const title = SUPPORT_COMPONENT_LABELS[kind];
+  return prefix.test(label) ? label.replace(prefix, title) : [title, label].filter(Boolean).join(" ");
+}
+
+function supportGroupResponseWindow(group) {
+  const min = Math.min(60, Math.max(1, Number(group.minResponseMinutes) || 5));
+  const max = Math.min(90, Math.max(min, Number(group.maxResponseMinutes) || 15));
+  return { min, max };
+}
+
+function supportGroupLocation(map, group, unit = {}) {
+  const supportStation = (map.supportStations || []).find((item) => item.id === group.supportStationId);
+  const stationId = unit.stationId || group.stationId;
+  const legacyStation = stationId && (map.stations || []).find((item) => item.id === stationId);
+  const station = supportStation || legacyStation;
+  const point = station || group;
+  return {
+    id: station?.id || `support-${group.id}`,
+    label: station?.label || group.label || "UGRD-/SEG-Standort",
+    lat: Number.isFinite(point.lat) ? point.lat : map.mapCenter[0],
+    lng: Number.isFinite(point.lng) ? point.lng : map.mapCenter[1]
+  };
+}
+
+function attachLegacySupportGroups(map) {
+  const stations = map.supportStations ||= [];
+  const ids = new Set(stations.map((station) => station.id));
+  for (const group of map.supportGroups || []) {
+    if (ids.has(group.supportStationId)) continue;
+    const location = supportGroupLocation(map, group);
+    const baseId = `seg-wache-${group.id}`;
+    let id = baseId;
+    for (let n = 2; ids.has(id); n++) id = `${baseId}-${n}`;
+    ids.add(id);
+    stations.push({ ...location, id, label: group.label || location.label, units: [] });
+    group.supportStationId = id;
+  }
+}
 
 function isForeignMapPoint(point) {
   return Boolean(point?.foreign || point?.foreignStation || point?.outsideCoverage || point?.external);
@@ -23,11 +87,10 @@ function stationMapSymbol(station) {
   if (types.size && [...types].every((type) => type === "HVO" || type === "FR")) {
     return types.has("HVO") ? "HvO" : "FR";
   }
+  const roadTransport = ["RTW", "KTW", "ITW"].some((type) => types.has(type));
+  if (!roadTransport && (types.has("RTH") || types.has("ITH"))) return "RTH";
   if (isForeignMapPoint(station)) return "FRW";
-  if (!["RTW", "KTW", "ITW"].some((type) => types.has(type))) {
-    if (types.has("RTH") || types.has("ITH")) return "RTH";
-    if (types.has("NEF") || types.has("VEF")) return "NEF";
-  }
+  if (!roadTransport && (types.has("NEF") || types.has("VEF"))) return "NEF";
   return "RW";
 }
 
@@ -35,7 +98,9 @@ function createMapPointIcon(label, type, count) {
   const station = label === "RW" || label === "FRW";
   const responder = label === "HvO" || label === "FR";
   const support = type.split(" ").includes("support");
-  const symbol = station ? '<span class="map-station-symbol"></span>' : escapeHtml(label);
+  const symbol = station ? '<span class="map-station-symbol"></span>'
+    : label === "RTH" ? '<span class="map-helicopter-symbol"></span>'
+    : escapeHtml(label);
   const content = responder ? `<span>${MAP_RESPONDER_SYMBOL}</span><small>${symbol}</small>` : symbol;
   const badge = Number.isInteger(count) ? `<small class="map-station-count">${count}</small>` : "";
   return L.divIcon({

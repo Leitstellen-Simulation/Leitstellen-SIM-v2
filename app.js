@@ -46,6 +46,7 @@ const state = {
   incidents: [],
   vehicles: [],
   hasLocalRef: null,
+  manvAvailable: false,
   timers: [],
   timeouts: [],
   lastClockTick: Date.now(),
@@ -54,11 +55,14 @@ const state = {
   editorPoints: [],
   editingMapPointId: null,
   selectedDialogVehicleIds: new Set(),
+  selectedDialogGroupIds: new Set(),
+  suggestedDialogGroupIds: new Set(),
   dialogVehicleTypeFilter: "all",
   dialogRoutes: new Map(),
   dialogTravelTimes: new Map(),
   dialogTravelTimeRequests: new Set(),
   showForeignVehiclesInDialog: false,
+  showSupportGroupsInDialog: false,
   showForeignHospitalsInTransport: false,
   startupSyncHandled: false,
   lastForeignAvailabilityRoll: null,
@@ -106,6 +110,7 @@ const el = {
   activeCenter: document.querySelector("#active-center"),
   operatorLabel: document.querySelector("#operator-label"),
   weatherLabel: document.querySelector("#weather-label"),
+  mapResponderStations: document.querySelector("#map-responder-stations"),
   adminStatusBar: document.querySelector("#admin-status-bar"),
   map: document.querySelector("#map"),
   incidentList: document.querySelector("#incident-list"),
@@ -132,10 +137,6 @@ const el = {
   closeAdminLoginDialog: document.querySelector("#close-admin-login-dialog"),
   cancelAdminLogin: document.querySelector("#cancel-admin-login"),
   coverageButton: document.querySelector("#coverage-button"),
-  supportGroupButton: document.querySelector("#support-group-button"),
-  supportGroupDialog: document.querySelector("#support-group-dialog"),
-  supportGroupList: document.querySelector("#support-group-list"),
-  closeSupportGroupDialog: document.querySelector("#close-support-group-dialog"),
   transportDestinationDialog: document.querySelector("#transport-destination-dialog"),
   transportDestinationBody: document.querySelector("#transport-destination-body"),
   closeTransportDestinationDialog: document.querySelector("#close-transport-destination-dialog"),
@@ -168,6 +169,7 @@ const el = {
   incidentMapButton: document.querySelector("#incident-map-button"),
   closeIncidentDialog: document.querySelector("#close-incident-dialog"),
   dialogVehicleList: document.querySelector("#dialog-vehicle-list"),
+  dialogVehicleTools: document.querySelector("#dialog-vehicle-tools"),
   editorDialog: document.querySelector("#editor-dialog"),
   editorType: document.querySelector("#editor-type"),
   editorMapName: document.querySelector("#editor-map-name"),
@@ -204,12 +206,13 @@ const el = {
   callDispositionTimer: document.querySelector("#call-disposition-timer"),
   callFwButton: document.querySelector("#call-fw-button"),
   callPolButton: document.querySelector("#call-pol-button"),
-  callAelrdButton: document.querySelector("#call-aelrd-button"),
+  callAendButton: document.querySelector("#call-aend-button"),
   callRejectButton: document.querySelector("#call-reject-button"),
   callMapButton: document.querySelector("#call-map-button"),
   callCreateButton: document.querySelector("#call-create-button")
 };
 
+el.mapResponderStations.addEventListener("change", renderMap);
 el.shiftForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   await startShift();
@@ -249,7 +252,7 @@ el.startMapEditorButton?.addEventListener("click", openEditor);
 el.startIncidentEditorButton?.addEventListener("click", openIncidentEditor);
 el.callFwButton.addEventListener("click", () => referPendingCall("FW"));
 el.callPolButton.addEventListener("click", () => referPendingCall("POL"));
-el.callAelrdButton.addEventListener("click", () => referPendingCall("AELRD"));
+el.callAendButton.addEventListener("click", () => referPendingCall("AEND"));
 el.callRejectButton.addEventListener("click", rejectPendingCall);
 el.callMapButton.addEventListener("click", showPendingCallOnMap);
 el.callCreateButton.addEventListener("click", () => {
@@ -273,8 +276,6 @@ el.endShiftButton.addEventListener("click", endShift);
 el.editorButton.addEventListener("click", openEditor);
 el.incidentEditorButton.addEventListener("click", openIncidentEditor);
 el.coverageButton?.addEventListener("click", openCoverageDialog);
-el.supportGroupButton?.addEventListener("click", openSupportGroupDialog);
-el.closeSupportGroupDialog?.addEventListener("click", () => el.supportGroupDialog?.close());
 el.closeTransportDestinationDialog?.addEventListener("click", () => el.transportDestinationDialog?.close());
 el.vehicleSort.addEventListener("change", renderVehicles);
 el.radioIncidentFilter.addEventListener("click", () => {
@@ -325,6 +326,7 @@ makeDialogDraggable(el.incidentDialog);
 makeDialogDraggable(el.callDispositionDialog);
 
 populateKeywordSelectGrouped();
+void appMods.discover();
 loadCenterOptions().then(startFromStartupOptions);
 
 document.querySelectorAll(".tab").forEach((button) => {
@@ -360,6 +362,9 @@ async function initializeShift() {
   state.incidentCatalog = incidentCatalog;
   ensureHospitalDepartments(state.center);
   state.center.supportGroups ||= [];
+  state.center.stations = state.center.stations.concat((state.center.supportStations || []).map((station) => ({
+    ...station, supportStation: true, vehicles: {}
+  })));
   state.center.weightZones ||= [];
   ensurePoiCatalog(state.center);
   state.coveragePoints = buildCoveragePoints(state.center);
@@ -394,6 +399,13 @@ async function initializeShift() {
   state.lastCallRateMinute = Math.floor(state.absoluteMinute);
   state.lastUnplannedCallAbsoluteMinute = state.lastCallRateMinute;
   state.vehicles = seedVehicles(state.center);
+  state.manvAvailable = false;
+  const modWarnings = await appMods.start(state.center.id);
+  state.manvAvailable = appMods.isActive("manv");
+  if (!state.manvAvailable) {
+    state.vehicles = state.vehicles.filter((vehicle) => !isManvOnlyVehicleType(vehicle.type));
+    state.center.supportGroups = supportGroupsWithoutManv(state.center.supportGroups);
+  }
   state.hasLocalRef = hasConfiguredLocalRef(state.vehicles);
   initializeHospitalAvailabilityStates();
   rollForeignVehicleAvailability(true);
@@ -421,6 +433,9 @@ async function initializeShift() {
   initMap();
   renderAll();
   if (overview?.osmRevision) loadShiftOsmData(overview);
+  modWarnings.forEach((warning) => logCall(warning, "warn"));
+  state.lastClockTick = Date.now();
+  appMods.begin();
   startClock();
 }
 
@@ -494,6 +509,7 @@ async function loadCenterOptions() {
     || state.availableMaps[0]?.id
     || "";
   el.centerSelect.value = state.availableMaps.some((map) => map.id === previousValue) ? previousValue : defaultId;
+  appMods.renderChoices();
   el.shiftForm.querySelector("button[type='submit']").disabled = !state.availableMaps.length;
   if (!startupOptions().autostart) updateStartMapPreview();
   if (!state.startupSyncHandled && state.serverAvailable) {
@@ -859,63 +875,6 @@ function toggleTestMode() {
   logRadio(`Testbetrieb ${state.testMode ? "aktiviert: automatische Anrufe pausiert" : "deaktiviert: automatische Anrufe aktiv"}.`, "admin");
 }
 
-function openSupportGroupDialog() {
-  renderSupportGroupDialog();
-  showDialog(el.supportGroupDialog);
-}
-
-function renderSupportGroupDialog() {
-  if (!el.supportGroupList) return;
-  const groups = state.center?.supportGroups || [];
-  el.supportGroupList.innerHTML = "";
-  if (!groups.length) {
-    el.supportGroupList.textContent = "Keine UGRD-/SEG-Gruppen in dieser Karte angelegt.";
-    return;
-  }
-  groups.forEach((group) => {
-    const groupState = supportGroupState(group.id);
-    const lockRemaining = typeof supportGroupLockRemainingMinutes === "function"
-      ? supportGroupLockRemainingMinutes(groupState)
-      : 0;
-    const activeVehicles = state.vehicles.filter((vehicle) => vehicle.supportGroupId === group.id);
-    const pending = groupState.pending || 0;
-    const available = activeVehicles.filter((vehicle) => [1, 2].includes(vehicle.status) && !vehicle.incidentId && !vehicle.nextIncidentId).length;
-    const busy = activeVehicles.length - available;
-    const isAlarmBlocked = groupState.status === "alarmed" || pending > 0 || activeVehicles.length > 0 || lockRemaining > 0;
-    const row = document.createElement("article");
-    row.className = "support-group-card";
-    const units = (group.units || []).map((unit) => unit.shortName || unit.name || unit.type).join(", ") || "keine Fahrzeuge";
-    row.innerHTML = `
-      <div>
-        <h3>${escapeHtml(group.label || group.id || "UGRD/SEG")}</h3>
-        <p>${escapeHtml(units)}</p>
-        <small>Status: ${escapeHtml(lockRemaining > 0 ? `gesperrt (${lockRemaining} min)` : groupState.status || "bereit")} | ausstehend ${pending} | frei ${available} | gebunden ${busy}</small>
-      </div>
-    `;
-    const actions = document.createElement("div");
-    actions.className = "row-actions";
-    const alarm = document.createElement("button");
-    alarm.type = "button";
-    alarm.textContent = lockRemaining > 0 ? `gesperrt ${lockRemaining} min` : "alarmieren";
-    alarm.disabled = isAlarmBlocked;
-    alarm.addEventListener("click", () => {
-      alarmSupportGroup(group.id);
-      renderSupportGroupDialog();
-    });
-    const standDown = document.createElement("button");
-    standDown.type = "button";
-    standDown.textContent = "Alarm beenden";
-    standDown.disabled = groupState.status !== "alarmed" && !activeVehicles.length && !pending;
-    standDown.addEventListener("click", () => {
-      standDownSupportGroup(group.id);
-      renderSupportGroupDialog();
-    });
-    actions.append(alarm, standDown);
-    row.append(actions);
-    el.supportGroupList.append(row);
-  });
-}
-
 function supportGroupState(groupId) {
   state.supportGroupStates ||= {};
   state.supportGroupStates[groupId] ||= {
@@ -1123,8 +1082,23 @@ function keywordForCenter(keyword) {
   return keyword?.replace(/^RD\s*0\b/i, "RD 1");
 }
 
+function isManvOnlyVehicleType(type) {
+  return ["LNA", "ORGL", "UG-SANEL", "GW-SAN"].includes(String(type).trim().toUpperCase());
+}
+
+function supportGroupsWithoutManv(groups) {
+  return groups.flatMap((group) => {
+    const kind = supportGroupKind(group);
+    if (kind === "transport") return [group];
+    if (kind !== "ugrd") return [];
+    const units = supportGroupUnits(group).filter((unit) => !isManvOnlyVehicleType(unit.type));
+    return units.length ? [{ ...group, units }] : [];
+  });
+}
+
 function requiredVehiclesForCenter(required) {
-  const types = normalizeRequiredVehicles(required);
+  const types = normalizeRequiredVehicles(required).filter((type) =>
+    state.manvAvailable || !isManvOnlyVehicleType(type));
   return state.hasLocalRef === false ? types.map((type) => type === "REF" ? "RTW" : type) : types;
 }
 
@@ -1172,6 +1146,10 @@ function vehicleTypeLabel(type) {
     ITW: "Intensivtransportwagen",
     ITH: "Intensivtransporthubschrauber",
     ELRD: "Einsatzleiter Rettungsdienst",
+    LNA: "Leitender Notarzt",
+    ORGL: "Organisatorischer Leiter",
+    "UG-SANEL": "Unterstützungsgruppe Sanitäts-Einsatzleitung",
+    "GW-SAN": "Gerätewagen Sanität",
     HVO: "Helfer vor Ort",
     FR: "First Responder"
   };
@@ -1179,6 +1157,7 @@ function vehicleTypeLabel(type) {
 }
 
 function endShift() {
+  appMods.stop();
   state.testIncidentDraft = null;
   for (const vehicle of state.vehicles) cancelVehicleRoute(vehicle);
   state.osmLoad?.abort();
@@ -1237,6 +1216,10 @@ function createVehicleFromStationUnit(station, stationIndex, unit, unitIndex) {
     foreign,
     availabilityProbability: foreignAvailabilityProbability(unit, station),
     responderAvailabilityProbability: unit.responderAvailabilityProbability ?? station.responderAvailabilityProbability,
+    ...(station.supportStation ? {
+      ugrdAvailabilityProbability: unit.ugrdAvailabilityProbability ?? unit.responderAvailabilityProbability ?? unit.availabilityProbability ?? 1,
+      ugrdTurnoutMinutes: unit.ugrdTurnoutMinutes
+    } : {}),
     status: 2,
     statusText: foreign ? "auf Fremdwache verfügbar" : "auf Wache",
     lat: station.lat + unitIndex * 0.00045,
@@ -1310,6 +1293,7 @@ function rollHospitalAvailability(force = false) {
   state.lastHospitalAvailabilityRoll = rollSlot;
   let changed = false;
   (state.center.hospitals || []).forEach((hospital) => {
+    if (appMods.hasHospitalHold(hospital.id)) return;
     if (hospital.unavailable) {
       if (state.absoluteMinute < Number(hospital.unavailableUntilAbsoluteMinute || 0)) return;
       const unavailableMinutes = state.absoluteMinute - Number(hospital.unavailableSinceAbsoluteMinute || state.absoluteMinute);
@@ -1336,7 +1320,7 @@ function rollHospitalAvailability(force = false) {
 }
 
 function hospitalIsUnavailable(hospital) {
-  return Boolean(hospital?.unavailable);
+  return Boolean(hospital?.unavailable) && !appMods.isHospitalReadyFromHold(hospital.id);
 }
 
 function queueHospitalAvailabilityNotice(hospital, unavailable) {
@@ -1365,6 +1349,9 @@ function initMap() {
   if (!state.map) {
     state.map = L.map(el.map, { zoomControl: true, closePopupOnClick: true }).setView(state.center.mapCenter, state.center.zoom);
     state.map.on("click", handleMapClick);
+    state.map.on("moveend", () => {
+      if (!state.selectedVehicleId) renderMap();
+    });
     L.tileLayer(MAP_TILES, {
       maxZoom: 19,
       keepBuffer: 4,
@@ -1416,24 +1403,29 @@ function repairMapSize() {
   });
 }
 
+function advanceShiftClock(now = Date.now()) {
+  if (state.paused) return;
+  const elapsedMinutes = Math.max(0, now - state.lastClockTick) * state.speed / 60000;
+  state.lastClockTick = now;
+  state.absoluteMinute += elapsedMinutes;
+  state.minute = (state.minute + elapsedMinutes) % 1440;
+}
+
 function startClock() {
   state.timers.forEach((timer) => clearInterval(timer));
   state.timers = [];
   state.timers.push(setInterval(() => {
     if (state.paused) return;
-    const now = Date.now();
-    const elapsedMs = now - state.lastClockTick;
-    state.lastClockTick = now;
-    const elapsedMinutes = (elapsedMs / 60000) * state.speed;
-    state.absoluteMinute += elapsedMinutes;
-    state.minute = (state.minute + elapsedMinutes) % 1440;
+    advanceShiftClock();
     if (state.osmLoad) state.lastCallRateMinute = Math.floor(state.absoluteMinute);
     else processCallRates();
     rollForeignVehicleAvailability();
     rollHospitalAvailability();
     renderClock();
+    if (state.pendingCalls.length) updatePendingCallTimers();
     if (typeof updateDynamicPatientStates === "function") updateDynamicPatientStates();
     tna.tick();
+    appMods.tick();
     if (state.incidents.some((incident) => incident.status !== "geschlossen")) {
       renderIncidents();
     }
@@ -2348,7 +2340,7 @@ function defaultLocationLabel() {
   return state.center?.name || "Einsatzgebiet";
 }
 
-function openIncidentDialog(source = null) {
+function openIncidentDialog(source = null, { showSupportGroups = false } = {}) {
   const incident = typeof source === "string"
     ? state.incidents.find((item) => item.id === source)
     : source?.assigned ? source : null;
@@ -2359,14 +2351,17 @@ function openIncidentDialog(source = null) {
   state.testIncidentDraft = isTestDraft ? call : null;
   state.editingIncidentId = incident?.id || null;
   state.selectedDialogVehicleIds = new Set();
+  state.selectedDialogGroupIds = new Set();
+  state.suggestedDialogGroupIds = new Set();
   state.showForeignVehiclesInDialog = false;
+  state.showSupportGroupsInDialog = showSupportGroups;
   el.incidentDialog.querySelector(".modal-header h2").textContent = incident ? "Einsatz bearbeiten" : "Neuen Einsatz erstellen";
   el.incidentLocation.value = call.location || defaultLocationLabel();
   populateKeywordSelectGrouped();
-  el.incidentKeyword.value = incident || isTestDraft ? call.keyword || "" : "";
+  el.incidentKeyword.value = incident || isTestDraft || call.modId ? call.keyword || "" : "";
   setIncidentSignal(call.signal ? "yes" : "no");
   for (const [service, input] of [["FW", el.incidentFw], ["POL", el.incidentPol]]) {
-    input.checked = (incident || isTestDraft) && Boolean(call.requiredServices?.includes(service)
+    input.checked = (incident || isTestDraft || call.modId) && Boolean(call.requiredServices?.includes(service)
       || (call.services?.[service] && call.services[service].status !== "nicht alarmiert"));
   }
   el.incidentNote.value = call.note || "";
@@ -2480,15 +2475,68 @@ async function requestIncidentTargetTravelTime(source, destination) {
 
 function renderDispositionSuggestion() {
   const source = currentIncidentDialogSource();
+  const incident = state.editingIncidentId ? source : null;
   const defaults = dispositionDefaults(source);
   const required = defaults ? addElrdToRequiredForDialog(defaults.required, source) : [];
   el.dispositionSuggestion.hidden = !defaults;
   el.applyDispositionSuggestion.hidden = !defaults;
   if (defaults) {
-    const disposition = formatDisposition(required, defaults.requiredServices);
+    const policy = automaticDispositionPolicy(source, el.incidentKeyword.value, state.center.manvSegTransportCount, state.manvAvailable);
+    const groups = Object.entries(policy.components).filter(([, count]) => count > 0)
+      .map(([kind, count]) => `${count} ${SUPPORT_COMPONENT_LABELS[kind]}`);
+    const vehicleRequirements = policy.components.sanel ? required.filter((type) => type !== "UG-SANEL") : required;
+    const disposition = formatDisposition(vehicleRequirements, [...(defaults.requiredServices || []), ...groups]);
     el.dispositionSuggestionText.textContent = `${disposition} · ${defaults.signal ? "SoSi" : "ohne SoSi"}`;
   }
-  renderIncidentSelectedTypes(state.editingIncidentId ? source : null);
+  if (source && el.dialogVehicleTools.querySelector(".quick-vehicle-picker")) {
+    renderQuickVehicleButtons(source, new Set([...(incident?.assigned || []), ...state.selectedDialogVehicleIds]), incident);
+  }
+  renderIncidentSelectedTypes(incident);
+}
+
+function automaticDispositionPolicy(source, keyword, mapTransportCount, manvAvailable) {
+  const label = (keyword ?? source?.keyword ?? "").trim();
+  const manv = source?.modId === "manv" || /\bMANV\b/i.test(label);
+  const plan = rdKeywords.find((entry) => entry.label === label);
+  if (!manv) {
+    const components = plan?.components || {};
+    return { allowUgrd: /^RD\s+[45]\b/i.test(label),
+      components: manvAvailable ? components : { transport: components.transport } };
+  }
+
+  const data = source?.modScenario?.data || {};
+  const count = data.count ?? Number(label.match(/\bMANV\s+(?:ab\s+)?(\d+)/i)?.[1]);
+  const tier = count >= 100 ? "ab 100" : count >= 51 ? "51-100" : count >= 26 ? "26-50" : count >= 16 ? "16-25" : "10-15";
+  const components = plan?.components || rdKeywords.find((entry) => entry.label === `RD MANV ${tier}`).components;
+  const configured = data.segTransport ?? mapTransportCount;
+  const transports = Number.isInteger(configured) ? Math.max(0, Math.min(25, configured)) : components.transport;
+  const treatment = Number.isInteger(data.segTreatmentCount) ? Math.max(0, Math.min(10, data.segTreatmentCount))
+    : data.segTreatment === false ? 0 : components.treatment;
+  return { allowUgrd: true, components: manvAvailable
+    ? { sanel: data.ug === false ? 0 : 1, treatment, transport: transports }
+    : { transport: transports } };
+}
+
+function selectDispositionComponents(call, incident, requirements) {
+  const groups = state.center.supportGroups || [];
+  const selected = new Set(state.selectedDialogGroupIds);
+  for (const [kind, count] of Object.entries(requirements)) {
+    const matching = groups.filter((group) => supportGroupKind(group) === kind);
+    const needed = count - matching.filter((group) => selected.has(group.id)
+      || (incident && state.supportGroupStates[group.id]?.incidentId === incident.id)).length;
+    if (needed <= 0) continue;
+    const candidates = matching.filter((group) => !selected.has(group.id) && supportGroupCanAlarm(group))
+      .sort((a, b) => distanceToCall(supportGroupLocation(state.center, a), call)
+        - distanceToCall(supportGroupLocation(state.center, b), call));
+    for (const group of candidates.slice(0, needed)) {
+      selected.add(group.id);
+      state.suggestedDialogGroupIds.add(group.id);
+    }
+  }
+  state.selectedDialogGroupIds = selected;
+  if (selected.size) state.showSupportGroupsInDialog = true;
+  return groups.some((group) => supportGroupKind(group) === "sanel" && (selected.has(group.id)
+    || (incident && state.supportGroupStates[group.id]?.incidentId === incident.id)));
 }
 
 function confirmDispositionDeviation(issues) {
@@ -2549,12 +2597,24 @@ function applyDispositionSuggestion() {
   const unavailableIds = new Set(incident?.assigned || []);
   const redispatchWarnings = [];
   state.selectedDialogVehicleIds = new Set();
+  for (const id of state.suggestedDialogGroupIds) state.selectedDialogGroupIds.delete(id);
+  state.suggestedDialogGroupIds.clear();
+  const policy = automaticDispositionPolicy(source, el.incidentKeyword.value, state.center.manvSegTransportCount, state.manvAvailable);
+  const options = { ...policy, allowStatus3WithoutSignal: Boolean(defaults.signal) };
+  const hasUgSanEl = selectDispositionComponents(source, incident, policy.components);
+  const occupiedTypes = state.vehicles.filter((vehicle) => unavailableIds.has(vehicle.id)).map((vehicle) => vehicle.type);
+  const required = addElrdToRequiredForDialog(defaults.required || [], source);
   setIncidentSignal(defaults.signal ? "yes" : "no");
   setIncidentSupportServices(defaults.requiredServices || []);
-  addElrdToRequiredForDialog(defaults.required || [], source).forEach((type) => {
-    const vehicle = nearestDispositionVehicle(source, type, unavailableIds, { allowStatus3WithoutSignal: Boolean(defaults.signal) });
-    if (!vehicle) return;
+  missingDispositionVehicleTypes(required, occupiedTypes).forEach((type) => {
+    if (type === "UG-SANEL" && hasUgSanEl) return;
+    const vehicle = nearestDispositionVehicle(source, type, unavailableIds, options);
+    if (!vehicle) {
+      if (type === "UG-SANEL") selectDispositionComponents(source, incident, { sanel: 1 });
+      return;
+    }
     state.selectedDialogVehicleIds.add(vehicle.id);
+    if (vehicle.foreign) state.showForeignVehiclesInDialog = true;
     unavailableIds.add(vehicle.id);
     if (vehicle.status === 3 || vehicleCanBeRedispatchedBeforeResponse(vehicle)) redispatchWarnings.push(redispatchWarningText(vehicle));
   });
@@ -2567,7 +2627,8 @@ function applyDispositionSuggestion() {
 }
 
 function addElrdToRequiredForDialog(required = [], source = null) {
-  const normalized = normalizeRequiredVehicles(required || []);
+  const normalized = requiredVehiclesForCenter(required);
+  if (source?.modId) return normalized;
   const patientCount = source?.patient?.patients?.length || source?.patients?.length || Number(source?.patientCount) || 1;
   if (!source?.noElrd && patientCount >= 2 && !normalized.includes("ELRD")) normalized.push("ELRD");
   return normalized;
@@ -2586,16 +2647,17 @@ function currentIncidentDialogSource() {
 }
 
 function dispositionDefaults(source) {
+  if (source?.modId) return { ...source, required: requiredVehiclesForCenter(source.required) };
   const isTest = source && (source === state.testIncidentDraft || (source.assigned && source.isTestIncident));
   return isTest ? { ...source, required: requiredVehiclesForCenter(source.required) }
     : findDispositionKeyword(el.incidentKeyword.value.trim());
 }
 
 function nearestDispositionVehicle(call, type, unavailableIds, options = {}) {
-  const exact = nearestFreeVehicleOfType(call, type, unavailableIds);
+  const exact = nearestFreeVehicleOfType(call, type, unavailableIds, options);
   if (exact) return exact;
   const redispatchExact = options.allowStatus3WithoutSignal
-    ? nearestRedispatchableStatus3VehicleOfType(call, type, unavailableIds)
+    ? nearestRedispatchableStatus3VehicleOfType(call, type, unavailableIds, options)
     : null;
   if (redispatchExact) return redispatchExact;
   if (type === "NEF") {
@@ -2611,15 +2673,16 @@ function nearestDispositionVehicle(call, type, unavailableIds, options = {}) {
 }
 
 function nearestFreeOrRedispatchVehicleOfType(call, type, unavailableIds, options = {}) {
-  return nearestFreeVehicleOfType(call, type, unavailableIds)
-    || (options.allowStatus3WithoutSignal ? nearestRedispatchableStatus3VehicleOfType(call, type, unavailableIds) : null);
+  return nearestFreeVehicleOfType(call, type, unavailableIds, options)
+    || (options.allowStatus3WithoutSignal ? nearestRedispatchableStatus3VehicleOfType(call, type, unavailableIds, options) : null);
 }
 
-function nearestRedispatchableStatus3VehicleOfType(call, type, unavailableIds) {
+function nearestRedispatchableStatus3VehicleOfType(call, type, unavailableIds, options) {
   return state.vehicles
     .filter((vehicle) => vehicle.type === type
       && (vehicle.status === 3 || vehicleCanBeRedispatchedBeforeResponse(vehicle))
       && !vehicle.foreign
+      && automaticDispositionVehicle(vehicle, options)
       && !unavailableIds.has(vehicle.id)
       && !vehicle.routeMeta?.signal
       && !vehicle.dispatchSignal)
@@ -2676,6 +2739,7 @@ async function submitIncidentDialog(event) {
   };
   const defaultRequired = requiredVehiclesForCenter(defaults.required);
   const selectedIds = [...state.selectedDialogVehicleIds];
+  const selectedGroups = [...state.selectedDialogGroupIds];
   let deviationReason = "";
   if (submitter?.value === "alarm" && !isTestDraft && !editingIncident?.isTestIncident && selectedKeyword) {
     const selected = state.vehicles.filter((vehicle) => state.selectedDialogVehicleIds.has(vehicle.id) && !isStabilizerVehicle(vehicle.type));
@@ -2738,7 +2802,7 @@ async function submitIncidentDialog(event) {
 
   if (submitter?.value === "alarm") {
     if (deviationReason) logRadio(`${incident.keyword}: Abweichende Disposition bestätigt (${deviationReason}).`, "warn", incident.id);
-    selectedIds.forEach((vehicleId) => assignVehicle(vehicleId, incident.id));
+    alarmIncidentResources(incident, selectedIds, selectedGroups);
   }
 }
 
@@ -2789,9 +2853,17 @@ function createIncident(call, { testIncident = false } = {}) {
     incident.isTestIncident = true;
     incident.tnaTest = call.tnaTest;
   }
+  if (call.modId) {
+    incident.modId = call.modId;
+    incident.modScenarioId = call.modScenarioId;
+    incident.modScenario = call.modScenario;
+  }
   state.incidents.unshift(incident);
   state.selectedIncidentId = incident.id;
   logRadio(`Neuer Einsatz: ${incident.keyword} in ${incident.location}.`, "warn", incident.id);
+  if (incident.modId) appMods.incidentEvent("incident.created", incident, {
+    scenarioId: incident.modScenarioId, scenario: incident.modScenario
+  });
   return incident;
 }
 
@@ -2825,8 +2897,9 @@ function createPatientProfile(call) {
   const child = keyword.includes("Kind") || keyword.includes("Säugling");
   const transport = call.type === "transport" || keyword.includes("KTP") || keyword.includes("Verlegung");
   const departmentKey = call.requiredDepartmentKey || call.requiredDepartmentKeys?.[0] || departmentKeyForKeyword(keyword, trauma, child);
-  const patients = applyPatientConditionReports(normalizePatients(call, departmentKey), call.patientConditions);
-  const requiredVehicles = applyElrdRequirement(aggregateRequiredVehicles(patients, call.required || ["RTW"]), call, patients);
+  const patients = call.modId ? [] : applyPatientConditionReports(normalizePatients(call, departmentKey), call.patientConditions);
+  const requiredVehicles = call.modId ? hardRequiredVehicles(call.required)
+    : applyElrdRequirement(aggregateRequiredVehicles(patients, call.required || ["RTW"]), call, patients);
   return {
     condition: transport ? "transportstabil" : critical ? "kritisch" : "stabil",
     status: "unversorgt",
@@ -2855,7 +2928,8 @@ function createPatientProfile(call) {
 
 function updatePatientProfile(existing, call) {
   const next = createPatientProfile(call);
-  const patients = applyPatientConditionReports(existing?.patients?.length ? existing.patients : next.patients, call.patientConditions);
+  const patients = call.modId && existing ? existing.patients
+    : applyPatientConditionReports(existing?.patients?.length ? existing.patients : next.patients, call.patientConditions);
   return {
     ...next,
     situationReported: existing?.situationReported,
@@ -2871,7 +2945,8 @@ function updatePatientProfile(existing, call) {
     assistanceReason: existing?.assistanceReason || next.assistanceReason,
     patients,
     patientCount: patients.length,
-    requiredVehicles: applyElrdRequirement(aggregateRequiredVehicles(patients, call.required), call, patients)
+    requiredVehicles: call.modId ? next.requiredVehicles
+      : applyElrdRequirement(aggregateRequiredVehicles(patients, call.required), call, patients)
   };
 }
 

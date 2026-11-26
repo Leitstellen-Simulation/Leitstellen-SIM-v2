@@ -36,6 +36,10 @@ async function startApp() {
   process.env.PORT = "4173";
   process.env.DISPATCH_ELECTRON = "1";
   process.env.DISPATCH_DATA_DIR = app.getPath("userData");
+  process.env.DISPATCH_MODS_DIR = join(app.getPath("documents"), "LSTSIM", "mods");
+  process.env.DISPATCH_BUNDLED_MODS_DIR = app.isPackaged
+    ? join(process.resourcesPath, "builtin-mods")
+    : join(app.getAppPath(), "mods");
 
   try {
     const { serverPort } = await import("./server.mjs");

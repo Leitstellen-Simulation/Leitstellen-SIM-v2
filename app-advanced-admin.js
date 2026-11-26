@@ -11,6 +11,7 @@ function initAdvancedAdmin() {
   const place = document.querySelector("#test-incident-location");
   const hint = document.querySelector("#test-incident-hint");
   const error = document.querySelector("#test-incident-error");
+  const modScenarios = document.querySelector("#test-mod-scenarios");
   const modes = {
     manual: { patients: [{ required: ["RTW"] }] },
     tna: { patients: [{ required: ["RTW", "NEF"] }], tnaTest: { failure: false, escalation: false } },
@@ -72,6 +73,23 @@ function initAdvancedAdmin() {
     position = cursor || { lat: state.center.mapCenter[0], lng: state.center.mapCenter[1] };
     place.value = `Kartenmitte · ${defaultLocationLabel()}`;
     applyPreset();
+    const scenarios = appMods.adminTestScenarios();
+    modScenarios.replaceChildren(...scenarios.map(({ label, start }) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = `${label} · 112-Anruf auslösen`;
+      button.addEventListener("click", () => {
+        try {
+          start();
+          dialog.close();
+        } catch (failure) {
+          error.textContent = failure.message;
+          error.hidden = false;
+        }
+      });
+      return button;
+    }));
+    modScenarios.hidden = !scenarios.length;
     el.shiftMenu.open = false;
     showDialog(dialog);
   });

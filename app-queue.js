@@ -48,7 +48,7 @@ function dispatchQueueItems() {
         label: "TNA angefordert", detail: incident.keyword, action: "Verbinden", disabled: callBusy
       });
     }
-    const noDisposition = !incident.assigned?.length;
+    const noDisposition = !incidentHasDisposition(incident);
     const request = incident.assistanceDecision;
     const openRequest = openReportedAssistanceNeeds(incident);
     if (noDisposition || openRequest.length) {
@@ -64,6 +64,22 @@ function dispatchQueueItems() {
         detail: [incident.keyword, vehicles.length || services.length ? formatDisposition(vehicles, services) : incident.location].filter(Boolean).join(" · "),
         action: noDisposition ? "Disponieren" : "Nachalarmieren",
         disabled: Boolean(callBusy)
+      });
+    }
+    if (incident.modAttention?.length) {
+      items.push({
+        key: `module-${incident.id}`, id: incident.id, modId: incident.modId, kind: "module",
+        priority: DISPATCH_QUEUE_RANK.emergencyDispatch, since: incident.createdAtAbsoluteMinute,
+        label: incident.keyword, detail: incident.modAttention.join(" · "), action: "Öffnen",
+        disabled: Boolean(callBusy)
+      });
+    }
+    if (incident.modClinicTargets > 0) {
+      items.push({
+        key: `module-clinic-${incident.id}`, id: incident.id, modId: incident.modId, kind: "module",
+        priority: DISPATCH_QUEUE_RANK.destination, since: incident.createdAtAbsoluteMinute,
+        label: incident.modClinicTargets === 1 ? "Klinikziel offen" : `${incident.modClinicTargets} Klinikziele offen`,
+        detail: incident.keyword, action: "Zuweisen", disabled: Boolean(callBusy)
       });
     }
     const requests = activeTransportRequests(incident);
@@ -120,6 +136,15 @@ function renderDispatchQueue() {
         openIncidentDialog(item.id);
       } else if (item.kind === "tna") {
         tna.connect(item.id);
+      } else if (item.kind === "module") {
+        if (item.key.startsWith("module-clinic-")) {
+          const incident = state.incidents.find((entry) => entry.id === item.id);
+          if (incident) {
+            selectIncidentFromMapOrList(incident);
+            renderAll();
+          }
+        }
+        appMods.openPanel(item.modId, item.id);
       } else {
         sendSpeechPrompt(item.id);
       }

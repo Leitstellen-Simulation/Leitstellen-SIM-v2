@@ -1,6 +1,7 @@
 const state = {
   incidents: [],
   catalogRevision: null,
+  catalogId: "",
   catalogBusy: false,
   current: null,
   savedIncidentId: null,
@@ -13,7 +14,7 @@ const state = {
 
 const el = Object.fromEntries([
   "search", "type-filter", "count", "list", "new", "save", "duplicate", "delete", "editor-title",
-  "catalog-status", "retry-catalog",
+  "catalog", "catalog-status", "retry-catalog", "mod-fields",
   "id", "title", "category", "type", "weight", "time-windows",
   "caller-name", "caller-text", "location-mode", "location-road-types-row", "poi-category-search", "poi-categories", "poi-selected",
   "poi-select-visible", "poi-clear", "poi-category-count", "poi-ids",
@@ -35,12 +36,24 @@ init();
 function init() {
   bindEvents();
   renderDepartmentChecks(el.departments);
+  void loadModCatalogChoices();
   loadIncidents();
 }
 
 function bindEvents() {
   el.search.addEventListener("input", renderList);
   el.type_filter.addEventListener("change", renderList);
+  el.catalog.addEventListener("change", () => {
+    if (!confirmDiscardUnsavedChanges()) {
+      el.catalog.value = state.catalogId;
+      return;
+    }
+    state.catalogId = el.catalog.value;
+    const scheduled = el.type_filter.querySelector('option[value="scheduled"]');
+    scheduled.disabled = Boolean(state.catalogId);
+    if (scheduled.disabled && el.type_filter.value === "scheduled") el.type_filter.value = "";
+    loadIncidents();
+  });
   el.new.addEventListener("click", () => {
     if (newIncident() !== false) showIncidentWorkspace();
   });
@@ -73,13 +86,52 @@ function bindEvents() {
   });
 }
 
+async function loadModCatalogChoices() {
+  try {
+    const [response, renderer] = await Promise.all([
+      fetch("/api/mods", { signal: AbortSignal.timeout(3000) }), import("./mod-editor.mjs")
+    ]);
+    if (!response.ok) return;
+    const data = await response.json();
+    if (!Array.isArray(data.mods)) return;
+    state.modManifests = data.mods;
+    state.createModEditorFields = renderer.createModEditorFields;
+    for (const mod of modScenarioOptions(data.mods)) {
+      if (mod.id === "manv") continue;
+      el.catalog.add(new Option(`${mod.name} (Mod-Katalog)`, mod.id));
+    }
+    renderScenarioModFields();
+  } catch {
+    // Der MANV-Katalog kann auch ohne installiertes Paket gepflegt werden.
+  }
+}
+
+function incidentCatalogUrl() {
+  return state.catalogId ? modScenarioCatalogUrl(state.catalogId) : "/api/incidents";
+}
+
+function renderScenarioModFields() {
+  const manifest = state.modManifests?.find((entry) => entry.id === state.catalogId);
+  const fields = manifest?.editor?.scenario;
+  el.mod_fields.hidden = !(state.current && fields?.length && state.createModEditorFields);
+  el.mod_fields.replaceChildren();
+  state.scenarioModEditor = null;
+  if (el.mod_fields.hidden) return;
+  const heading = document.createElement("h3");
+  heading.textContent = manifest.name;
+  state.scenarioModEditor = state.createModEditorFields(fields, state.current.modData, {
+    departments: (window.departmentCatalog || []).map(({ key, label }) => ({ value: key, label }))
+  }, (data) => { state.current.modData = data; });
+  el.mod_fields.append(heading, state.scenarioModEditor.container);
+}
+
 async function loadIncidents() {
   if (state.catalogBusy) return;
   setCatalogBusy(true);
   el.retry_catalog.hidden = true;
   setCatalogStatus("Einsatzkatalog wird geladen …", "pending");
   try {
-    const response = await fetch("/api/incidents", { cache: "no-store" });
+    const response = await fetch(incidentCatalogUrl(), { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     const revision = response.headers.get("ETag");
@@ -88,6 +140,7 @@ async function loadIncidents() {
     }
     state.incidents = data.map(toDynamicIncident);
     state.catalogRevision = revision;
+    markClean();
     if (state.incidents.length) editIncident(state.incidents[0]);
     else newIncident();
     setCatalogStatus("");
@@ -102,6 +155,7 @@ async function loadIncidents() {
 
 function setCatalogBusy(busy) {
   state.catalogBusy = busy;
+  el.catalog.disabled = busy;
   const locked = busy || !state.catalogRevision;
   catalogControls.forEach((control) => { control.inert = locked; });
   el.save.disabled = locked;
@@ -202,7 +256,8 @@ function fillFormFromCurrent() {
   el.id.value = incident.id || "";
   el.title.value = incident.title || "";
   el.category.value = incident.category || "Sonstiges";
-  el.type.value = incident.type || "emergency";
+  el.type.querySelector('option[value="scheduled"]').disabled = Boolean(state.catalogId);
+  el.type.value = state.catalogId && incident.type === "scheduled" ? "emergency" : incident.type || "emergency";
   el.weight.value = formatWeight(incident.weight);
   el.time_windows.value = formatTimeWindows(incident.timeWindows || []);
   el.caller_name.value = call.callerName || "Anrufer";
@@ -217,6 +272,7 @@ function fillFormFromCurrent() {
   el.destination_poi_ids.value = (call.destinationPoiIds || []).join(", ");
   updateLocationPoiControls();
   updateDestinationPoiControls();
+  renderScenarioModFields();
 }
 
 function collectFormIntoCurrent() {
@@ -249,6 +305,13 @@ function collectFormIntoCurrent() {
 
 async function saveIncident() {
   if (state.catalogBusy || !state.catalogRevision) return;
+  if (state.scenarioModEditor && !state.scenarioModEditor.validate()) {
+    document.querySelector("#ie-tab-basics").click();
+    state.scenarioModEditor.validate();
+    setCatalogStatus("Bitte die Mod-Felder prüfen.", "error");
+    return;
+  }
+  if (state.scenarioModEditor) state.current.modData = state.scenarioModEditor.read();
   const incident = collectFormIntoCurrent();
   const index = state.incidents.findIndex((item) => item.id === (state.savedIncidentId || incident.id));
   const next = [...state.incidents];
@@ -299,7 +362,7 @@ async function persistIncidents(next, errorMessage) {
   setCatalogBusy(true);
   setCatalogStatus("Einsatzkatalog wird gespeichert …", "pending");
   try {
-    const response = await fetch("/api/incidents", {
+    const response = await fetch(incidentCatalogUrl(), {
       method: "POST",
       headers: { "content-type": "application/json", "If-Match": state.catalogRevision },
       body: JSON.stringify(next)
@@ -642,6 +705,7 @@ function sanitizeDynamicIncident(input) {
   incident.call = {
     callerName: incident.call?.callerName || "Anrufer",
     callerText: incident.call?.callerText || incident.callerText || "",
+    ...(incident.call?.locationLabel ? { locationLabel: incident.call.locationLabel } : {}),
     locationMode: incident.call?.locationMode || "random",
     locationRoadTypes: listValue(incident.call?.locationRoadTypes),
     poiCategories: listValue(incident.call?.poiCategories),

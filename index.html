@@ -46,6 +46,11 @@
                 <option value="23:00">23:00</option>
               </select>
             </label>
+            <details id="mods-config" class="mods-config" hidden>
+              <summary>Mods für diese Leitstelle</summary>
+              <div id="mods-choices"></div>
+              <p id="mods-config-status" role="status"></p>
+            </details>
             <button class="primary-action" type="submit"><span id="shift-start-label">Schicht starten</span><span aria-hidden="true">→</span></button>
           </form>
 
@@ -83,6 +88,7 @@
                 <span id="operator-label">Gast</span>
               </div>
               <div class="shift-menu-controls">
+                <div id="mods-menu" class="shift-menu-controls" hidden></div>
                 <button id="admin-mode-button" type="button">Admin</button>
                 <button id="test-mode-button" class="admin-only" type="button" hidden>Testbetrieb aus</button>
                 <button id="new-call-button" class="admin-only" type="button" hidden>Neuer Anruf</button>
@@ -100,7 +106,10 @@
           <div class="map-panel panel">
             <div class="panel-title">
               <h2>Karte</h2>
-              <span id="weather-label">Leichter Regen, 12 C</span>
+              <div class="map-panel-controls">
+                <label><input id="map-responder-stations" type="checkbox"> HvO/FR-Wachen</label>
+                <span id="weather-label">Leichter Regen, 12 C</span>
+              </div>
             </div>
             <div id="map" class="map" aria-label="Einsatzkarte Regensburg"></div>
           </div>
@@ -143,7 +152,6 @@
                   <option value="16">16×</option>
                 </select>
                 <button id="pause-button" type="button">Pause</button>
-                <button id="support-group-button" type="button">Alarm UGRD/SEG</button>
                 <button id="answer-button" type="button" disabled hidden>Annehmen</button>
                 <button id="forward-button" type="button" disabled hidden>Weiterleiten</button>
               </div>
@@ -172,19 +180,6 @@
         </nav>
       </section>
     </main>
-
-    <dialog id="support-group-dialog" class="modal">
-      <form method="dialog" class="modal-card">
-        <header class="modal-header">
-          <h2>UGRD / SEG alarmieren</h2>
-          <button id="close-support-group-dialog" class="icon-button" value="cancel" aria-label="Schließen" type="button">x</button>
-        </header>
-        <div class="modal-body">
-          <p class="inline-hint">Hintergrundfahrzeuge melden sich nach Alarmierung ggf. nach 5-15 Minuten als Status 1 und sind dann normal disponierbar.</p>
-          <div id="support-group-list" class="support-group-list"></div>
-        </div>
-      </form>
-    </dialog>
 
     <dialog id="transport-destination-dialog" class="modal">
       <form method="dialog" class="modal-card transport-destination-card">
@@ -247,6 +242,7 @@
             <label class="check-row"><input name="noElrd" type="checkbox"> Ohne ELRD-Automatik</label>
           </div>
           <p id="test-incident-hint" class="inline-hint" hidden></p>
+          <div id="test-mod-scenarios" class="test-incident-options" hidden></div>
           <div id="test-incident-patients" class="test-incident-patients"></div>
           <p id="test-incident-error" role="alert" hidden></p>
         </div>
@@ -309,6 +305,7 @@
             <div class="picker-head">
               <strong>Fahrzeuge auswählen</strong>
             </div>
+            <div id="dialog-vehicle-tools" class="dialog-vehicle-tools"></div>
             <div id="dialog-vehicle-list" class="dialog-vehicle-list"></div>
           </div>
         </div>
@@ -371,7 +368,7 @@
             <div class="call-transfers" role="group" aria-label="Anruf weiterleiten">
               <button id="call-fw-button" type="button" aria-label="An Feuerwehr verweisen" title="An Feuerwehr verweisen"><span aria-hidden="true">↗</span> FW</button>
               <button id="call-pol-button" type="button" aria-label="An Polizei verweisen" title="An Polizei verweisen"><span aria-hidden="true">↗</span> POL</button>
-              <button id="call-aelrd-button" type="button" aria-label="An ÄLRD verweisen" title="An ÄLRD verweisen"><span aria-hidden="true">↗</span> ÄLRD</button>
+              <button id="call-aend-button" type="button" aria-label="An ÄND verweisen" title="An ÄND verweisen"><span aria-hidden="true">↗</span> ÄND</button>
             </div>
             <div class="call-resolution">
               <button id="call-reject-button" type="button">Ablehnen</button>
@@ -484,6 +481,13 @@
       src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
       integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
       crossorigin=""></script>
+    <dialog id="mod-dialog" class="modal mod-dialog" aria-labelledby="mod-dialog-title">
+      <header class="modal-header">
+        <h2 id="mod-dialog-title">Mod</h2>
+        <button id="mod-dialog-close" type="button" aria-label="Schließen">×</button>
+      </header>
+      <div id="mod-frames" class="mod-frames"></div>
+    </dialog>
     <script src="departments.js"></script>
     <script src="poi.js"></script>
     <script src="keywords.js"></script>
@@ -499,6 +503,8 @@
     <script src="app-calls.js"></script>
     <script src="app-queue.js"></script>
     <script src="app-advanced-admin.js"></script>
+    <script src="mod-scenarios.js"></script>
+    <script src="app-mods.js"></script>
     <script src="app.js"></script>
     <script src="test-admin.local.js"></script>
   </body>

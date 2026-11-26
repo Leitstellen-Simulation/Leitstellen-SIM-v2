@@ -1,5 +1,5 @@
 (() => {
-  function rd(label, type, required, signal, requiredServices = null) {
+  function rd(label, type, required, signal, requiredServices = null, dispositionPlan = {}) {
     const services = requiredServices || servicesForKeyword(label);
     return {
       label,
@@ -7,8 +7,15 @@
       required,
       signal,
       requiredServices: services,
-      disposition: dispositionFor(required, services)
+      disposition: dispositionFor(required, services),
+      ...dispositionPlan
     };
+  }
+
+  function manv(label, rtw, nef, transport, treatment, ktw = 0) {
+    return rd(label, "emergency", [
+      ...Array(rtw).fill("RTW"), ...Array(ktw).fill("KTW"), ...Array(nef).fill("NEF"), "ELRD", "LNA", "ORGL"
+    ], true, null, { components: { sanel: 1, transport, treatment } });
   }
 
   function servicesForKeyword(label) {
@@ -121,13 +128,15 @@
   rd("RD 2 Ärger - Schuss/Hieb/Stichverletzung", "emergency", ["RTW", "NEF"], true),
   rd("RD 2 Ärger - Nachforderung NA", "emergency", ["NEF"], true),
   rd("RD 3 - zwei oder drei verletzte/erkrankte Personen", "emergency", ["RTW", "RTW", "NEF"], true),
-  rd("RD 4 - vier oder fünf verletzte/erkrankte Personen", "emergency", ["RTW", "RTW", "RTW", "RTW", "NEF"], true),
-  rd("RD 5 - sechs bis neun verletzte/erkrankte Personen", "emergency", ["RTW", "RTW", "RTW", "RTW", "RTW", "RTW", "NEF", "NEF"], true),
-  rd("RD MANV 10-15", "emergency", [], true),
-  rd("RD MANV 16-25", "emergency", [], true),
-  rd("RD MANV 26-50", "emergency", [], true),
-  rd("RD MANV 51-100", "emergency", [], true),
-  rd("RD MANV ab 100", "emergency", [], true),
+  // ABeK RDB R RD, E14:F20 (ZRF workbook, 2024-04-18), without conditional reserve units.
+  rd("RD 4 - vier oder fünf verletzte/erkrankte Personen", "emergency", ["RTW", "RTW", "RTW", "RTW", "NEF", "ELRD"], true),
+  rd("RD 5 - sechs bis neun verletzte/erkrankte Personen", "emergency", ["RTW", "RTW", "RTW", "RTW", "RTW", "NEF", "NEF", "NEF", "ELRD", "LNA", "ORGL"], true,
+    null, { components: { sanel: 1, transport: 1 } }),
+  manv("RD MANV 10-15", 10, 5, 1, 0),
+  manv("RD MANV 16-25", 20, 10, 2, 1),
+  manv("RD MANV 26-50", 25, 10, 5, 2),
+  manv("RD MANV 51-100", 25, 10, 10, 3),
+  manv("RD MANV ab 100", 25, 10, 18, 3, 10),
   rd("RD ABSICHERUNG - Bereitstellung Rettungsmittel", "scheduled", ["RTW"], true),
   rd("RD ABSICHERUNG - Dienstfahrt", "scheduled", ["RTW"], false),
   rd("RD SONSTIGE - Werkstattfahrt", "scheduled", ["RTW"], false),

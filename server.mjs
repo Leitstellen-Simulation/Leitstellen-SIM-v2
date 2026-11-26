@@ -1,5 +1,5 @@
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
-import { mkdir, open, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
@@ -7,6 +7,7 @@ import { StringDecoder } from "node:string_decoder";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { gzip } from "node:zlib";
+import { normalizeModEditorSchema } from "./mod-editor.mjs";
 
 const port = Number(process.env.PORT || 4173);
 const root = dirname(fileURLToPath(import.meta.url));
@@ -20,6 +21,13 @@ const mapsDir = join(dataRoot, "maps");
 const mapIndexFile = join(dataRoot, "maps-index.json");
 const incidentsFile = join(dataRoot, incidentCatalogFileName);
 const syncMetaFile = join(dataRoot, "startup-sync.json");
+const modsDir = resolve(process.env.DISPATCH_MODS_DIR || join(root, "mods"));
+const bundledModsDir = process.env.DISPATCH_BUNDLED_MODS_DIR ? resolve(process.env.DISPATCH_BUNDLED_MODS_DIR) : null;
+const modSettingsFile = join(dataRoot, "mod-settings.json");
+const modDataDir = join(dataRoot, "mod-data");
+const modCatalogDir = join(dataRoot, "mod-catalogs");
+const modApiVersion = 1;
+const modIdPattern = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const startupSyncMetaVersion = 2;
 const maxBodyBytes = 180_000_000;
 const adminPassword = process.env.DISPATCH_ADMIN_PASSWORD || "XXX112XXX";
@@ -36,6 +44,7 @@ const types = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8"
 };
 const startupSyncState = {
@@ -50,6 +59,10 @@ const gzipJson = promisify(gzip);
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url || "/", `http://${request.headers.host}`);
+    if (url.pathname === "/api/mods" || url.pathname.startsWith("/api/mods/")) {
+      await handleModsApi(request, response, url);
+      return;
+    }
     if (url.pathname.startsWith("/api/maps")) {
       await handleMapsApi(request, response, url);
       return;
@@ -141,6 +154,157 @@ async function ensureWritableDataFiles() {
 
   await seedDefaultMaps();
   await mergeDefaultIncidents();
+}
+
+async function readModFile(path, maxBytes) {
+  const info = await lstat(path);
+  if (!info.isFile() || info.size > maxBytes) throw new Error("Invalid mod file");
+  return readFile(path, "utf8");
+}
+
+async function readModPackage(directory, id) {
+  if (!(await lstat(directory)).isDirectory()) throw new Error("Invalid mod directory");
+  const manifest = parseJson(await readModFile(join(directory, "manifest.json"), 16384));
+  if (manifest?.id !== id || manifest.apiVersion !== modApiVersion
+      || typeof manifest.name !== "string" || !manifest.name.trim() || manifest.name.length > 80
+      || typeof manifest.version !== "string" || !manifest.version.trim() || manifest.version.length > 40) {
+    throw new Error("Incompatible mod manifest");
+  }
+  const entry = await lstat(join(directory, "main.mjs"));
+  if (!entry.isFile() || entry.size > 2_000_000) throw new Error("Invalid mod entry");
+  const editor = normalizeModEditorSchema(manifest.editor);
+  const scenarioResources = Array.isArray(manifest.scenarioResources) ? manifest.scenarioResources.slice(0, 20).filter((rule) =>
+    (rule?.field === undefined || editor.scenario?.some((field) => field.key === rule.field && field.type === "boolean"))
+    && Array.isArray(rule?.types) && rule.types.length <= 20
+    && rule.types.every((type) => typeof type === "string"
+      && /^(RTW|KTW|NEF|VEF|REF|ITW|RTH|ITH|ELRD|LNA|ORGL|UG-SANEL|GW-SAN|HVO|FR)$/.test(type))
+  ).map(({ field, types }) => ({ field, types })) : [];
+  const metadata = {
+    id, name: manifest.name.trim(), version: manifest.version, apiVersion: modApiVersion,
+    ...(id === "manv" || manifest.scenarioCatalog === true ? { scenarioCatalog: true } : {}),
+    ...(id === "manv" || manifest.incidentPanelOnly === true ? { incidentPanelOnly: true } : {}),
+    ...(scenarioResources.length ? { scenarioResources } : {}),
+    ...(Object.keys(editor).length ? { editor } : {})
+  };
+  return { directory, metadata };
+}
+
+async function installedMod(id) {
+  const [local, bundled] = await Promise.all([
+    readModPackage(join(modsDir, id), id).catch(() => null),
+    bundledModsDir && readModPackage(join(bundledModsDir, id), id).catch(() => null)
+  ]);
+  if (!local) return bundled;
+  if (!bundled) return local;
+  const numericVersion = /^\d+\.\d+\.\d+$/;
+  const localVersion = local.metadata.version;
+  const bundledVersion = bundled.metadata.version;
+  return numericVersion.test(localVersion) && numericVersion.test(bundledVersion)
+    && localVersion.localeCompare(bundledVersion, "en", { numeric: true }) < 0 ? bundled : local;
+}
+
+async function readModSettings() {
+  const saved = await readJsonFile(modSettingsFile).catch(() => null);
+  return Object.assign(Object.create(null), saved && typeof saved === "object" && !Array.isArray(saved) ? saved : null);
+}
+
+async function handleModsApi(request, response, url) {
+  if (request.method === "GET" && url.pathname === "/api/mods") {
+    const [local, bundled] = await Promise.all([
+      mkdir(modsDir, { recursive: true }).then(() => readdir(modsDir, { withFileTypes: true })).catch(() => []),
+      bundledModsDir ? readdir(bundledModsDir, { withFileTypes: true }).catch(() => []) : []
+    ]);
+    const ids = new Set([...local, ...bundled].filter((entry) => entry.isDirectory() && modIdPattern.test(entry.name))
+      .map((entry) => entry.name));
+    const found = await Promise.all([...ids].map(installedMod));
+    const mods = found.filter(Boolean).map(({ metadata }) => metadata).sort((a, b) => a.id.localeCompare(b.id));
+    sendJson(response, { apiVersion: modApiVersion, mods, enabledByCenter: await readModSettings() });
+    return;
+  }
+  const catalogRoute = /^\/api\/mods\/([a-z0-9][a-z0-9_-]{0,63})\/catalog$/.exec(url.pathname);
+  if (catalogRoute) {
+    const id = catalogRoute[1];
+    const file = join(modCatalogDir, `${id}.json`);
+    await handleIncidentsApi(request, response, file, () => readModCatalog(file, id));
+    return;
+  }
+  if (request.method === "PUT" && url.pathname === "/api/mods/preferences") {
+    const payload = await readJsonBody(request, response, null);
+    if (response.headersSent) return;
+    if (typeof payload?.centerId !== "string" || !/^[a-zA-Z0-9_-]{1,180}$/.test(payload.centerId)
+        || !Array.isArray(payload.enabled) || payload.enabled.length > 100
+        || !payload.enabled.every((id) => typeof id === "string" && modIdPattern.test(id))) {
+      sendJson(response, { error: "invalid mod preferences" }, 400);
+      return;
+    }
+    await queueDataWrite(async () => {
+      const settings = await readModSettings();
+      settings[payload.centerId] = [...new Set(payload.enabled)];
+      await writeJsonFile(modSettingsFile, settings);
+    });
+    sendJson(response, { ok: true });
+    return;
+  }
+  const entry = /^\/api\/mods\/([a-z0-9][a-z0-9_-]{0,63})\/entry$/.exec(url.pathname);
+  if (request.method === "GET" && entry) {
+    const id = entry[1];
+    const mod = await installedMod(id);
+    const source = mod ? await readModFile(join(mod.directory, "main.mjs"), 2_000_000).catch(() => null) : null;
+    if (source === null) return notFound(response);
+    response.writeHead(200, { "content-type": "text/plain; charset=utf-8", "x-content-type-options": "nosniff", "cache-control": "no-store" });
+    response.end(source);
+    return;
+  }
+  const dataRoute = /^\/api\/mods\/([a-z0-9][a-z0-9_-]{0,63})\/data$/.exec(url.pathname);
+  if (dataRoute && ["GET", "PUT"].includes(request.method)) {
+    const id = dataRoute[1];
+    const centerId = url.searchParams.get("center");
+    if (!centerId || !/^[a-zA-Z0-9_-]{1,180}$/.test(centerId)) {
+      sendJson(response, { error: "invalid center id" }, 400);
+      return;
+    }
+    if (!await installedMod(id)) return notFound(response);
+    const path = join(modDataDir, `${id}.json`);
+    const readData = async () => Object.assign(Object.create(null), await readJsonFile(path).catch(() => null));
+    if (request.method === "GET") {
+      sendJson(response, { value: (await readData())[centerId] ?? null });
+      return;
+    }
+    const payload = await readJsonBody(request, response, null);
+    if (response.headersSent) return;
+    if (!payload || !Object.hasOwn(payload, "value") || Buffer.byteLength(JSON.stringify(payload.value)) > 262144) {
+      sendJson(response, { error: "invalid mod data" }, 400);
+      return;
+    }
+    await queueDataWrite(async () => {
+      await mkdir(modDataDir, { recursive: true });
+      const values = await readData();
+      values[centerId] = payload.value;
+      await writeJsonFile(path, values);
+    });
+    sendJson(response, { value: payload.value });
+    return;
+  }
+  notFound(response);
+}
+
+async function readModCatalog(file, id) {
+  let catalog;
+  try {
+    catalog = await readJsonFile(file);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    const mod = await installedMod(id);
+    if (!mod?.metadata.scenarioCatalog) return [];
+    try {
+      catalog = parseJson(await readModFile(join(mod.directory, "scenarios.json"), 2_000_000));
+    } catch (error) {
+      if (error.code === "ENOENT") return [];
+      throw error;
+    }
+  }
+  if (!Array.isArray(catalog)) throw new Error("invalid mod catalog");
+  return catalog;
 }
 
 async function seedDefaultMaps() {
@@ -1320,9 +1484,9 @@ async function sendMapJson(request, response, data) {
   response.end(body);
 }
 
-async function handleIncidentsApi(request, response) {
+async function handleIncidentsApi(request, response, file = incidentsFile, readCatalog = readIncidentCatalog) {
   if (request.method === "GET") {
-    sendIncidentCatalog(response, await readIncidentCatalog());
+    sendIncidentCatalog(response, await readCatalog());
     return;
   }
   if (request.method === "POST") {
@@ -1331,13 +1495,14 @@ async function handleIncidentsApi(request, response) {
     await queueDataWrite(async () => {
       const expectedRevision = request.headers["if-match"];
       if (expectedRevision) {
-        const currentRevision = incidentCatalogRevision(await readIncidentCatalog());
+        const currentRevision = incidentCatalogRevision(await readCatalog());
         if (expectedRevision !== currentRevision) {
           if (incidentCatalogRevision(incidents) === currentRevision) return sendIncidentCatalog(response, incidents);
           return sendJson(response, { error: "incident catalog changed" }, 412);
         }
       }
-      await writeJsonFile(incidentsFile, incidents);
+      if (file !== incidentsFile) await mkdir(modCatalogDir, { recursive: true });
+      await writeJsonFile(file, incidents);
       sendIncidentCatalog(response, incidents);
     });
     return;
@@ -2064,6 +2229,9 @@ function safeContentPath(requestedPath) {
     return null;
   }
   const filePath = resolve(join(root, decoded.replace(/^[/\\]+/, "")));
+  const localPath = relative(root, filePath).toLowerCase();
+  if (["mods", "mod-data", "mod-catalogs"].some((directory) => localPath === directory || localPath.startsWith(`${directory}${sep}`))
+      || localPath === "mod-settings.json") return null;
   return isInsideRoot(filePath, root) ? filePath : null;
 }
 

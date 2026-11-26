@@ -1,6 +1,7 @@
 function sendVehicleHome(vehicleId) {
   const vehicle = state.vehicles.find((unit) => unit.id === vehicleId);
   if (!vehicle || vehicle.status !== 1) return;
+  if (vehicle.supportGroupId) return recallSupportGroupVehicle(vehicleId);
   const station = state.center.stations.find((item) => item.id === vehicle.stationId);
   cancelVehicleRoute(vehicle);
   clearDispatchTimer(vehicle);

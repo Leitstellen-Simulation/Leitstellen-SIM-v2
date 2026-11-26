@@ -21,10 +21,10 @@
     "file": "ils-regensburg-testversion-stadt-regensburg.json",
     "id": "ils-regensburg-testversion-stadt-regensburg",
     "name": "ILS Regensburg (Testversion Stadt Regensburg)",
-    "stations": 7,
+    "stations": 9,
     "hospitals": 6,
-    "supportGroups": 0,
-    "size": 11429
+    "supportGroups": 7,
+    "size": 14766
   },
   {
     "file": "ils-regensburg-tisch-regensburg-alpha-version.json",

@@ -254,6 +254,15 @@ h2 {
 }
 .shift-form button[type="submit"]:hover:not(:disabled) { background: #adf3e4; }
 
+.mods-config { grid-column: 1 / -1; color: #c2d2e2; }
+.mods-config summary { cursor: pointer; }
+.mods-config label { display: flex; align-items: center; gap: .55rem; margin-top: .45rem; }
+.mods-config input[type="checkbox"] { inline-size: auto; min-height: 0; }
+.mods-config p:empty { display: none; }
+.mod-dialog { width: min(900px, 94vw); }
+.mod-frames iframe { display: block; width: 100%; height: min(67vh, 690px); border: 0; background: white; }
+.mod-frames iframe[hidden] { display: none; }
+
 .start-map-preview {
   position: relative;
   isolation: isolate;
@@ -1032,6 +1041,10 @@ label {
 .dispatch-screen .panel-title h2 { font-size: 13px; font-weight: 700; color: var(--ink); }
 .dispatch-screen .panel-title > span { font-size: 11px; color: var(--muted); }
 .dispatch-screen .panel-title select { width: auto; padding: 0 3px; }
+.map-panel-controls { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
+.map-panel-controls label { display: flex; align-items: center; gap: 3px; white-space: nowrap; font-size: 11px; cursor: pointer; }
+.map-panel-controls input { width: auto; margin: 0; }
+.map-panel-controls #weather-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
 .dispatch-screen .panel-title :is(select, button) { height: 21px; min-height: 0; font-size: 12px; box-shadow: none; }
 .dispatch-screen .panel-title :is(.phone-controls, .radio-alerts) {
   min-width: 0;
@@ -1374,38 +1387,6 @@ label {
   min-height: 0;
 }
 
-.support-group-list {
-  display: grid;
-  gap: 8px;
-}
-
-.support-group-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
-  border: 1px solid #c5d0d9;
-  border-radius: 10px;
-  background: white;
-  padding: 9px;
-}
-
-.support-group-card h3 {
-  margin: 0 0 3px;
-  font-size: 15px;
-}
-
-.support-group-card p {
-  margin: 0;
-  color: #334252;
-}
-
-.support-group-card small {
-  display: block;
-  margin-top: 4px;
-  color: var(--muted);
-}
-
 .admin-status-bar {
   display: flex;
   flex-wrap: wrap;
@@ -1490,6 +1471,16 @@ label {
   min-height: 25px;
   padding: 2px 7px;
   font-size: 13px;
+}
+
+.dialog-support-groups {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.dialog-support-row {
+  text-align: left;
 }
 
 .dialog-vehicle-filter .foreign-vehicle-toggle {
@@ -1610,6 +1601,17 @@ label {
   white-space: nowrap;
 }
 
+.incident-patient-count {
+  flex: none;
+  border-radius: 999px;
+  padding: 2px 5px;
+  background: var(--ui-toolbar);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .incident-details {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -1633,6 +1635,12 @@ label {
   grid-column: 1 / -1;
   font-size: 12px;
   color: #334252;
+}
+
+.incident-component-chip {
+  padding: 3px 5px;
+  border: 1px solid var(--ui-border);
+  border-radius: 7px;
 }
 
 .incident-vehicle-chip {
@@ -2086,11 +2094,13 @@ label {
 }
 
 .call-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  min-height: 48px;
-  padding: 8px;
+  container-type: inline-size;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-height: 0;
+  padding: 4px;
+  overflow-y: auto;
   border-top: 1px solid var(--ui-border);
   background: var(--ui-toolbar);
 }
@@ -2104,10 +2114,10 @@ label {
 
 .call-queue-item {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) repeat(3, auto);
-  gap: 6px;
-  width: 100%;
-  padding: 6px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
   border: 1px solid var(--ui-border);
   border-radius: 7px;
   background: #fff;
@@ -2121,17 +2131,69 @@ label {
 
 .call-queue-select {
   display: grid;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
+  min-height: 0;
+  padding: 2px 4px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  font-size: 13px;
+  line-height: 1.15;
   text-align: left;
 }
 
-.call-queue-select span {
+.call-queue-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.call-queue-heading strong,
+.call-queue-location {
   overflow: hidden;
-  color: #526170;
-  font-size: .8rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.call-queue-location,
+.call-queue-elapsed {
+  color: #526170;
+  font-size: 11px;
+}
+
+.call-queue-elapsed {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.call-queue-timer-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.call-queue-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.call-queue-buttons button {
+  min-height: 28px;
+  padding: 2px 6px;
+  font-size: 12px;
+}
+
+@container (max-width: 260px) {
+  .call-queue-item { grid-template-columns: minmax(0, 1fr); }
+  .call-queue-buttons { justify-content: flex-start; }
 }
 
 .call-queue-answer.pending-call-alert {
@@ -2384,50 +2446,6 @@ label {
   white-space: nowrap;
 }
 
-.shift-current {
-  justify-self: start;
-  max-width: 100%;
-  border: 1px solid #c1d5a4;
-  border-radius: 999px;
-  padding: 1px 5px;
-  background: #edf8df;
-  color: #315414;
-  font-size: 11px;
-  font-weight: 800;
-  line-height: 1.35;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.shift-current-inactive {
-  border-color: #c8d1dc;
-  background: #edf0f3;
-  color: #4d5966;
-}
-
-.shift-current-ending {
-  border-color: #e5bd4d;
-  background: #fff6cf;
-  color: #6f4b00;
-}
-
-.shift-ending-time {
-  display: none;
-}
-
-.shift-current-expired {
-  border-color: #e0b3b3;
-  background: #fff2f2;
-  color: #8a2424;
-}
-
-.shift-current-prestart {
-  border-color: #8ba0c8;
-  background: #e5efff;
-  color: #24476f;
-}
-
 .shift-summary-list {
   display: flex;
   flex-wrap: wrap;
@@ -2435,16 +2453,14 @@ label {
   gap: 1px;
   min-width: 0;
   max-width: 100%;
-  max-height: calc(1.2em + 2px);
-  overflow: hidden;
-  font-size: 9px;
+  font-size: 11px;
   white-space: nowrap;
 }
 
 .shift-summary-chip {
   border: 1px solid #c8d1dc;
   border-radius: 999px;
-  padding: 0 4px;
+  padding: 1px 4px;
   background: #f4f6f8;
   color: #6b7682 !important;
   font-size: inherit;
@@ -2453,18 +2469,8 @@ label {
   opacity: .72;
 }
 
-@container vehicle-shift (max-width: 110px) {
-  .shift-ending-time { display: inline; }
-  .shift-ending-label { display: none; }
-
-  .shift-summary-list {
-    max-height: calc(2em + 5px);
-  }
-
-  .shift-summary-chip {
-    padding-inline: 2px;
-    line-height: 1;
-  }
+@container vehicle-shift (max-width: 85px) {
+  .shift-summary-chip { padding-inline: 2px; font-size: 9px; }
 }
 
 .shift-summary-chip.active {
@@ -2593,49 +2599,6 @@ label {
   border-top: 1px solid #e1e8ef;
 }
 
-.vehicle-shift-list {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 5px;
-  color: #53616e;
-  font-size: 12px;
-}
-
-.vehicle-shift-list strong {
-  margin-right: 2px;
-  color: #334252;
-  font-size: 12px;
-}
-
-.vehicle-shift-chip {
-  border: 1px solid #d5dee9;
-  border-radius: 999px;
-  padding: 2px 7px;
-  background: #f7fafc;
-  color: #596778;
-  font-weight: 700;
-}
-
-.vehicle-shift-chip.active {
-  border-color: #8fb864;
-  background: #e8f7d8;
-  color: #284d10;
-  box-shadow: inset 0 0 0 1px rgba(143, 184, 100, .28);
-}
-
-.vehicle-shift-chip.ending {
-  border-color: #e5bd4d;
-  background: #fff6cf;
-  color: #6f4b00;
-}
-
-.vehicle-shift-chip.expired {
-  border-color: #e0b3b3;
-  background: #fff2f2;
-  color: #8a2424;
-}
-
 .vehicle-row h3 span {
   color: var(--muted);
   font-size: 11px;
@@ -2718,7 +2681,28 @@ label {
   min-width: 0;
 }
 
-.dialog-vehicle-row h3,
+.dialog-vehicle-row h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dialog-vehicle-row h3 > .vehicle-type-badge,
+.dialog-ugrd-badge {
+  flex: none;
+}
+
+.dialog-ugrd-badge {
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: #e9eef2;
+  color: #405469;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: help;
+}
+
+.dialog-vehicle-name,
 .dialog-vehicle-row p {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3000,6 +2984,33 @@ label {
   clip-path: polygon(50% 0, 100% 40%, 90% 40%, 90% 100%, 62% 100%, 62% 62%, 38% 62%, 38% 100%, 10% 100%, 10% 40%, 0 40%);
 }
 
+.map-helicopter-symbol {
+  position: relative;
+  width: 22px;
+  height: 17px;
+}
+
+.map-helicopter-symbol::before,
+.map-helicopter-symbol::after {
+  content: "";
+  position: absolute;
+  background: currentColor;
+}
+
+.map-helicopter-symbol::before {
+  inset: 0;
+  clip-path: polygon(
+    19% 6%, 94% 6%, 94% 15%, 61% 15%, 61% 32%, 77% 32%, 92% 43%,
+    100% 56%, 93% 69%, 43% 69%, 32% 58%, 5% 51%, 0 27%, 10% 27%,
+    16% 42%, 34% 43%, 47% 32%, 53% 32%, 53% 15%, 19% 15%
+  );
+}
+
+.map-helicopter-symbol::after {
+  inset: 65% 4% 3% 33%;
+  clip-path: polygon(18% 0, 31% 0, 31% 66%, 67% 66%, 67% 0, 80% 0, 80% 66%, 100% 38%, 100% 74%, 88% 100%, 0 100%, 0 66%, 18% 66%);
+}
+
 .map-station-count {
   position: absolute;
   right: -6px;
@@ -3043,11 +3054,11 @@ label {
 
 .vehicle-marker {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) 18px;
   align-items: center;
-  gap: 4px;
-  min-width: 64px;
-  height: 30px;
+  gap: 3px;
+  width: 100%;
+  height: 100%;
   position: relative;
   z-index: 710;
   padding: 1px 5px;
@@ -3062,16 +3073,19 @@ label {
 
 .vehicle-marker-text {
   display: grid;
-  grid-template-rows: 14px 12px;
-  place-items: center;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  min-width: 0;
+  text-align: center;
 }
 
 .vehicle-marker strong,
 .vehicle-marker small {
-  max-width: 58px;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1.15;
 }
 
 .vehicle-marker small {
@@ -3621,7 +3635,7 @@ label {
 .vehicle-picker {
   min-height: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-panel-radius);
   background: var(--ui-recessed);
@@ -3637,6 +3651,12 @@ label {
   font-size: 13px;
   border-bottom: 1px solid var(--ui-border);
   background: var(--ui-toolbar);
+}
+
+.dialog-vehicle-tools {
+  min-width: 0;
+  padding: 4px 5px;
+  border-bottom: 1px solid var(--ui-border);
 }
 
 #incident-dialog :is(.signal-toggle, .support-picker) {
@@ -3657,7 +3677,7 @@ label {
 #incident-dialog :is(.signal-option, .support-option) { min-height: 29px; padding: 0 4px; font-size: 12px; box-shadow: none; }
 #incident-dialog .support-option:has(input:focus-visible) { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
 #incident-dialog .dialog-vehicle-list { padding: 5px; }
-#incident-dialog .quick-vehicle-picker { gap: 3px; margin-bottom: 5px; }
+#incident-dialog .quick-vehicle-picker { gap: 3px; margin-bottom: 0; }
 #incident-dialog .quick-vehicle-picker button { min-height: 24px; padding: 2px 5px; font-size: 11px; }
 
 .picker-head span {
@@ -4433,7 +4453,8 @@ label {
 
 @media (prefers-reduced-motion: reduce) {
   .radio-alert:is(.radio-alert-0, .radio-alert-5),
-  .pending-call-alert {
+  .pending-call-alert,
+  .incident-card.transport-pending {
     animation: none;
   }
 }
